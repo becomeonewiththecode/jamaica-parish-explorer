@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { fetchCategories } from '../api/parishes';
 import PlacePopup from './PlacePopup';
+import ParishZoomView from './ParishZoomView';
 
 const nameToSlug = {
   "Hanover": "hanover", "Westmoreland": "westmoreland",
@@ -127,7 +128,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces }) {
         : feature.geometry.coordinates;
       const d = coordsToPath(rings, project);
       const center = centroid(rings, project);
-      return { slug, name, d, center, color: parishColors[slug] || '#388e3c' };
+      return { slug, name, d, center, color: parishColors[slug] || '#388e3c', feature };
     });
     // Sort so smaller parishes (like Kingston) render last (on top)
     // Kingston must render after St. Andrew which surrounds it
@@ -167,6 +168,11 @@ function MapSection({ activeSlug, onSelect, parishPlaces }) {
     return { placeMarkers, availableCategories };
   }, [parishPlaces, project, activeCategories]);
 
+  const activeParish = useMemo(() => {
+    if (!activeSlug) return null;
+    return parishPaths.find(p => p.slug === activeSlug) || null;
+  }, [activeSlug, parishPaths]);
+
   const toggleCategory = useCallback((cat) => {
     setActiveCategories(prev => {
       const next = new Set(prev);
@@ -204,42 +210,28 @@ function MapSection({ activeSlug, onSelect, parishPlaces }) {
     setPlaceTooltip(prev => ({ ...prev, visible: false }));
   };
 
+  // Show zoomed parish view when a parish is selected
+  if (activeSlug && activeParish) {
+    return (
+      <section id="map-section">
+        <ParishZoomView
+          feature={activeParish.feature}
+          parishName={activeParish.name}
+          parishSlug={activeParish.slug}
+          parishColor={activeParish.color}
+          places={parishPlaces || []}
+          onClose={() => onSelect(null)}
+        />
+      </section>
+    );
+  }
+
   return (
     <section id="map-section">
       <div className="map-header">
         <h1>Jamaica</h1>
         <p className="subtitle">Click a parish to explore</p>
       </div>
-
-      {/* Category filters — shown when a parish is selected and has places */}
-      {activeSlug && availableCategories.length > 0 && (
-        <div className="map-controls">
-          <span className="controls-label">Filter places:</span>
-          <div className="category-filters">
-            <button
-              className={`category-btn ${activeCategories.size === 0 ? 'active' : ''}`}
-              onClick={() => setActiveCategories(new Set())}
-            >
-              All ({parishPlaces.length})
-            </button>
-            {availableCategories.map(({ category, count }) => {
-              const style = categoryStyles[category] || { color: '#fff', label: category };
-              const isActive = activeCategories.has(category);
-              return (
-                <button
-                  key={category}
-                  className={`category-btn ${isActive ? 'active' : ''}`}
-                  style={{ '--cat-color': style.color }}
-                  onClick={() => toggleCategory(category)}
-                >
-                  <span className="cat-dot" />
-                  {style.label} ({count})
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       <div id="map-container" ref={containerRef}>
         <div
@@ -252,20 +244,6 @@ function MapSection({ activeSlug, onSelect, parishPlaces }) {
         >
           {tooltip.text}
         </div>
-        {placeTooltip.visible && placeTooltip.place && (
-          <div
-            className="place-tooltip"
-            style={{
-              left: placeTooltip.x + 'px',
-              top: placeTooltip.y + 'px',
-            }}
-          >
-            <strong>{placeTooltip.place.name}</strong>
-            <span className="place-tooltip-cat">
-              {(categoryStyles[placeTooltip.place.category] || {}).label || placeTooltip.place.category}
-            </span>
-          </div>
-        )}
         <svg id="jamaica-map" viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} xmlns="http://www.w3.org/2000/svg">
           {parishPaths.map(p => (
             <path
@@ -284,33 +262,8 @@ function MapSection({ activeSlug, onSelect, parishPlaces }) {
               <text key={p.slug} x={p.center.x} y={p.center.y}>{p.name}</text>
             ))}
           </g>
-          {/* Place markers for selected parish */}
-          {placeMarkers.map(p => (
-            <circle
-              key={p.id}
-              className={`place-marker ${selectedPlace && selectedPlace.id === p.id ? 'selected' : ''}`}
-              cx={p.x}
-              cy={p.y}
-              r={selectedPlace && selectedPlace.id === p.id ? 5 : 3}
-              fill={p.markerColor}
-              stroke={selectedPlace && selectedPlace.id === p.id ? '#fff' : '#0a1628'}
-              strokeWidth={selectedPlace && selectedPlace.id === p.id ? 1.5 : 0.8}
-              onClick={(e) => { e.stopPropagation(); setSelectedPlace(p); }}
-              onMouseEnter={(e) => handlePlaceHover(p, e)}
-              onMouseMove={(e) => handlePlaceHover(p, e)}
-              onMouseLeave={handlePlaceLeave}
-            />
-          ))}
         </svg>
       </div>
-
-      {/* Place detail popup */}
-      {selectedPlace && (
-        <PlacePopup
-          place={selectedPlace}
-          onClose={() => setSelectedPlace(null)}
-        />
-      )}
     </section>
   );
 }
