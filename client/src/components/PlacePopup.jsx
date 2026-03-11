@@ -18,49 +18,117 @@ const categoryIcons = {
   nightlife: '\u{1F378}', shopping: '\u{1F6CD}',
 };
 
+// Global image cache to avoid re-fetching
+const imageCache = new Map();
+
+// Strategy 1: Wikipedia page summary
+async function tryWikipedia(name, signal) {
+  const variants = [
+    name.replace(/\s+/g, '_'),
+    name.replace(/\s+/g, '_') + ',_Jamaica',
+  ];
+  for (const title of variants) {
+    const res = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+      { signal }
+    );
+    if (!res.ok) continue;
+    const data = await res.json();
+    if (data.thumbnail && data.thumbnail.source) {
+      return data.thumbnail.source.replace(/\/\d+px-/, '/400px-');
+    }
+  }
+  return null;
+}
+
+// Strategy 2: Wikimedia Commons geosearch — finds photos taken near coordinates
+async function tryCommonsGeosearch(lat, lon, signal) {
+  const url = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${lat}|${lon}&ggsradius=500&ggslimit=5&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (!data.query || !data.query.pages) return null;
+  // Find the first page with a usable thumbnail
+  for (const page of Object.values(data.query.pages)) {
+    if (page.imageinfo && page.imageinfo[0]) {
+      const info = page.imageinfo[0];
+      if (info.thumburl) return info.thumburl;
+      if (info.url && /\.(jpe?g|png|webp)$/i.test(info.url)) return info.url;
+    }
+  }
+  return null;
+}
+
+// Strategy 3: OpenStreetMap static tile as last resort — always available
+function osmTileFallback(lat, lon) {
+  const zoom = 17;
+  const n = Math.pow(2, zoom);
+  const x = Math.floor((lon + 180) / 360 * n);
+  const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
+  return `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+}
+
 function PlacePopup({ place, onClose }) {
   const [imageUrl, setImageUrl] = useState(null);
+  const [imageType, setImageType] = useState(null); // 'photo' or 'map'
   const [imageLoading, setImageLoading] = useState(true);
 
   useEffect(() => {
     if (!place) return;
+
+    const cacheKey = `${place.id}-${place.name}`;
+    if (imageCache.has(cacheKey)) {
+      const cached = imageCache.get(cacheKey);
+      setImageUrl(cached.url);
+      setImageType(cached.type);
+      setImageLoading(false);
+      return;
+    }
+
     setImageLoading(true);
     setImageUrl(null);
+    setImageType(null);
 
-    // Try Wikipedia API for an image
-    const searchName = place.name.replace(/\s+/g, '_');
     const controller = new AbortController();
 
-    // Try exact title first, then search
-    fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchName)}`,
-      { signal: controller.signal }
-    )
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => {
-        if (data.thumbnail && data.thumbnail.source) {
-          // Get a larger version
-          const url = data.thumbnail.source.replace(/\/\d+px-/, '/400px-');
-          setImageUrl(url);
+    async function findImage() {
+      // Try Wikipedia first (best for landmarks, attractions)
+      try {
+        const wikiUrl = await tryWikipedia(place.name, controller.signal);
+        if (wikiUrl) {
+          imageCache.set(cacheKey, { url: wikiUrl, type: 'photo' });
+          setImageUrl(wikiUrl);
+          setImageType('photo');
+          setImageLoading(false);
+          return;
         }
-      })
-      .catch(() => {
-        // Try search with "Jamaica" appended for better results
-        fetch(
-          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchName + ',_Jamaica')}`,
-          { signal: controller.signal }
-        )
-          .then(r => r.ok ? r.json() : Promise.reject())
-          .then(data => {
-            if (data.thumbnail && data.thumbnail.source) {
-              const url = data.thumbnail.source.replace(/\/\d+px-/, '/400px-');
-              setImageUrl(url);
-            }
-          })
-          .catch(() => {});
-      })
-      .finally(() => setImageLoading(false));
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
 
+      // Try Wikimedia Commons geosearch (photos near the coordinates)
+      try {
+        const commonsUrl = await tryCommonsGeosearch(place.lat, place.lon, controller.signal);
+        if (commonsUrl) {
+          imageCache.set(cacheKey, { url: commonsUrl, type: 'photo' });
+          setImageUrl(commonsUrl);
+          setImageType('photo');
+          setImageLoading(false);
+          return;
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
+
+      // Fallback: OSM tile of the location
+      const tileUrl = osmTileFallback(place.lat, place.lon);
+      imageCache.set(cacheKey, { url: tileUrl, type: 'map' });
+      setImageUrl(tileUrl);
+      setImageType('map');
+      setImageLoading(false);
+    }
+
+    findImage();
     return () => controller.abort();
   }, [place]);
 
@@ -77,8 +145,21 @@ function PlacePopup({ place, onClose }) {
 
         {/* Image area */}
         <div className="popup-image-area">
-          {imageUrl ? (
+          {imageLoading ? (
+            <div className="popup-image-placeholder">
+              <span className="placeholder-icon">{categoryIcon}</span>
+              <span className="placeholder-label">Loading...</span>
+            </div>
+          ) : imageUrl && imageType === 'photo' ? (
             <img src={imageUrl} alt={place.name} className="popup-image" />
+          ) : imageUrl && imageType === 'map' ? (
+            <div className="popup-map-fallback">
+              <img src={imageUrl} alt={`Map of ${place.name}`} className="popup-map-tile" />
+              <div className="popup-map-overlay">
+                <span className="placeholder-icon">{categoryIcon}</span>
+                <span className="popup-map-label">{place.name}</span>
+              </div>
+            </div>
           ) : (
             <div className="popup-image-placeholder">
               <span className="placeholder-icon">{categoryIcon}</span>
