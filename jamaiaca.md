@@ -1,0 +1,7 @@
+I want to create a webpage that is divide into two sections, a top section and a bottom section. The top section will show a map of jamaica, and the bottom section will show information.
+
+example, 
+
+there are 14 parhishes, a user can hover over one of the 14 parishes and see its name highlighted on the map. When they click on a parish, the bottom section updates to show details about that specific parish — population, capital town, notable features, and maybe a small description or some quick facts. The map should be interactive and visually clear, with each parish outlined and color-coded. For the bottom section, use a clean layout — maybe a heading with the parish name, then key stats in a grid or list format, and a paragraph or two of descriptive text.
+
+The transitions should be smooth — when a user clicks a different parish, the info section should fade out and fade in with the new content, not just snap. For the map itself, consider using SVG so each parish can be a separate clickable path element. That makes hover states and click handlers straightforward. If you go with a library like Leaflet or D3, you can overlay GeoJSON boundaries for the parishes and bind events to each polygon. Color-coding could follow a simple gradient or categorical scheme — just make sure the hover state is distinct enough (maybe a slight glow or border highlight) so users know it's interactive.
