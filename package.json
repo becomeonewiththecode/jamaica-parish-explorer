@@ -9,7 +9,8 @@
     "build": "cd client && npm run build",
     "start": "cd server && NODE_ENV=production node index.js",
     "db:init": "cd server && node db/init.js",
-    "fetch:places": "cd server && node db/fetch-places.js"
+    "fetch:places": "cd server && node db/fetch-places.js",
+    "enrich:places": "cd server && node db/enrich-places.js"
   },
   "keywords": [],
   "author": "",

@@ -96,7 +96,7 @@ function centroid(rings, project) {
   return { x: totalX / count, y: totalY / count };
 }
 
-function MapSection({ activeSlug, onSelect, parishPlaces }) {
+function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onClearHighlight }) {
   const [geojson, setGeojson] = useState(null);
   const [activeCategories, setActiveCategories] = useState(new Set());
   const [selectedPlace, setSelectedPlace] = useState(null);
@@ -221,6 +221,8 @@ function MapSection({ activeSlug, onSelect, parishPlaces }) {
           parishColor={activeParish.color}
           places={parishPlaces || []}
           onClose={() => onSelect(null)}
+          highlightedPlace={highlightedPlace}
+          onClearHighlight={onClearHighlight}
         />
       </section>
     );

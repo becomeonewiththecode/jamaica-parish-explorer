@@ -53,3 +53,17 @@ export async function fetchCategories() {
   if (!res.ok) throw new Error('Failed to fetch categories');
   return res.json();
 }
+
+export async function searchPlaces(query) {
+  if (!query || query.trim().length < 2) return [];
+  const res = await fetch(`${API}/places/search?q=${encodeURIComponent(query.trim())}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchWebsiteImage(url) {
+  const res = await fetch(`${API}/places/website-image?url=${encodeURIComponent(url)}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.image || null;
+}

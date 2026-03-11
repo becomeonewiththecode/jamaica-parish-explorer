@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import PlacePopup from './PlacePopup';
 
 const categoryStyles = {
@@ -63,7 +63,7 @@ function projectForFeature(feature) {
   return { project, pathData };
 }
 
-function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, onClose }) {
+function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, onClose, highlightedPlace, onClearHighlight }) {
   const [activeCategories, setActiveCategories] = useState(new Set());
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [hoveredPlace, setHoveredPlace] = useState(null);
@@ -100,6 +100,19 @@ function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, 
 
     return { markers, availableCategories };
   }, [places, project, activeCategories]);
+
+  // Compute highlighted place star as percentage position within the SVG viewBox
+  const highlightStar = useMemo(() => {
+    if (!highlightedPlace || !project) return null;
+    const [x, y] = project(highlightedPlace.lon, highlightedPlace.lat);
+    return {
+      ...highlightedPlace,
+      svgX: x,
+      svgY: y,
+      pctX: (x / ZOOM_WIDTH) * 100,
+      pctY: (y / ZOOM_HEIGHT) * 100,
+    };
+  }, [highlightedPlace, project]);
 
   const toggleCategory = (cat) => {
     setActiveCategories(prev => {
@@ -200,7 +213,9 @@ function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, 
             {markers.map(p => {
               const isSelected = selectedPlace && selectedPlace.id === p.id;
               const isHovered = hoveredPlace === p.id;
-              const r = isSelected ? 7 : isHovered ? 6 : 4.5;
+              const isHighlighted = highlightStar && highlightStar.id === p.id;
+              const r = isSelected ? 7 : isHovered ? 6 : isHighlighted ? 0 : 4.5;
+              if (isHighlighted) return null; // rendered as star overlay
               return (
                 <circle
                   key={p.id}
@@ -219,6 +234,23 @@ function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, 
               );
             })}
           </svg>
+          {/* Highlighted place star from search — HTML overlay */}
+          {highlightStar && (
+            <div
+              className="highlight-star-wrap"
+              style={{
+                left: `${highlightStar.pctX}%`,
+                top: `${highlightStar.pctY}%`,
+              }}
+              onClick={() => {
+                const full = places.find(p => p.id === highlightStar.id);
+                if (full) setSelectedPlace({ ...full, x: highlightStar.svgX, y: highlightStar.svgY });
+              }}
+            >
+              <div className="highlight-star-icon">&#9733;</div>
+              <div className="highlight-star-label">{highlightStar.name}</div>
+            </div>
+          )}
         </div>
 
         {/* Category legend */}

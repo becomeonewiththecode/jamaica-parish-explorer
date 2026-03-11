@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { fetchWebsiteImage } from '../api/parishes';
 
 const categoryLabels = {
   tourist_attraction: 'Attraction', landmark: 'Landmark',
@@ -18,11 +19,11 @@ const categoryIcons = {
   nightlife: '\u{1F378}', shopping: '\u{1F6CD}',
 };
 
-// Global image cache to avoid re-fetching
-const imageCache = new Map();
+// Global cache to avoid re-fetching images and descriptions
+const placeCache = new Map();
 
-// Strategy 1: Wikipedia page summary
-async function tryWikipedia(name, signal) {
+// Wikipedia exact page match — returns both image and description
+async function tryWikipediaExact(name, signal) {
   const variants = [
     name.replace(/\s+/g, '_'),
     name.replace(/\s+/g, '_') + ',_Jamaica',
@@ -34,21 +35,24 @@ async function tryWikipedia(name, signal) {
     );
     if (!res.ok) continue;
     const data = await res.json();
-    if (data.thumbnail && data.thumbnail.source) {
-      return data.thumbnail.source.replace(/\/\d+px-/, '/400px-');
+    const image = data.thumbnail && data.thumbnail.source
+      ? data.thumbnail.source.replace(/\/\d+px-/, '/400px-')
+      : null;
+    const description = data.extract || null;
+    if (image || description) {
+      return { image, description };
     }
   }
   return null;
 }
 
-// Strategy 2: Wikimedia Commons geosearch — finds photos taken near coordinates
+// Strategy 2: Wikimedia Commons geosearch — photos taken very close to coordinates
 async function tryCommonsGeosearch(lat, lon, signal) {
-  const url = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${lat}|${lon}&ggsradius=500&ggslimit=5&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*`;
+  const url = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${lat}|${lon}&ggsradius=250&ggslimit=5&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*`;
   const res = await fetch(url, { signal });
   if (!res.ok) return null;
   const data = await res.json();
   if (!data.query || !data.query.pages) return null;
-  // Find the first page with a usable thumbnail
   for (const page of Object.values(data.query.pages)) {
     if (page.imageinfo && page.imageinfo[0]) {
       const info = page.imageinfo[0];
@@ -59,76 +63,109 @@ async function tryCommonsGeosearch(lat, lon, signal) {
   return null;
 }
 
-// Strategy 3: OpenStreetMap static tile as last resort — always available
-function osmTileFallback(lat, lon) {
-  const zoom = 17;
+// Fallback: Esri satellite aerial imagery of the actual location
+function satelliteTileUrl(lat, lon) {
+  const zoom = 18;
   const n = Math.pow(2, zoom);
   const x = Math.floor((lon + 180) / 360 * n);
   const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
-  return `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+  return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${y}/${x}`;
 }
 
 function PlacePopup({ place, onClose }) {
   const [imageUrl, setImageUrl] = useState(null);
-  const [imageType, setImageType] = useState(null); // 'photo' or 'map'
-  const [imageLoading, setImageLoading] = useState(true);
+  const [imageType, setImageType] = useState(null);
+  const [description, setDescription] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!place) return;
 
     const cacheKey = `${place.id}-${place.name}`;
-    if (imageCache.has(cacheKey)) {
-      const cached = imageCache.get(cacheKey);
-      setImageUrl(cached.url);
-      setImageType(cached.type);
-      setImageLoading(false);
+    if (placeCache.has(cacheKey)) {
+      const cached = placeCache.get(cacheKey);
+      setImageUrl(cached.imageUrl);
+      setImageType(cached.imageType);
+      setDescription(cached.description);
+      setLoading(false);
       return;
     }
 
-    setImageLoading(true);
+    // Use pre-fetched data from the DB if available
+    const dbImage = place.image_url && place.image_url !== '' ? place.image_url : null;
+    const dbDesc = place.description && place.description !== '' ? place.description : null;
+
+    if (dbImage) {
+      const result = { imageUrl: dbImage, imageType: 'photo', description: dbDesc };
+      placeCache.set(cacheKey, result);
+      setImageUrl(dbImage);
+      setImageType('photo');
+      setDescription(dbDesc);
+      setLoading(false);
+      return;
+    }
+
+    // No pre-fetched image — try client-side lookup
+    setLoading(true);
     setImageUrl(null);
     setImageType(null);
+    setDescription(dbDesc);
 
     const controller = new AbortController();
 
-    async function findImage() {
-      // Try Wikipedia first (best for landmarks, attractions)
-      try {
-        const wikiUrl = await tryWikipedia(place.name, controller.signal);
-        if (wikiUrl) {
-          imageCache.set(cacheKey, { url: wikiUrl, type: 'photo' });
-          setImageUrl(wikiUrl);
-          setImageType('photo');
-          setImageLoading(false);
-          return;
-        }
-      } catch (e) {
-        if (e.name === 'AbortError') return;
+    async function fetchPlaceData() {
+      let foundImage = null;
+      let foundDescription = dbDesc;
+
+      // Try website og:image
+      if (place.website) {
+        try {
+          const siteImage = await fetchWebsiteImage(place.website);
+          if (siteImage) foundImage = siteImage;
+        } catch (e) { /* ignore */ }
       }
 
-      // Try Wikimedia Commons geosearch (photos near the coordinates)
-      try {
-        const commonsUrl = await tryCommonsGeosearch(place.lat, place.lon, controller.signal);
-        if (commonsUrl) {
-          imageCache.set(cacheKey, { url: commonsUrl, type: 'photo' });
-          setImageUrl(commonsUrl);
-          setImageType('photo');
-          setImageLoading(false);
-          return;
+      // Try Wikipedia
+      if (!foundImage || !foundDescription) {
+        try {
+          const wikiResult = await tryWikipediaExact(place.name, controller.signal);
+          if (wikiResult) {
+            if (!foundImage && wikiResult.image) foundImage = wikiResult.image;
+            if (!foundDescription && wikiResult.description) foundDescription = wikiResult.description;
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') return;
         }
-      } catch (e) {
-        if (e.name === 'AbortError') return;
       }
 
-      // Fallback: OSM tile of the location
-      const tileUrl = osmTileFallback(place.lat, place.lon);
-      imageCache.set(cacheKey, { url: tileUrl, type: 'map' });
-      setImageUrl(tileUrl);
-      setImageType('map');
-      setImageLoading(false);
+      // Try Commons geosearch
+      if (!foundImage) {
+        try {
+          const commonsUrl = await tryCommonsGeosearch(place.lat, place.lon, controller.signal);
+          if (commonsUrl) foundImage = commonsUrl;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        }
+      }
+
+      let finalImageUrl, finalImageType;
+      if (foundImage) {
+        finalImageUrl = foundImage;
+        finalImageType = 'photo';
+      } else {
+        finalImageUrl = satelliteTileUrl(place.lat, place.lon);
+        finalImageType = 'satellite';
+      }
+
+      const result = { imageUrl: finalImageUrl, imageType: finalImageType, description: foundDescription };
+      placeCache.set(cacheKey, result);
+      setImageUrl(finalImageUrl);
+      setImageType(finalImageType);
+      setDescription(foundDescription);
+      setLoading(false);
     }
 
-    findImage();
+    fetchPlaceData();
     return () => controller.abort();
   }, [place]);
 
@@ -145,20 +182,20 @@ function PlacePopup({ place, onClose }) {
 
         {/* Image area */}
         <div className="popup-image-area">
-          {imageLoading ? (
+          {loading ? (
             <div className="popup-image-placeholder">
               <span className="placeholder-icon">{categoryIcon}</span>
               <span className="placeholder-label">Loading...</span>
             </div>
           ) : imageUrl && imageType === 'photo' ? (
             <img src={imageUrl} alt={place.name} className="popup-image" />
-          ) : imageUrl && imageType === 'map' ? (
-            <div className="popup-map-fallback">
-              <img src={imageUrl} alt={`Map of ${place.name}`} className="popup-map-tile" />
-              <div className="popup-map-overlay">
+          ) : imageUrl && imageType === 'satellite' ? (
+            <div className="popup-satellite-fallback">
+              <img src={imageUrl} alt={`Aerial view of ${place.name}`} className="popup-satellite-tile" />
+              <div className="popup-satellite-overlay">
                 <span className="placeholder-icon">{categoryIcon}</span>
-                <span className="popup-map-label">{place.name}</span>
               </div>
+              <span className="popup-satellite-label">Aerial view</span>
             </div>
           ) : (
             <div className="popup-image-placeholder">
@@ -171,7 +208,14 @@ function PlacePopup({ place, onClose }) {
         {/* Info */}
         <div className="popup-info">
           <h3 className="popup-title">{place.name}</h3>
-          <span className="popup-category">{categoryLabel}</span>
+          <div className="popup-type-badge">
+            <span className="popup-type-icon">{categoryIcon}</span>
+            <span>{categoryLabel}</span>
+          </div>
+
+          {description && (
+            <p className="popup-description">{description}</p>
+          )}
 
           {place.address && (
             <div className="popup-detail">
@@ -194,16 +238,41 @@ function PlacePopup({ place, onClose }) {
           {place.cuisine && (
             <div className="popup-detail">
               <span className="popup-detail-icon">{'\u{1F374}'}</span>
-              {place.cuisine}
+              Cuisine: {place.cuisine.replace(/;/g, ', ')}
             </div>
           )}
+
+          {/* Website link */}
           {place.website && (
-            <div className="popup-detail">
-              <span className="popup-detail-icon">{'\u{1F310}'}</span>
-              <a href={place.website} target="_blank" rel="noopener noreferrer">
-                Visit Website
+            <a className="popup-link-btn" href={place.website} target="_blank" rel="noopener noreferrer">
+              <span>{'\u{1F310}'}</span>
+              Visit Website
+            </a>
+          )}
+
+          {/* Menu link for restaurants/cafes */}
+          {(place.category === 'restaurant' || place.category === 'cafe') && (
+            place.website ? (
+              <a
+                className="popup-link-btn popup-menu-btn"
+                href={place.website.replace(/\/$/, '') + '/menu'}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span>{'\u{1F4CB}'}</span>
+                View Menu
               </a>
-            </div>
+            ) : (
+              <a
+                className="popup-link-btn popup-menu-btn"
+                href={`https://www.google.com/search?q=${encodeURIComponent(place.name + ' Jamaica menu')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span>{'\u{1F4CB}'}</span>
+                Search for Menu
+              </a>
+            )
           )}
 
           {/* Google Maps driving link */}
