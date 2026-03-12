@@ -251,17 +251,21 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
   background: linear-gradient(135deg, #0d1f3c 0%, #122a4f 50%, #0d1f3c 100%);
   min-height: 100vh;
   position: relative;
 }
 
+.map-top-bar {
+  padding: 14px 20px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 5;
+}
+
 .map-header {
   text-align: center;
-  margin-bottom: 10px;
 }
 
 .map-header h1 {
@@ -280,74 +284,143 @@
 }
 
 #map-container {
-  width: 100%;
-  max-width: 1100px;
+  flex: 1;
   position: relative;
+  min-height: 0;
 }
 
-#jamaica-map {
+#map-container .leaflet-container {
   width: 100%;
-  height: auto;
-  filter: drop-shadow(0 4px 20px rgba(0,0,0,0.4));
+  height: 100%;
+  background: #0d1f3c;
+  border-radius: 0;
 }
 
-#jamaica-map .parish {
-  stroke: #1a3a5c;
-  stroke-width: 1.2;
-  cursor: pointer;
-  transition: fill 0.3s ease, stroke 0.3s ease, filter 0.3s ease;
+/* Leaflet tooltip overrides */
+.parish-leaflet-tooltip {
+  background: rgba(10, 22, 40, 0.95) !important;
+  border: 1px solid #f0c040 !important;
+  color: #f0c040 !important;
+  padding: 6px 14px !important;
+  border-radius: 4px !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
 }
 
-#jamaica-map .parish:hover {
-  stroke: #f0c040;
-  stroke-width: 2;
-  filter: brightness(1.3) drop-shadow(0 0 8px rgba(240, 192, 64, 0.4));
+.parish-leaflet-tooltip::before {
+  border-top-color: #f0c040 !important;
 }
 
-#jamaica-map .parish.active {
-  stroke: #f0c040;
-  stroke-width: 2.5;
-  filter: brightness(1.4) drop-shadow(0 0 12px rgba(240, 192, 64, 0.6));
+.place-leaflet-tooltip {
+  background: rgba(10, 22, 40, 0.95) !important;
+  border: 1px solid #5a8ab5 !important;
+  color: #e0e0e0 !important;
+  padding: 6px 12px !important;
+  border-radius: 4px !important;
+  font-size: 0.8rem !important;
+  font-family: inherit !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
 }
 
-#parish-tooltip {
-  position: absolute;
-  background: rgba(10, 22, 40, 0.95);
-  border: 1px solid #f0c040;
-  color: #f0c040;
-  padding: 6px 14px;
-  border-radius: 4px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-  z-index: 10;
-  white-space: nowrap;
+.place-leaflet-tooltip::before {
+  border-top-color: #5a8ab5 !important;
 }
 
-/* MAP CONTROLS */
-.map-controls {
+.airport-leaflet-tooltip {
+  background: rgba(10, 22, 40, 0.95) !important;
+  border: 1px solid #00bcd4 !important;
+  color: #00e5ff !important;
+  padding: 6px 14px !important;
+  border-radius: 4px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+}
+
+.airport-leaflet-tooltip::before {
+  border-top-color: #00bcd4 !important;
+}
+
+.highlight-leaflet-tooltip {
+  background: rgba(10, 22, 40, 0.92) !important;
+  border: 1px solid #f0c040 !important;
+  color: #f0c040 !important;
+  padding: 3px 10px !important;
+  border-radius: 4px !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  white-space: nowrap !important;
+}
+
+.highlight-leaflet-tooltip::before {
+  border-top-color: #f0c040 !important;
+}
+
+/* Leaflet airport div icon */
+.airport-leaflet-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.airport-icon-inner {
+  width: 32px;
+  height: 32px;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  max-width: 1100px;
-  width: 100%;
+  justify-content: center;
+  background: rgba(10, 22, 40, 0.8);
+  border: 2px solid #00bcd4;
+  border-radius: 50%;
+  font-size: 16px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.controls-label {
-  font-size: 0.75rem;
-  color: #5a8ab5;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-right: 4px;
+.airport-icon-inner:hover {
+  background: rgba(0, 188, 212, 0.25);
+  border-color: #fff;
 }
 
-.category-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+/* Highlighted search star icon on Leaflet map */
+.highlight-star-leaflet {
+  background: none !important;
+  border: none !important;
+}
+
+.highlight-star-leaflet .highlight-star-icon {
+  font-size: 2rem;
+  color: #f0c040;
+  filter: drop-shadow(0 0 6px rgba(240, 192, 64, 0.8));
+  animation: star-pulse 1.2s ease-in-out infinite;
+  line-height: 1;
+  text-align: center;
+}
+
+/* Leaflet zoom control dark theme */
+.leaflet-control-zoom a {
+  background: rgba(10, 22, 40, 0.9) !important;
+  color: #7a9cc6 !important;
+  border-color: #1e3a5f !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: rgba(10, 22, 40, 1) !important;
+  color: #f0c040 !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(10, 22, 40, 0.7) !important;
+  color: #5a8ab5 !important;
+  font-size: 0.6rem !important;
+}
+
+.leaflet-control-attribution a {
+  color: #7abaff !important;
 }
 
 .category-btn {
@@ -375,48 +448,6 @@
   display: inline-block;
 }
 
-/* PLACE MARKERS */
-.place-marker {
-  cursor: pointer;
-  transition: r 0.15s ease, opacity 0.15s ease;
-  opacity: 0.85;
-}
-
-.place-marker:hover {
-  r: 5;
-  opacity: 1;
-}
-
-/* PLACE TOOLTIP */
-.place-tooltip {
-  position: absolute;
-  background: rgba(10, 22, 40, 0.95);
-  border: 1px solid #5a8ab5;
-  color: #e0e0e0;
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  pointer-events: none;
-  z-index: 20;
-  white-space: nowrap;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.place-tooltip strong { color: #fff; }
-.place-tooltip-cat { font-size: 0.7rem; color: #7a9cc6; }
-
-/* Selected marker pulse */
-.place-marker.selected {
-  opacity: 1;
-  animation: marker-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes marker-pulse {
-  0%, 100% { r: 5; }
-  50% { r: 7; }
-}
 
 /* PLACE POPUP */
 .place-popup-overlay {
@@ -429,7 +460,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 1200;
   animation: overlay-fade-in 0.2s ease;
 }
 
@@ -689,7 +720,7 @@
   position: fixed;
   top: 16px;
   right: 24px;
-  z-index: 50;
+  z-index: 1100;
   width: 340px;
 }
 
@@ -801,59 +832,9 @@
   font-size: 0.7rem;
 }
 
-/* HIGHLIGHT STAR */
-.highlight-star-wrap {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  cursor: pointer;
-  z-index: 15;
-  pointer-events: auto;
-}
-
-.highlight-star-icon {
-  font-size: 2rem;
-  color: #f0c040;
-  filter: drop-shadow(0 0 6px rgba(240, 192, 64, 0.8));
-  animation: star-pulse 1.2s ease-in-out infinite;
-  line-height: 1;
-}
-
-.highlight-star-label {
-  background: rgba(10, 22, 40, 0.92);
-  border: 1px solid #f0c040;
-  color: #f0c040;
-  padding: 3px 10px;
-  border-radius: 4px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  white-space: nowrap;
-  margin-top: 2px;
-}
-
 @keyframes star-pulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.3); }
-}
-
-/* PARISH ZOOM VIEW */
-.parish-zoom-overlay {
-  width: 100%;
-  max-width: 1100px;
-  animation: zoom-fade-in 0.35s ease;
-}
-
-@keyframes zoom-fade-in {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.parish-zoom-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .parish-zoom-header {
@@ -903,22 +884,6 @@
   gap: 5px;
 }
 
-.zoom-map-container {
-  position: relative;
-  width: 100%;
-  background: rgba(0,0,0,0.15);
-  border: 1px solid #1a3050;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.zoom-map-svg {
-  width: 100%;
-  height: auto;
-  display: block;
-  filter: drop-shadow(0 4px 20px rgba(0,0,0,0.4));
-}
-
 /* Legend */
 .zoom-legend {
   display: flex;
@@ -949,6 +914,171 @@
 .zoom-legend-count {
   color: #4a6d94;
   font-size: 0.65rem;
+}
+
+/* AIRPORT POPUP */
+.airport-popup {
+  background: #0f2240;
+  border: 1px solid #1e3a5f;
+  border-radius: 12px;
+  width: 480px;
+  max-width: 94vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: popup-slide-in 0.25s ease;
+  position: relative;
+}
+
+.airport-popup-body {
+  padding: 22px;
+}
+
+.airport-popup-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #f0c040;
+  margin-bottom: 10px;
+  line-height: 1.3;
+}
+
+.airport-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.airport-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.airport-badge-type {
+  background: rgba(0, 188, 212, 0.12);
+  border: 1px solid rgba(0, 188, 212, 0.35);
+  color: #00e5ff;
+}
+
+.airport-badge-code {
+  background: rgba(240, 192, 64, 0.1);
+  border: 1px solid rgba(240, 192, 64, 0.25);
+  color: #f0c040;
+  font-family: monospace;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+}
+
+/* Airport info grid */
+.airport-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 20px;
+}
+
+.airport-info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: background 0.15s ease;
+}
+
+.airport-info-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.airport-info-icon {
+  flex-shrink: 0;
+  font-size: 1rem;
+  width: 24px;
+  text-align: center;
+  margin-top: 1px;
+}
+
+.airport-info-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.airport-info-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #5a8ab5;
+  font-weight: 600;
+}
+
+.airport-info-value {
+  font-size: 0.83rem;
+  color: #c8daf0;
+  line-height: 1.45;
+}
+
+.airport-info-link {
+  font-size: 0.83rem;
+  color: #7abaff;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.airport-info-link:hover {
+  text-decoration: underline;
+  color: #a0d0ff;
+}
+
+/* Airport history */
+.airport-history {
+  margin-bottom: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #1e3a5f;
+}
+
+.airport-history-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #5a8ab5;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.airport-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.airport-history-list li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 0.83rem;
+  color: #b0c4de;
+  line-height: 1.55;
+}
+
+.airport-history-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00bcd4;
 }
 
 /* RESPONSIVE — stack on smaller screens */

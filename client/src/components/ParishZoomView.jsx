@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import PlacePopup from './PlacePopup';
+import AirportPopup from './AirportPopup';
 
 const categoryStyles = {
   tourist_attraction: { color: '#ff5722', label: 'Attractions', icon: '\u{1F3DB}' },
@@ -16,6 +17,7 @@ const categoryStyles = {
   park: { color: '#8bc34a', label: 'Parks', icon: '\u{1F333}' },
   nightlife: { color: '#ce93d8', label: 'Nightlife', icon: '\u{1F378}' },
   shopping: { color: '#ffc107', label: 'Shopping', icon: '\u{1F6CD}' },
+  airport: { color: '#00bcd4', label: 'Airport', icon: '✈' },
 };
 
 const ZOOM_WIDTH = 800;
@@ -63,9 +65,10 @@ function projectForFeature(feature) {
   return { project, pathData };
 }
 
-function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, onClose, highlightedPlace, onClearHighlight }) {
+function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, airports = [], onClose, highlightedPlace, onClearHighlight }) {
   const [activeCategories, setActiveCategories] = useState(new Set());
   const [selectedPlace, setSelectedPlace] = useState(null);
+  const [selectedAirport, setSelectedAirport] = useState(null);
   const [hoveredPlace, setHoveredPlace] = useState(null);
   const containerRef = useRef(null);
   const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, place: null });
@@ -233,6 +236,27 @@ function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, 
                 />
               );
             })}
+            {/* Airport markers for this parish */}
+            {project && airports
+              .filter(ap => ap.parish === parishSlug)
+              .map(ap => {
+                const [ax, ay] = project(ap.lon, ap.lat);
+                return (
+                  <g
+                    key={ap.code}
+                    className="airport-marker"
+                    transform={`translate(${ax},${ay})`}
+                    onClick={(e) => { e.stopPropagation(); setSelectedAirport(ap); }}
+                    onMouseEnter={(e) => handlePlaceHover({ name: `${ap.name} (${ap.code})`, category: 'airport' }, e)}
+                    onMouseMove={(e) => handlePlaceHover({ name: `${ap.name} (${ap.code})`, category: 'airport' }, e)}
+                    onMouseLeave={handlePlaceLeave}
+                  >
+                    <circle r="14" fill="rgba(10,22,40,0.8)" stroke="#00bcd4" strokeWidth="2" />
+                    <text textAnchor="middle" dominantBaseline="central" fontSize="16" fill="#fff" pointerEvents="none">✈</text>
+                    <text textAnchor="middle" y="26" fontSize="10" fill="#00bcd4" fontWeight="600" pointerEvents="none">{ap.code}</text>
+                  </g>
+                );
+              })}
           </svg>
           {/* Highlighted place star from search — HTML overlay */}
           {highlightStar && (
@@ -275,6 +299,14 @@ function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, 
         <PlacePopup
           place={selectedPlace}
           onClose={() => setSelectedPlace(null)}
+        />
+      )}
+
+      {/* Airport detail popup */}
+      {selectedAirport && (
+        <AirportPopup
+          airport={selectedAirport}
+          onClose={() => setSelectedAirport(null)}
         />
       )}
     </div>

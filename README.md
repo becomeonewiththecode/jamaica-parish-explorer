@@ -1,0 +1,141 @@
+# Jamaica Parish Explorer
+
+An interactive web application for exploring Jamaica's 14 parishes. Click any parish on the SVG map to zoom in and discover thousands of points of interest — restaurants, hotels, landmarks, beaches, hospitals, and more — each with photos, descriptions, and links.
+
+![Jamaica Parish Explorer](https://img.shields.io/badge/React-19-blue) ![Express](https://img.shields.io/badge/Express-5-green) ![SQLite](https://img.shields.io/badge/SQLite-3-lightgrey)
+
+## Features
+
+- **Interactive SVG map** of Jamaica with all 14 parishes, hover highlights, and click-to-zoom
+- **Parish detail panel** showing population, capital, area, county, description, and notable features
+- **4,300+ points of interest** sourced from OpenStreetMap across 14 categories (attractions, restaurants, hotels, hospitals, beaches, etc.)
+- **Place search** — search all places across Jamaica from a global search bar; results navigate to the parish and highlight the location with a star
+- **Place popups** with photos, descriptions, website links, menu links (for restaurants), and Google Maps driving directions
+- **Community notes** — users can leave notes on any parish
+- **Category filtering** — filter visible map markers by type when viewing a parish
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, Vite 5, plain CSS |
+| Backend | Express 5, Node.js |
+| Database | SQLite via better-sqlite3 (WAL mode) |
+| Map Data | GeoJSON parish boundaries, OpenStreetMap POIs |
+| Images | Bing image search, Wikipedia, Wikimedia Commons |
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/becomeonewiththecode/jamaica-parish-explorer.git
+cd jamaica-parish-explorer
+
+# Install root dependencies
+npm install
+
+# Install server dependencies
+cd server && npm install && cd ..
+
+# Install client dependencies
+cd client && npm install && cd ..
+```
+
+### Database Setup
+
+The SQLite database is not included in the repo and must be built locally:
+
+```bash
+# 1. Initialize the database schema and seed parish data
+npm run db:init
+
+# 2. Fetch points of interest from OpenStreetMap (~4,300 places)
+#    This queries the Overpass API — takes a few minutes
+npm run fetch:places
+
+# 3. Enrich places with photos and descriptions
+#    Fetches images via Bing and descriptions via Wikipedia
+#    Use 'all' flag to re-enrich everything: node server/db/enrich-places.js all
+npm run enrich:places
+```
+
+### Running
+
+```bash
+# Development — starts both server (port 3001) and client (port 5173)
+npm run dev
+
+# Production build
+npm run build
+npm start
+```
+
+The dev server runs at **http://localhost:5173** with API requests proxied to the Express server on port 3001.
+
+## Project Structure
+
+```
+project_jamaica/
+  client/                     # React frontend (Vite)
+    public/
+      jamaica-parishes.geojson  # Parish boundary data
+    src/
+      api/parishes.js           # API client functions
+      components/
+        MapSection.jsx          # Full Jamaica map + zoom dispatch
+        ParishZoomView.jsx      # Zoomed parish view with place markers
+        InfoSection.jsx         # Left panel with parish details
+        ParishDetail.jsx        # Parish stats, description, features
+        PlacePopup.jsx          # Place detail modal with photo
+        SearchBar.jsx           # Global place search
+        NotesPanel.jsx          # Community notes display
+        NoteForm.jsx            # Note submission form
+        PlacesPanel.jsx         # Filterable place list
+      hooks/
+        useParish.js            # Parish data fetching hook
+  server/                     # Express API
+    index.js                    # Server entry point
+    db/
+      connection.js             # SQLite connection (WAL mode)
+      schema.sql                # Table definitions
+      init.js                   # Schema + parish seed data
+      fetch-places.js           # OpenStreetMap data fetcher
+      enrich-places.js          # Image + description enrichment
+    routes/
+      parishes.js               # GET /api/parishes, /api/parishes/:slug
+      places.js                 # Place search, categories, website-image
+      notes.js                  # CRUD for community notes
+```
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/parishes` | List all parishes (lightweight) |
+| GET | `/api/parishes/:slug` | Full parish detail + features |
+| GET | `/api/parishes/:slug/places` | Places in a parish (optional `?category=`) |
+| GET | `/api/parishes/:slug/notes` | Notes for a parish |
+| POST | `/api/parishes/:slug/notes` | Add a note (`{ author, content }`) |
+| DELETE | `/api/notes/:id` | Delete a note |
+| GET | `/api/places/search?q=` | Search places by name |
+| GET | `/api/places/categories` | List categories with counts |
+| GET | `/api/places/all` | All places (lightweight) |
+| GET | `/api/places/website-image?url=` | Extract og:image from a URL |
+
+## Database Schema
+
+- **parishes** — slug, name, county, population, capital, area, description, fill_color, svg_path
+- **features** — notable features per parish (e.g. "Blue Mountains", "Port Royal")
+- **places** — POIs with name, category, lat/lon, address, phone, website, cuisine, image_url, description
+- **notes** — community notes per parish with author and timestamp
+
+## License
+
+ISC

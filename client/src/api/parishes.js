@@ -61,6 +61,12 @@ export async function searchPlaces(query) {
   return res.json();
 }
 
+export async function fetchAirports() {
+  const res = await fetch(`${API}/airports`);
+  if (!res.ok) throw new Error('Failed to fetch airports');
+  return res.json();
+}
+
 export async function fetchWebsiteImage(url) {
   const res = await fetch(`${API}/places/website-image?url=${encodeURIComponent(url)}`);
   if (!res.ok) return null;
