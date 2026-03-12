@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, GeoJSON, CircleMarker, Marker, Tooltip, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -51,12 +51,44 @@ const categoryStyles = {
   park: { color: '#8bc34a', label: 'Parks', icon: '🌳' },
   nightlife: { color: '#ce93d8', label: 'Nightlife', icon: '🍸' },
   shopping: { color: '#ffc107', label: 'Shopping', icon: '🛍' },
+  car_rental: { color: '#e65100', label: 'Car Rental', icon: '🚗' },
 };
 
 // Jamaica bounds — tight to the island
 const JAMAICA_CENTER = [18.11, -77.30];
 const JAMAICA_BOUNDS = [[17.70, -78.40], [18.55, -76.18]];
 const MAX_BOUNDS = [[17.65, -78.45], [18.60, -76.13]];
+
+// Pre-build a Leaflet divIcon for each category
+function buildCategoryIcon(emoji, color) {
+  return L.divIcon({
+    className: 'category-leaflet-icon',
+    html: `<div class="cat-icon-inner" style="background:${color};border-color:${color}"><span>${emoji}</span></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
+const categoryIcons = {};
+for (const [cat, s] of Object.entries(categoryStyles)) {
+  categoryIcons[cat] = buildCategoryIcon(s.icon, s.color);
+}
+const defaultPlaceIcon = buildCategoryIcon('📍', '#888');
+
+function buildHighlightIcon(emoji, color) {
+  return L.divIcon({
+    className: 'category-leaflet-icon',
+    html: `<div class="cat-icon-inner cat-icon-highlight" style="background:${color};border-color:#f0c040"><span>${emoji}</span></div>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+}
+
+const categoryIconsHighlight = {};
+for (const [cat, s] of Object.entries(categoryStyles)) {
+  categoryIconsHighlight[cat] = buildHighlightIcon(s.icon, s.color);
+}
+const defaultHighlightIcon = buildHighlightIcon('📍', '#888');
 
 const airportIcon = L.divIcon({
   className: 'airport-leaflet-icon',
@@ -294,26 +326,23 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
           {activeSlug && filteredPlaces.map(p => {
             const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
             const isHighlighted = highlightedPlace && highlightedPlace.id === p.id;
+            const icon = isHighlighted
+              ? (categoryIconsHighlight[p.category] || defaultHighlightIcon)
+              : (categoryIcons[p.category] || defaultPlaceIcon);
             return (
-              <CircleMarker
+              <Marker
                 key={p.id}
-                center={[p.lat, p.lon]}
-                radius={isHighlighted ? 10 : 6}
-                pathOptions={{
-                  fillColor: style.color,
-                  fillOpacity: 0.9,
-                  color: isHighlighted ? '#f0c040' : '#0a1628',
-                  weight: isHighlighted ? 3 : 1,
-                }}
+                position={[p.lat, p.lon]}
+                icon={icon}
                 eventHandlers={{
                   click: () => setSelectedPlace(p),
                 }}
               >
-                <Tooltip direction="top" offset={[0, -6]} className="place-leaflet-tooltip">
+                <Tooltip direction="top" offset={[0, -14]} className="place-leaflet-tooltip">
                   <strong>{p.name}</strong><br />
                   <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>{style.label}</span>
                 </Tooltip>
-              </CircleMarker>
+              </Marker>
             );
           })}
 

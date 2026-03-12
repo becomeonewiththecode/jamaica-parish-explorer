@@ -85,6 +85,7 @@ const queries = [
   { category: 'park', query: '"leisure"="park"' },
   { category: 'nightlife', query: '"amenity"~"bar|pub|nightclub"' },
   { category: 'shopping', query: '"shop"~"supermarket|mall|department_store|convenience"' },
+  { category: 'car_rental', query: '"amenity"="car_rental"' },
 ];
 
 // Jamaica bounding box

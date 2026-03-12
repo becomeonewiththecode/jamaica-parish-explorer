@@ -11,7 +11,6 @@ function App() {
   const { parish, notes, places, loading, addNote } = useParish(selectedSlug);
 
   const handleSearchSelect = useCallback((place) => {
-    // Navigate to the parish and highlight the place
     setHighlightedPlace(place);
     setSelectedSlug(place.parish_slug);
   }, []);
@@ -23,19 +22,20 @@ function App() {
 
   return (
     <div className="app">
-      <InfoSection
-        parish={parish}
-        notes={notes}
-        loading={loading}
-        addNote={addNote}
-        selectedSlug={selectedSlug}
-      />
       <MapSection
         activeSlug={selectedSlug}
         onSelect={handleParishSelect}
         parishPlaces={places}
         highlightedPlace={highlightedPlace}
         onClearHighlight={() => setHighlightedPlace(null)}
+      />
+      <InfoSection
+        parish={parish}
+        notes={notes}
+        loading={loading}
+        addNote={addNote}
+        selectedSlug={selectedSlug}
+        onClose={() => setSelectedSlug(null)}
       />
       <SearchBar onSelectPlace={handleSearchSelect} />
     </div>

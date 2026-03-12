@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchWebsiteImage } from '../api/parishes';
+import { useDraggable } from '../hooks/useDraggable';
 
 const categoryLabels = {
   tourist_attraction: 'Attraction', landmark: 'Landmark',
@@ -8,6 +9,7 @@ const categoryLabels = {
   place_of_worship: 'Place of Worship', bank: 'Bank',
   gas_station: 'Gas Station', park: 'Park',
   nightlife: 'Nightlife', shopping: 'Shopping',
+  car_rental: 'Car Rental',
 };
 
 const categoryIcons = {
@@ -17,6 +19,7 @@ const categoryIcons = {
   place_of_worship: '\u{26EA}', bank: '\u{1F3E6}',
   gas_station: '\u{26FD}', park: '\u{1F333}',
   nightlife: '\u{1F378}', shopping: '\u{1F6CD}',
+  car_rental: '\u{1F697}',
 };
 
 // Global cache to avoid re-fetching images and descriptions
@@ -77,6 +80,7 @@ function PlacePopup({ place, onClose }) {
   const [imageType, setImageType] = useState(null);
   const [description, setDescription] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { pos, onMouseDown } = useDraggable();
 
   useEffect(() => {
     if (!place) return;
@@ -176,9 +180,16 @@ function PlacePopup({ place, onClose }) {
   const categoryIcon = categoryIcons[place.category] || '\u{1F4CD}';
 
   return (
-    <div className="place-popup-overlay" onClick={onClose}>
-      <div className="place-popup" onClick={(e) => e.stopPropagation()}>
-        <button className="popup-close" onClick={onClose}>&times;</button>
+    <div
+      className="place-popup"
+      style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
+      onDoubleClick={onClose}
+    >
+      <div className="drag-handle" onMouseDown={onMouseDown}>
+        <span className="drag-dots">&#x2807;</span>
+        <span className="drag-hint">Drag to move &middot; Double-click to close</span>
+      </div>
+      <button className="popup-close" onClick={onClose}>&times;</button>
 
         {/* Image area */}
         <div className="popup-image-area">
@@ -288,7 +299,6 @@ function PlacePopup({ place, onClose }) {
             Get Driving Directions
           </a>
         </div>
-      </div>
     </div>
   );
 }

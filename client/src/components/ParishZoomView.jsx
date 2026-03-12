@@ -18,6 +18,7 @@ const categoryStyles = {
   nightlife: { color: '#ce93d8', label: 'Nightlife', icon: '\u{1F378}' },
   shopping: { color: '#ffc107', label: 'Shopping', icon: '\u{1F6CD}' },
   airport: { color: '#00bcd4', label: 'Airport', icon: '✈' },
+  car_rental: { color: '#e65100', label: 'Car Rental', icon: '\u{1F697}' },
 };
 
 const ZOOM_WIDTH = 800;
