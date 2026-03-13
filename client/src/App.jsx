@@ -7,6 +7,7 @@ import './App.css';
 
 function App() {
   const [selectedSlug, setSelectedSlug] = useState(null);
+  const [selectedAirport, setSelectedAirport] = useState(null);
   const [highlightedPlace, setHighlightedPlace] = useState(null);
   const [activeCategories, setActiveCategories] = useState(new Set());
   const [focusPlace, setFocusPlace] = useState(null);
@@ -29,7 +30,16 @@ function App() {
     setHighlightedPlace(null);
     setActiveCategories(new Set());
     setFocusPlace(null);
+    setSelectedAirport(null);
     setSelectedSlug(slug);
+  }, []);
+
+  const handleAirportSelect = useCallback((airport) => {
+    setSelectedAirport(airport);
+    setSelectedSlug(null);
+    setHighlightedPlace(null);
+    setActiveCategories(new Set());
+    setFocusPlace(null);
   }, []);
 
   const handleInfoPlaceSelect = useCallback((place) => {
@@ -43,6 +53,7 @@ function App() {
       <MapSection
         activeSlug={selectedSlug}
         onSelect={handleParishSelect}
+        onAirportSelect={handleAirportSelect}
         parishPlaces={places}
         highlightedPlace={highlightedPlace}
         onClearHighlight={() => setHighlightedPlace(null)}
@@ -57,7 +68,8 @@ function App() {
         loading={loading}
         addNote={addNote}
         selectedSlug={selectedSlug}
-        onClose={() => setSelectedSlug(null)}
+        selectedAirport={selectedAirport}
+        onClose={() => { setSelectedSlug(null); setSelectedAirport(null); }}
         onSelectParish={handleParishSelect}
         activeCategories={activeCategories}
         onCategoriesChange={setActiveCategories}

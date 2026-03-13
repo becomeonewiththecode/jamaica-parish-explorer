@@ -3,6 +3,7 @@ import { fetchParishes } from '../api/parishes';
 import ParishDetail from './ParishDetail';
 import PlaceList, { categoryLabels } from './PlaceList';
 import PlacePopup from './PlacePopup';
+import AirportDetail from './AirportDetail';
 import { useDraggable } from '../hooks/useDraggable';
 
 const categoryIcons = {
@@ -17,7 +18,7 @@ const categoryIcons = {
   stadium: '\u{1F3DF}',
 };
 
-function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, onSelectParish, activeCategories, onCategoriesChange, filteredPlaces, allPlaces, onPlaceSelect }) {
+function InfoSection({ parish, notes, loading, addNote, selectedSlug, selectedAirport, onClose, onSelectParish, activeCategories, onCategoriesChange, filteredPlaces, allPlaces, onPlaceSelect }) {
   const [visible, setVisible] = useState(false);
   const [displayedSlug, setDisplayedSlug] = useState(null);
   const [selectedPlace, setSelectedPlace] = useState(null);
@@ -67,7 +68,7 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, o
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [allPlaces]);
 
-  if (!selectedSlug && !displayedSlug) return null;
+  if (!selectedSlug && !displayedSlug && !selectedAirport) return null;
 
   // Determine the category label for the heading
   const activeCatList = activeCategories ? [...activeCategories] : [];
@@ -102,7 +103,7 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, o
     <>
       <aside
         id="info-section"
-        className={visible && parish ? 'info-visible' : 'info-hidden'}
+        className={`${(visible && parish) || selectedAirport ? 'info-visible' : 'info-hidden'}${selectedAirport ? ' info-airport' : ''}`}
         style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
       >
         <div className="drag-handle" onMouseDown={onMouseDown}>
@@ -116,25 +117,29 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, o
           <button className="info-nav-btn" onClick={onClose}>
             <span>&#x2190;</span> Back to Map
           </button>
-          <button
-            className={`info-nav-btn${showParishPicker ? ' info-nav-btn-active' : ''}`}
-            onClick={() => setShowParishPicker(!showParishPicker)}
-          >
-            <span>&#x25BE;</span> Switch Parish
-          </button>
-          {!loading && availableCategories.length > 0 && (
-            <select
-              className="info-category-select"
-              value={selectedCat}
-              onChange={(e) => handleCategorySelect(e.target.value)}
-            >
-              <option value="">-- Items --</option>
-              {availableCategories.map(c => (
-                <option key={c.key} value={c.key}>
-                  {c.icon} {c.label} ({c.count})
-                </option>
-              ))}
-            </select>
+          {!selectedAirport && (
+            <>
+              <button
+                className={`info-nav-btn${showParishPicker ? ' info-nav-btn-active' : ''}`}
+                onClick={() => setShowParishPicker(!showParishPicker)}
+              >
+                <span>&#x25BE;</span> Switch Parish
+              </button>
+              {!loading && availableCategories.length > 0 && (
+                <select
+                  className="info-category-select"
+                  value={selectedCat}
+                  onChange={(e) => handleCategorySelect(e.target.value)}
+                >
+                  <option value="">-- Items --</option>
+                  {availableCategories.map(c => (
+                    <option key={c.key} value={c.key}>
+                      {c.icon} {c.label} ({c.count})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
         </div>
 
@@ -162,7 +167,9 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, o
           </div>
         )}
         <div id="info-content">
-          {loading ? (
+          {selectedAirport ? (
+            <AirportDetail airport={selectedAirport} onClose={onClose} />
+          ) : loading ? (
             <div id="info-placeholder">
               <h2>Loading...</h2>
             </div>

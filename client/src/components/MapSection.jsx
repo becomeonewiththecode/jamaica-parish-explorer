@@ -181,11 +181,11 @@ function ZoomTracker({ onZoomChange }) {
   return null;
 }
 
-function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey }) {
+function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey }) {
   const [geojson, setGeojson] = useState(null);
   const [airports, setAirports] = useState([]);
   const [alwaysOnPlaces, setAlwaysOnPlaces] = useState([]);
-  const [currentZoom, setCurrentZoom] = useState(10);
+  const [currentZoom, setCurrentZoom] = useState(11);
   const [showFlights, setShowFlights] = useState(true);
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
@@ -228,9 +228,8 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
   }, [getPopupPosition]);
 
   const handleAirportClick = useCallback((airport) => {
-    setPopupPos(getPopupPosition(airport.lat, airport.lon));
-    setSelectedAirport(airport);
-  }, [getPopupPosition]);
+    if (onAirportSelect) onAirportSelect(airport);
+  }, [onAirportSelect]);
 
   const closeAllPopups = useCallback(() => {
     setSelectedPlace(null);
@@ -395,7 +394,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
         </button>
 
         {/* Zoom level indicator */}
-        {activeSlug && (
+        {(
           <div className="zoom-level-control">
             <span className="zoom-level-label">Zoom</span>
             <span className="zoom-level-value">{currentZoom}</span>
@@ -463,7 +462,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
       <div id="map-container">
         <MapContainer
           center={JAMAICA_CENTER}
-          zoom={10}
+          zoom={11}
           minZoom={9}
           maxZoom={18}
           maxBounds={MAX_BOUNDS}
@@ -605,14 +604,6 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
         />
       )}
 
-      {/* Airport detail popup */}
-      {selectedAirport && (
-        <AirportPopup
-          airport={selectedAirport}
-          onClose={() => setSelectedAirport(null)}
-          anchorPos={popupPos}
-        />
-      )}
     </section>
   );
 }
