@@ -86,6 +86,9 @@ function PlaceListItem({ place, onSelect }) {
   // Truncate blurb
   const shortBlurb = blurb.length > 80 ? blurb.slice(0, 80) + '...' : blurb;
 
+  const hasSocial = place.tiktok_url || place.instagram_url || place.booking_url || place.tripadvisor_url;
+  const tiktokSearchable = ['hotel', 'resort', 'guest_house', 'restaurant', 'cafe', 'tourist_attraction', 'landmark', 'beach', 'nightlife'].includes(place.category);
+
   return (
     <button className="place-list-item" onClick={() => onSelect(place)}>
       <div className="place-list-thumb">
@@ -98,6 +101,14 @@ function PlaceListItem({ place, onSelect }) {
       <div className="place-list-info">
         <span className="place-list-name">{place.name}</span>
         <span className="place-list-blurb">{shortBlurb}</span>
+        <span className="place-list-links">
+          {place.tiktok_url && <span className="place-list-link-icon" title="TikTok">🎵</span>}
+          {!place.tiktok_url && tiktokSearchable && <span className="place-list-link-icon place-list-link-dim" title="Search TikTok">🎵</span>}
+          {place.instagram_url && <span className="place-list-link-icon" title="Instagram">📷</span>}
+          {place.booking_url && <span className="place-list-link-icon" title="Booking.com">🏨</span>}
+          {place.tripadvisor_url && <span className="place-list-link-icon" title="TripAdvisor">🌍</span>}
+          {place.website && <span className="place-list-link-icon" title="Website">🌐</span>}
+        </span>
       </div>
     </button>
   );

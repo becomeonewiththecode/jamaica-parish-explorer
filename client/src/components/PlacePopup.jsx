@@ -321,37 +321,56 @@ function PlacePopup({ place, onClose, anchorPos }) {
             )
           )}
 
-          {/* TikTok link */}
-          {place.tiktok_url && (
-            <a className="popup-link-btn popup-tiktok-btn" href={place.tiktok_url} target="_blank" rel="noopener noreferrer">
-              <span>{'\u{1F3B5}'}</span>
-              TikTok
-            </a>
-          )}
+          {/* Social & Booking Links */}
+          <div className="popup-social-row">
+            {place.tiktok_url && (
+              <a className="popup-social-icon popup-social-tiktok" href={place.tiktok_url} target="_blank" rel="noopener noreferrer" title="TikTok">
+                <span>🎵</span>
+              </a>
+            )}
+            {place.instagram_url && (
+              <a className="popup-social-icon popup-social-instagram" href={place.instagram_url} target="_blank" rel="noopener noreferrer" title="Instagram">
+                <span>📷</span>
+              </a>
+            )}
+            {place.booking_url && (
+              <a className="popup-social-icon popup-social-booking" href={place.booking_url} target="_blank" rel="noopener noreferrer" title="Book on Booking.com">
+                <span>🏨</span>
+              </a>
+            )}
+            {place.tripadvisor_url && (
+              <a className="popup-social-icon popup-social-tripadvisor" href={place.tripadvisor_url} target="_blank" rel="noopener noreferrer" title="TripAdvisor Reviews">
+                <span>🌍</span>
+              </a>
+            )}
+          </div>
 
-          {/* Instagram link */}
-          {place.instagram_url && (
-            <a className="popup-link-btn popup-instagram-btn" href={place.instagram_url} target="_blank" rel="noopener noreferrer">
-              <span>{'\u{1F4F7}'}</span>
-              Instagram
-            </a>
-          )}
-
-          {/* Booking.com link */}
-          {place.booking_url && (
-            <a className="popup-link-btn popup-booking-btn" href={place.booking_url} target="_blank" rel="noopener noreferrer">
-              <span>{'\u{1F3E8}'}</span>
-              Book on Booking.com
-            </a>
-          )}
-
-          {/* TripAdvisor link */}
-          {place.tripadvisor_url && (
-            <a className="popup-link-btn popup-tripadvisor-btn" href={place.tripadvisor_url} target="_blank" rel="noopener noreferrer">
-              <span>{'\u{1F30D}'}</span>
-              TripAdvisor Reviews
-            </a>
-          )}
+          {/* TikTok Discovery Card — hotels, restaurants, attractions, beaches */}
+          {['hotel', 'resort', 'guest_house', 'restaurant', 'cafe', 'tourist_attraction', 'landmark', 'beach', 'nightlife'].includes(place.category) && (() => {
+            const hashtag = place.name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            const locationTag = place.category === 'beach' ? 'JamaicaBeach' :
+              place.category === 'restaurant' || place.category === 'cafe' ? 'JamaicaFood' :
+              place.category === 'hotel' || place.category === 'resort' || place.category === 'guest_house' ? 'JamaicaHotel' :
+              'JamaicaTravel';
+            const tiktokSearchUrl = place.tiktok_url || `https://www.tiktok.com/search?q=${encodeURIComponent(place.name + ' Jamaica')}`;
+            return (
+              <a
+                className="popup-tiktok-card"
+                href={tiktokSearchUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <div className="tiktok-card-icon">
+                  <span>♪</span>
+                </div>
+                <div className="tiktok-card-body">
+                  <span className="tiktok-card-title">{place.tiktok_url ? 'Watch on TikTok' : 'Discover on TikTok'}</span>
+                  <span className="tiktok-card-tags">#{hashtag} #{locationTag} #Jamaica</span>
+                </div>
+                <div className="tiktok-card-arrow">›</div>
+              </a>
+            );
+          })()}
 
           {/* Google Maps driving directions (from Kingston, Jamaica) */}
           <a

@@ -42,6 +42,27 @@ CREATE TABLE IF NOT EXISTS places (
     fetched_at  TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS flights (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    flight_number   TEXT NOT NULL,
+    airport         TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    direction       TEXT NOT NULL CHECK(direction IN ('arrival', 'departure')),
+    airline         TEXT,
+    aircraft        TEXT,
+    aircraft_reg    TEXT,
+    route           TEXT,
+    route_iata      TEXT,
+    route_country   TEXT,
+    scheduled_time  TEXT,
+    callsign        TEXT,
+    fetched_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_flights_airport ON flights(airport);
+CREATE INDEX IF NOT EXISTS idx_flights_direction ON flights(direction);
+CREATE INDEX IF NOT EXISTS idx_flights_fetched ON flights(fetched_at);
+
 CREATE INDEX IF NOT EXISTS idx_notes_parish ON notes(parish_id);
 CREATE INDEX IF NOT EXISTS idx_features_parish ON features(parish_id);
 CREATE INDEX IF NOT EXISTS idx_places_parish ON places(parish_id);

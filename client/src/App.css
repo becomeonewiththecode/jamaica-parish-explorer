@@ -526,6 +526,181 @@
   background: rgba(255, 235, 59, 0.12);
 }
 
+/* Flight arrival/departure icon colors */
+.flight-icon-arrival {
+  color: #4caf50;
+}
+
+.flight-icon-departure {
+  color: #ff9800;
+}
+
+/* Airport flight count markers */
+.flight-count-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.flight-count-inner {
+  display: flex;
+  gap: 6px;
+  background: rgba(10, 22, 40, 0.9);
+  border: 1px solid #ffeb3b;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.flight-count-arr {
+  color: #4caf50;
+}
+
+.flight-count-dep {
+  color: #ff9800;
+}
+
+/* Flight board panel */
+.flight-board {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 420px;
+  max-height: 480px;
+  background: rgba(10, 22, 40, 0.96);
+  backdrop-filter: blur(12px);
+  border: 1px solid #1e3a5f;
+  border-radius: 16px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.flight-board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #1e3a5f;
+  color: #ffeb3b;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.flight-board-header button {
+  background: none;
+  border: none;
+  color: #5a7a9a;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.flight-board-header button:hover {
+  color: #fff;
+}
+
+.flight-board-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #1e3a5f;
+}
+
+.flight-board-tab {
+  flex: 1;
+  text-align: center;
+  padding: 8px 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #5a7a9a;
+}
+
+.flight-board-tab-arr {
+  color: #4caf50;
+}
+
+.flight-board-tab-dep {
+  color: #ff9800;
+}
+
+.flight-board-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.flight-board-section {
+  padding: 6px 16px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #5a7a9a;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid rgba(30, 58, 95, 0.5);
+}
+
+.flight-board-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 50px 80px;
+  gap: 8px;
+  padding: 6px 16px;
+  font-size: 0.7rem;
+  color: #c0d0e0;
+  border-bottom: 1px solid rgba(30, 58, 95, 0.3);
+  align-items: center;
+}
+
+.flight-board-row:hover {
+  background: rgba(255, 235, 59, 0.04);
+}
+
+.fb-flight {
+  font-weight: 700;
+  color: #ffeb3b;
+}
+
+.fb-route {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fb-time {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.fb-status {
+  text-align: right;
+  font-weight: 600;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+}
+
+.fb-status-arrived,
+.fb-status-landing {
+  color: #4caf50;
+}
+
+.fb-status-departed,
+.fb-status-enroute {
+  color: #ff9800;
+}
+
+.fb-status-expected,
+.fb-status-scheduled {
+  color: #5a7a9a;
+}
+
+.fb-status-cancelled,
+.fb-status-diverted {
+  color: #f44336;
+}
+
 .zoom-level-control {
   position: fixed;
   top: 18px;
@@ -1033,6 +1208,21 @@
   overflow: hidden;
 }
 
+.place-list-links {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.place-list-link-icon {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.place-list-link-dim {
+  opacity: 0.35;
+}
+
 /* PLACE POPUP */
 .place-popup {
   position: fixed;
@@ -1234,32 +1424,104 @@
   color: #f5d060;
 }
 
-.popup-tiktok-btn {
+/* Social icons row */
+.popup-social-row {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.popup-social-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  text-decoration: none;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.popup-social-tiktok:hover {
+  background: rgba(254, 44, 85, 0.2);
+  border-color: #fe2c55;
+}
+.popup-social-instagram:hover {
+  background: rgba(225, 48, 108, 0.2);
+  border-color: #e1306c;
+}
+.popup-social-booking:hover {
+  background: rgba(0, 53, 128, 0.3);
+  border-color: #003580;
+}
+.popup-social-tripadvisor:hover {
+  background: rgba(0, 170, 108, 0.2);
+  border-color: #00aa6c;
+}
+
+/* TikTok discovery card */
+.popup-tiktok-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin: 6px 0;
+  background: linear-gradient(135deg, rgba(254, 44, 85, 0.12), rgba(37, 244, 238, 0.08));
+  border: 1px solid rgba(254, 44, 85, 0.25);
+  border-radius: 10px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.popup-tiktok-card:hover {
+  background: linear-gradient(135deg, rgba(254, 44, 85, 0.22), rgba(37, 244, 238, 0.15));
+  border-color: #fe2c55;
+}
+
+.tiktok-card-icon {
+  width: 32px;
+  height: 32px;
+  background: #fe2c55;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.tiktok-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tiktok-card-title {
+  display: block;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.tiktok-card-tags {
+  display: block;
+  color: #25f4ee;
+  font-size: 0.62rem;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tiktok-card-arrow {
   color: #fe2c55;
-}
-.popup-tiktok-btn:hover {
-  color: #ff5c7c;
-}
-
-.popup-instagram-btn {
-  color: #e1306c;
-}
-.popup-instagram-btn:hover {
-  color: #e85a8a;
-}
-
-.popup-booking-btn {
-  color: #003580;
-}
-.popup-booking-btn:hover {
-  color: #1a5296;
-}
-
-.popup-tripadvisor-btn {
-  color: #00aa6c;
-}
-.popup-tripadvisor-btn:hover {
-  color: #2bc48a;
+  font-size: 1.2rem;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .popup-description {
@@ -1718,4 +1980,11 @@
   }
 
   .map-header h1 { font-size: 1.2rem; }
+
+  .flight-board {
+    width: calc(100% - 24px);
+    right: 12px;
+    bottom: 12px;
+    max-height: 360px;
+  }
 }
