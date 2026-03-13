@@ -42,6 +42,8 @@ const categoryStyles = {
   restaurant: { color: '#ff9800', label: 'Restaurants', icon: '🍽' },
   cafe: { color: '#795548', label: 'Cafes', icon: '☕' },
   hotel: { color: '#2196f3', label: 'Hotels', icon: '🏨' },
+  guest_house: { color: '#5c6bc0', label: 'Guest Houses', icon: '🏡' },
+  resort: { color: '#0288d1', label: 'Resorts', icon: '🌴' },
   hospital: { color: '#f44336', label: 'Hospitals', icon: '🏥' },
   school: { color: '#607d8b', label: 'Schools', icon: '🎓' },
   beach: { color: '#00bcd4', label: 'Beaches', icon: '🏖' },
@@ -330,31 +332,58 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
         )}
 
         {/* Category filters when parish is selected */}
-        {activeSlug && availableCategories.length > 0 && (
-          <div className="zoom-filters">
-            <button
-              className={`category-btn ${activeCategories.size === 0 ? 'active' : ''}`}
-              onClick={() => setActiveCategories(new Set())}
-            >
-              All ({parishPlaces ? parishPlaces.length : 0})
-            </button>
-            {availableCategories.map(({ category, count }) => {
-              const style = categoryStyles[category] || { color: '#fff', label: category };
-              const isActive = activeCategories.has(category);
-              return (
-                <button
-                  key={category}
-                  className={`category-btn ${isActive ? 'active' : ''}`}
-                  style={{ '--cat-color': style.color }}
-                  onClick={() => toggleCategory(category)}
+        {activeSlug && availableCategories.length > 0 && (() => {
+          const prominent = ['hotel', 'guest_house', 'resort', 'beach', 'car_rental', 'nightlife'];
+          const prominentCats = prominent.filter(c => availableCategories.some(a => a.category === c));
+          const otherCats = availableCategories.filter(a => !prominent.includes(a.category));
+          const activeCat = activeCategories.size === 1 ? [...activeCategories][0] : '';
+          return (
+            <div className="zoom-filters">
+              <button
+                className={`category-btn ${activeCategories.size === 0 ? 'active' : ''}`}
+                onClick={() => setActiveCategories(new Set())}
+              >
+                All ({parishPlaces ? parishPlaces.length : 0})
+              </button>
+              {prominentCats.map(cat => {
+                const style = categoryStyles[cat] || { color: '#fff', label: cat };
+                const info = availableCategories.find(a => a.category === cat);
+                const isActive = activeCategories.has(cat);
+                return (
+                  <button
+                    key={cat}
+                    className={`category-btn category-btn-prominent ${isActive ? 'active' : ''}`}
+                    style={{ '--cat-color': style.color }}
+                    onClick={() => setActiveCategories(isActive ? new Set() : new Set([cat]))}
+                  >
+                    <span className="cat-dot" />
+                    {style.label} ({info.count})
+                  </button>
+                );
+              })}
+              {otherCats.length > 0 && (
+                <select
+                  className="category-more-select"
+                  value={prominent.includes(activeCat) ? '' : activeCat}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setActiveCategories(val ? new Set([val]) : new Set());
+                  }}
                 >
-                  <span className="cat-dot" />
-                  {style.label} ({count})
-                </button>
-              );
-            })}
-          </div>
-        )}
+                  <option value="">More categories...</option>
+                  {otherCats.map(({ category, count }) => {
+                    const style = categoryStyles[category] || { color: '#fff', label: category };
+                    return (
+                      <option key={category} value={category}>
+                        {style.icon} {style.label} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Leaflet Map */}

@@ -5,6 +5,7 @@ import { useDraggable } from '../hooks/useDraggable';
 const categoryLabels = {
   tourist_attraction: 'Attraction', landmark: 'Landmark',
   restaurant: 'Restaurant', cafe: 'Cafe', hotel: 'Hotel',
+  guest_house: 'Guest House', resort: 'Resort',
   hospital: 'Hospital', school: 'School', beach: 'Beach',
   place_of_worship: 'Place of Worship', bank: 'Bank',
   gas_station: 'Gas Station', park: 'Park',
@@ -16,6 +17,7 @@ const categoryLabels = {
 const categoryIcons = {
   tourist_attraction: '\u{1F3DB}', landmark: '\u{1F3F0}',
   restaurant: '\u{1F37D}', cafe: '\u{2615}', hotel: '\u{1F3E8}',
+  guest_house: '\u{1F3E1}', resort: '\u{1F334}',
   hospital: '\u{1F3E5}', school: '\u{1F393}', beach: '\u{1F3D6}',
   place_of_worship: '\u{26EA}', bank: '\u{1F3E6}',
   gas_station: '\u{26FD}', park: '\u{1F333}',
@@ -195,7 +197,7 @@ function PlacePopup({ place, onClose, anchorPos }) {
 
   if (!place) return null;
 
-  const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lon}&travelmode=driving`;
+  const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=Kingston,+Jamaica&destination=${place.lat},${place.lon}&travelmode=driving`;
   const categoryLabel = categoryLabels[place.category] || place.category;
   const categoryIcon = categoryIcons[place.category] || '\u{1F4CD}';
 
@@ -286,7 +288,17 @@ function PlacePopup({ place, onClose, anchorPos }) {
 
           {/* Menu link for restaurants/cafes */}
           {(place.category === 'restaurant' || place.category === 'cafe') && (
-            place.website ? (
+            place.menu_url ? (
+              <a
+                className="popup-link-btn popup-menu-btn"
+                href={place.menu_url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span>{'\u{1F4CB}'}</span>
+                View Menu
+              </a>
+            ) : place.website ? (
               <a
                 className="popup-link-btn popup-menu-btn"
                 href={place.website.replace(/\/$/, '') + '/menu'}
@@ -309,7 +321,15 @@ function PlacePopup({ place, onClose, anchorPos }) {
             )
           )}
 
-          {/* Google Maps driving link */}
+          {/* TikTok link */}
+          {place.tiktok_url && (
+            <a className="popup-link-btn popup-tiktok-btn" href={place.tiktok_url} target="_blank" rel="noopener noreferrer">
+              <span>{'\u{1F3B5}'}</span>
+              TikTok
+            </a>
+          )}
+
+          {/* Google Maps driving directions (from Kingston, Jamaica) */}
           <a
             className="popup-directions-btn"
             href={googleMapsUrl}

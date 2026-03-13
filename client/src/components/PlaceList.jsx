@@ -4,6 +4,7 @@ import { fetchWebsiteImage } from '../api/parishes';
 const categoryLabels = {
   tourist_attraction: 'Attraction', landmark: 'Landmark',
   restaurant: 'Restaurant', cafe: 'Cafe', hotel: 'Hotel',
+  guest_house: 'Guest House', resort: 'Resort',
   hospital: 'Hospital', school: 'School', beach: 'Beach',
   place_of_worship: 'Place of Worship', bank: 'Bank',
   gas_station: 'Gas Station', park: 'Park',
@@ -15,6 +16,7 @@ const categoryLabels = {
 const categoryIcons = {
   tourist_attraction: '\u{1F3DB}', landmark: '\u{1F3F0}',
   restaurant: '\u{1F37D}', cafe: '\u{2615}', hotel: '\u{1F3E8}',
+  guest_house: '\u{1F3E1}', resort: '\u{1F334}',
   hospital: '\u{1F3E5}', school: '\u{1F393}', beach: '\u{1F3D6}',
   place_of_worship: '\u{26EA}', bank: '\u{1F3E6}',
   gas_station: '\u{26FD}', park: '\u{1F333}',

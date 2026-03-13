@@ -8,6 +8,8 @@ const categoryStyles = {
   restaurant: { color: '#ff9800', label: 'Restaurants', icon: '\u{1F37D}' },
   cafe: { color: '#795548', label: 'Cafes', icon: '\u{2615}' },
   hotel: { color: '#2196f3', label: 'Hotels', icon: '\u{1F3E8}' },
+  guest_house: { color: '#5c6bc0', label: 'Guest Houses', icon: '\u{1F3E1}' },
+  resort: { color: '#0288d1', label: 'Resorts', icon: '\u{1F334}' },
   hospital: { color: '#f44336', label: 'Hospitals', icon: '\u{1F3E5}' },
   school: { color: '#607d8b', label: 'Schools', icon: '\u{1F393}' },
   beach: { color: '#00bcd4', label: 'Beaches', icon: '\u{1F3D6}' },

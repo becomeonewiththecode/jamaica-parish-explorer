@@ -586,6 +586,55 @@
 .category-btn:hover { border-color: var(--cat-color, #5a8ab5); color: #ccc; }
 .category-btn.active { border-color: var(--cat-color, #f0c040); color: #ddd; background: rgba(255,255,255,0.08); }
 
+.category-btn-prominent {
+  background: rgba(240, 192, 64, 0.10);
+  border-color: rgba(240, 192, 64, 0.3);
+  color: #f0c040;
+  font-weight: 600;
+}
+.category-btn-prominent:hover {
+  background: rgba(240, 192, 64, 0.22);
+  border-color: #f0c040;
+  color: #fff;
+}
+.category-btn-prominent.active {
+  background: rgba(240, 192, 64, 0.32);
+  border-color: #f0c040;
+  color: #fff;
+  box-shadow: 0 0 6px rgba(240, 192, 64, 0.3);
+}
+
+.category-more-select {
+  padding: 3px 24px 3px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #1a3050;
+  border-radius: 14px;
+  color: #5a7a9a;
+  font-size: 0.68rem;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%235a7a9a' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  transition: all 0.2s ease;
+}
+.category-more-select:hover {
+  border-color: #5a8ab5;
+  color: #ccc;
+}
+.category-more-select:focus {
+  outline: none;
+  border-color: #f0c040;
+  color: #ddd;
+}
+.category-more-select option {
+  background: #0f2240;
+  color: #e0e0e0;
+  padding: 4px;
+}
+
 .cat-dot {
   width: 6px;
   height: 6px;
@@ -1020,6 +1069,13 @@
 
 .popup-menu-btn:hover {
   color: #f5d060;
+}
+
+.popup-tiktok-btn {
+  color: #fe2c55;
+}
+.popup-tiktok-btn:hover {
+  color: #ff5c7c;
 }
 
 .popup-description {
