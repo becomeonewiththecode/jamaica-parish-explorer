@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchParish, fetchNotes, fetchPlaces, addNote as apiAddNote } from '../api/parishes';
+import { fetchParish, fetchNotes, fetchPlaces, fetchAirports, addNote as apiAddNote } from '../api/parishes';
 
 export function useParish(slug) {
   const [parish, setParish] = useState(null);
@@ -16,11 +16,23 @@ export function useParish(slug) {
     }
 
     setLoading(true);
-    Promise.all([fetchParish(slug), fetchNotes(slug), fetchPlaces(slug)])
-      .then(([p, n, pl]) => {
+    Promise.all([fetchParish(slug), fetchNotes(slug), fetchPlaces(slug), fetchAirports()])
+      .then(([p, n, pl, airports]) => {
+        // Inject airports in this parish as place-like objects
+        const parishAirports = (airports || [])
+          .filter(a => a.parish_slug === slug)
+          .map(a => ({
+            id: `airport-${a.code}`,
+            name: a.name,
+            category: 'airport',
+            lat: a.lat,
+            lon: a.lon,
+            website: a.website,
+            _airportData: a,
+          }));
         setParish(p);
         setNotes(n);
-        setPlaces(pl);
+        setPlaces([...parishAirports, ...pl]);
       })
       .catch(console.error)
       .finally(() => setLoading(false));

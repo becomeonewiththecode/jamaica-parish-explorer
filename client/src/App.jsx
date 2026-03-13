@@ -71,6 +71,7 @@ function App() {
         selectedAirport={selectedAirport}
         onClose={() => { setSelectedSlug(null); setSelectedAirport(null); }}
         onSelectParish={handleParishSelect}
+        onAirportSelect={handleAirportSelect}
         activeCategories={activeCategories}
         onCategoriesChange={setActiveCategories}
         filteredPlaces={filteredPlaces}

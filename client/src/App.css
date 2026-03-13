@@ -2070,6 +2070,67 @@
   border-color: #00e5ff;
 }
 
+.airport-directions-section {
+  margin-bottom: 14px;
+}
+
+.airport-directions-form {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.airport-directions-label {
+  font-size: 0.68rem;
+  color: #5a7a9a;
+}
+
+.airport-directions-input {
+  padding: 8px 12px;
+  background: rgba(30, 58, 95, 0.4);
+  border: 1px solid #1e3a5f;
+  border-radius: 8px;
+  color: #e0e8f0;
+  font-size: 0.75rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.airport-directions-input::placeholder {
+  color: #3a5a7a;
+}
+
+.airport-directions-input:focus {
+  border-color: #00bcd4;
+}
+
+.airport-directions-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  background: rgba(0, 188, 212, 0.15);
+  border: 1px solid rgba(0, 188, 212, 0.3);
+  border-radius: 8px;
+  color: #00e5ff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.airport-directions-go:hover {
+  background: rgba(0, 188, 212, 0.25);
+  border-color: #00e5ff;
+}
+
+.airport-directions-go.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .airport-detail-history {
   margin-bottom: 14px;
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchParishes } from '../api/parishes';
+import { mapAirport } from '../data/airports';
 import ParishDetail from './ParishDetail';
 import PlaceList, { categoryLabels } from './PlaceList';
 import PlacePopup from './PlacePopup';
@@ -16,9 +17,10 @@ const categoryIcons = {
   nightlife: '\u{1F378}', shopping: '\u{1F6CD}',
   car_rental: '\u{1F697}',
   stadium: '\u{1F3DF}',
+  airport: '\u{2708}',
 };
 
-function InfoSection({ parish, notes, loading, addNote, selectedSlug, selectedAirport, onClose, onSelectParish, activeCategories, onCategoriesChange, filteredPlaces, allPlaces, onPlaceSelect }) {
+function InfoSection({ parish, notes, loading, addNote, selectedSlug, selectedAirport, onClose, onSelectParish, activeCategories, onCategoriesChange, filteredPlaces, allPlaces, onPlaceSelect, onAirportSelect }) {
   const [visible, setVisible] = useState(false);
   const [displayedSlug, setDisplayedSlug] = useState(null);
   const [selectedPlace, setSelectedPlace] = useState(null);
@@ -78,6 +80,11 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, selectedAi
     : 'Selected Places';
 
   const handlePlaceSelect = (place) => {
+    if (place.category === 'airport' && place._airportData) {
+      const fullAirport = mapAirport(place._airportData);
+      if (onAirportSelect) onAirportSelect(fullAirport);
+      return;
+    }
     setSelectedPlace(place);
     if (onPlaceSelect) onPlaceSelect(place);
   };

@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchFlights } from '../api/parishes';
 
 function AirportDetail({ airport, onClose }) {
   const [imgError, setImgError] = useState(false);
   const [flightData, setFlightData] = useState(null);
   const [activeTab, setActiveTab] = useState('arrivals');
+  const [showDirections, setShowDirections] = useState(false);
+  const [originInput, setOriginInput] = useState('');
+  const originRef = useRef(null);
 
   useEffect(() => {
     fetchFlights()
@@ -106,12 +109,48 @@ function AirportDetail({ airport, onClose }) {
       </div>
 
       {/* Directions */}
-      <a className="airport-detail-directions" href={mapsUrl} target="_blank" rel="noopener noreferrer">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polygon points="3 11 22 2 13 21 11 13 3 11" />
-        </svg>
-        Get Directions
-      </a>
+      <div className="airport-directions-section">
+        <button
+          className="airport-detail-directions"
+          onClick={() => {
+            setShowDirections(!showDirections);
+            if (!showDirections) setTimeout(() => originRef.current?.focus(), 100);
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11" />
+          </svg>
+          Get Directions
+        </button>
+        {showDirections && (
+          <div className="airport-directions-form">
+            <label className="airport-directions-label">Starting location in Jamaica</label>
+            <input
+              ref={originRef}
+              className="airport-directions-input"
+              type="text"
+              placeholder="e.g. Montego Bay, Half Way Tree, Ocho Rios"
+              value={originInput}
+              onChange={(e) => setOriginInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && originInput.trim()) {
+                  const origin = encodeURIComponent(originInput.trim() + ', Jamaica');
+                  window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${airport.lat},${airport.lon}&travelmode=driving`, '_blank');
+                }
+              }}
+            />
+            <a
+              className={`airport-directions-go${originInput.trim() ? '' : ' disabled'}`}
+              href={originInput.trim() ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originInput.trim() + ', Jamaica')}&destination=${airport.lat},${airport.lon}&travelmode=driving` : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => { if (!originInput.trim()) e.preventDefault(); }}
+            >
+              Open in Google Maps
+            </a>
+          </div>
+        )}
+      </div>
 
       {/* Historical facts */}
       {airport.historicalFacts && airport.historicalFacts.length > 0 && (

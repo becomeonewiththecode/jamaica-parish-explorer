@@ -29,9 +29,8 @@ function buildLiveIcon(heading) {
   });
 }
 
-function FlightTracker({ visible }) {
+function FlightTracker({ visible, onAirportSelect, airports }) {
   const [data, setData] = useState(null);
-  const [showBoard, setShowBoard] = useState(false);
   const map = useMap();
 
   const refresh = useCallback(async () => {
@@ -52,28 +51,25 @@ function FlightTracker({ visible }) {
 
   const flights = data.flights;
   const source = data.source;
-  const airports = data.airports || [];
+  const flightAirports = data.airports || [];
 
   // For AeroDataBox data: show markers at airport positions
   if (source === 'aerodatabox') {
     // Group flights by airport
     const airportFlights = {};
-    for (const ap of airports) {
+    for (const ap of flightAirports) {
       airportFlights[ap.icao] = { ...ap, arrivals: 0, departures: 0 };
     }
     for (const f of flights) {
       if (f.type === 'arrival' && f.destIata) {
-        const ap = airports.find(a => a.iata === f.destIata);
+        const ap = flightAirports.find(a => a.iata === f.destIata);
         if (ap && airportFlights[ap.icao]) airportFlights[ap.icao].arrivals++;
       }
       if (f.type === 'departure' && f.originIata) {
-        const ap = airports.find(a => a.iata === f.originIata);
+        const ap = flightAirports.find(a => a.iata === f.originIata);
         if (ap && airportFlights[ap.icao]) airportFlights[ap.icao].departures++;
       }
     }
-
-    const arrivals = flights.filter(f => f.type === 'arrival');
-    const departures = flights.filter(f => f.type === 'departure');
 
     return (
       <>
@@ -92,58 +88,21 @@ function FlightTracker({ visible }) {
               position={[ap.lat, ap.lon]}
               icon={icon}
               zIndexOffset={900}
-              eventHandlers={{ click: () => setShowBoard(!showBoard) }}
+              eventHandlers={{ click: () => {
+                // Find the full airport object to open in InfoSection
+                const fullAirport = airports?.find(a => a.icao === ap.icao || a.code === ap.iata);
+                if (fullAirport && onAirportSelect) onAirportSelect(fullAirport);
+              }}}
             >
               <Tooltip direction="top" offset={[0, -16]} className="flight-leaflet-tooltip">
                 <strong>{ap.name}</strong><br />
                 Arrivals: {ap.arrivals} | Departures: {ap.departures}<br />
-                <em>Click for flight board</em>
+                <em>Click for flight info</em>
               </Tooltip>
             </Marker>
           );
         })}
 
-        {/* Flight info board */}
-        {showBoard && (
-          <div className="flight-board" onClick={(e) => e.stopPropagation()}>
-            <div className="flight-board-header">
-              <span>✈ Jamaica Flights</span>
-              <button onClick={() => setShowBoard(false)}>&times;</button>
-            </div>
-            <div className="flight-board-tabs">
-              <span className="flight-board-tab flight-board-tab-arr">Arrivals ({arrivals.length})</span>
-              <span className="flight-board-tab flight-board-tab-dep">Departures ({departures.length})</span>
-            </div>
-            <div className="flight-board-list">
-              {arrivals.length > 0 && (
-                <>
-                  <div className="flight-board-section">ARRIVALS</div>
-                  {arrivals.map((f, i) => (
-                    <div key={`arr-${i}`} className="flight-board-row">
-                      <span className="fb-flight">{f.flightNumber}</span>
-                      <span className="fb-route">{f.from} ({f.fromIata})</span>
-                      <span className="fb-time">{f.scheduledTime?.slice(11, 16) || '--:--'}</span>
-                      <span className={`fb-status fb-status-${f.status?.toLowerCase().replace(/\s/g, '')}`}>{f.status}</span>
-                    </div>
-                  ))}
-                </>
-              )}
-              {departures.length > 0 && (
-                <>
-                  <div className="flight-board-section">DEPARTURES</div>
-                  {departures.map((f, i) => (
-                    <div key={`dep-${i}`} className="flight-board-row">
-                      <span className="fb-flight">{f.flightNumber}</span>
-                      <span className="fb-route">{f.to} ({f.toIata})</span>
-                      <span className="fb-time">{f.scheduledTime?.slice(11, 16) || '--:--'}</span>
-                      <span className={`fb-status fb-status-${f.status?.toLowerCase().replace(/\s/g, '')}`}>{f.status}</span>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </>
     );
   }

@@ -11,6 +11,7 @@ const categoryLabels = {
   nightlife: 'Nightlife', shopping: 'Shopping',
   car_rental: 'Car Rental',
   stadium: 'Stadium',
+  airport: 'Airport',
 };
 
 const categoryIcons = {
@@ -23,6 +24,7 @@ const categoryIcons = {
   nightlife: '\u{1F378}', shopping: '\u{1F6CD}',
   car_rental: '\u{1F697}',
   stadium: '\u{1F3DF}',
+  airport: '\u{2708}',
 };
 
 // Cache for fetched images

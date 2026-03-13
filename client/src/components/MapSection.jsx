@@ -575,7 +575,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
           )}
 
           {/* Live flight tracking */}
-          <FlightTracker visible={showFlights} />
+          <FlightTracker visible={showFlights} onAirportSelect={onAirportSelect} airports={airports} />
         </MapContainer>
       </div>
 
