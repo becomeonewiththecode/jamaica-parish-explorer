@@ -10,6 +10,7 @@ const categoryLabels = {
   gas_station: 'Gas Station', park: 'Park',
   nightlife: 'Nightlife', shopping: 'Shopping',
   car_rental: 'Car Rental',
+  stadium: 'Stadium',
 };
 
 const categoryIcons = {
@@ -20,30 +21,49 @@ const categoryIcons = {
   gas_station: '\u{26FD}', park: '\u{1F333}',
   nightlife: '\u{1F378}', shopping: '\u{1F6CD}',
   car_rental: '\u{1F697}',
+  stadium: '\u{1F3DF}',
 };
 
 // Global cache to avoid re-fetching images and descriptions
 const placeCache = new Map();
 
 // Wikipedia exact page match — returns both image and description
+// Prioritize Jamaica-specific results to avoid wrong-country matches
 async function tryWikipediaExact(name, signal) {
+  const base = name.replace(/\s+/g, '_');
+  // Try Jamaica-specific variants first
   const variants = [
-    name.replace(/\s+/g, '_'),
-    name.replace(/\s+/g, '_') + ',_Jamaica',
+    base + ',_Jamaica',
+    base + '_(Jamaica)',
+    base + ',_Kingston',
+    base,
   ];
+
   for (const title of variants) {
-    const res = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
-      { signal }
-    );
-    if (!res.ok) continue;
-    const data = await res.json();
-    const image = data.thumbnail && data.thumbnail.source
-      ? data.thumbnail.source.replace(/\/\d+px-/, '/400px-')
-      : null;
-    const description = data.extract || null;
-    if (image || description) {
+    try {
+      const res = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+        { signal }
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+      const image = data.thumbnail && data.thumbnail.source
+        ? data.thumbnail.source.replace(/\/\d+px-/, '/400px-')
+        : null;
+      const description = data.extract || null;
+      if (!image && !description) continue;
+
+      // For the generic (non-Jamaica) variant, verify the content is about Jamaica
+      if (title === base && description) {
+        const lower = description.toLowerCase();
+        const isJamaica = lower.includes('jamaica') || lower.includes('kingston') ||
+          lower.includes('caribbean') || lower.includes('west indies');
+        if (!isJamaica) continue; // Skip — likely a different country
+      }
+
       return { image, description };
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
     }
   }
   return null;
@@ -75,7 +95,7 @@ function satelliteTileUrl(lat, lon) {
   return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${y}/${x}`;
 }
 
-function PlacePopup({ place, onClose }) {
+function PlacePopup({ place, onClose, anchorPos }) {
   const [imageUrl, setImageUrl] = useState(null);
   const [imageType, setImageType] = useState(null);
   const [description, setDescription] = useState(null);
@@ -181,8 +201,11 @@ function PlacePopup({ place, onClose }) {
 
   return (
     <div
-      className="place-popup"
-      style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
+      className={`place-popup${anchorPos ? ' place-popup-anchored' : ''}`}
+      style={anchorPos
+        ? { left: anchorPos.x + 'px', top: anchorPos.y + 'px', transform: `translate(${pos.x}px, ${pos.y}px)` }
+        : { transform: `translate(${pos.x}px, ${pos.y}px)` }
+      }
       onDoubleClick={onClose}
     >
       <div className="drag-handle" onMouseDown={onMouseDown}>

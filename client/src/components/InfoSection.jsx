@@ -1,11 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchParishes } from '../api/parishes';
 import ParishDetail from './ParishDetail';
 import PlaceList, { categoryLabels } from './PlaceList';
 import PlacePopup from './PlacePopup';
 import { useDraggable } from '../hooks/useDraggable';
 
-function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, onSelectParish, activeCategories, filteredPlaces, allPlaces, onPlaceSelect }) {
+const categoryIcons = {
+  tourist_attraction: '\u{1F3DB}', landmark: '\u{1F3F0}',
+  restaurant: '\u{1F37D}', cafe: '\u{2615}', hotel: '\u{1F3E8}',
+  hospital: '\u{1F3E5}', school: '\u{1F393}', beach: '\u{1F3D6}',
+  place_of_worship: '\u{26EA}', bank: '\u{1F3E6}',
+  gas_station: '\u{26FD}', park: '\u{1F333}',
+  nightlife: '\u{1F378}', shopping: '\u{1F6CD}',
+  car_rental: '\u{1F697}',
+  stadium: '\u{1F3DF}',
+};
+
+function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, onSelectParish, activeCategories, onCategoriesChange, filteredPlaces, allPlaces, onPlaceSelect }) {
   const [visible, setVisible] = useState(false);
   const [displayedSlug, setDisplayedSlug] = useState(null);
   const [selectedPlace, setSelectedPlace] = useState(null);
@@ -38,6 +49,23 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, o
     setSelectedPlace(null);
   }, [activeCategories]);
 
+  // Compute available categories from places in this parish
+  const availableCategories = useMemo(() => {
+    if (!allPlaces || !allPlaces.length) return [];
+    const counts = {};
+    for (const p of allPlaces) {
+      counts[p.category] = (counts[p.category] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([cat, count]) => ({
+        key: cat,
+        label: categoryLabels[cat] || cat,
+        icon: categoryIcons[cat] || '\u{1F4CD}',
+        count,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allPlaces]);
+
   if (!selectedSlug && !displayedSlug) return null;
 
   // Determine the category label for the heading
@@ -56,6 +84,18 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, o
     setShowParishPicker(false);
     if (onSelectParish) onSelectParish(slug);
   };
+
+  const handleCategorySelect = (catKey) => {
+    if (onCategoriesChange) {
+      if (catKey === '') {
+        onCategoriesChange(new Set());
+      } else {
+        onCategoriesChange(new Set([catKey]));
+      }
+    }
+  };
+
+  const selectedCat = activeCatList.length === 1 ? activeCatList[0] : '';
 
   return (
     <>
@@ -81,6 +121,20 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, onClose, o
           >
             <span>&#x25BE;</span> Switch Parish
           </button>
+          {!loading && availableCategories.length > 0 && (
+            <select
+              className="info-category-select"
+              value={selectedCat}
+              onChange={(e) => handleCategorySelect(e.target.value)}
+            >
+              <option value="">-- Items --</option>
+              {availableCategories.map(c => (
+                <option key={c.key} value={c.key}>
+                  {c.icon} {c.label} ({c.count})
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Parish picker dropdown */}

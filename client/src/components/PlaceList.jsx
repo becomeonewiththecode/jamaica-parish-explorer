@@ -9,6 +9,7 @@ const categoryLabels = {
   gas_station: 'Gas Station', park: 'Park',
   nightlife: 'Nightlife', shopping: 'Shopping',
   car_rental: 'Car Rental',
+  stadium: 'Stadium',
 };
 
 const categoryIcons = {
@@ -19,6 +20,7 @@ const categoryIcons = {
   gas_station: '\u{26FD}', park: '\u{1F333}',
   nightlife: '\u{1F378}', shopping: '\u{1F6CD}',
   car_rental: '\u{1F697}',
+  stadium: '\u{1F3DF}',
 };
 
 // Cache for fetched images
@@ -42,18 +44,34 @@ function PlaceListItem({ place, onSelect }) {
       return;
     }
 
-    // Try Wikipedia for an image
+    // Try Wikipedia for an image — Jamaica-specific first
     let cancelled = false;
-    const title = place.name.replace(/\s+/g, '_');
-    fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled) return;
-        const img = data?.thumbnail?.source?.replace(/\/\d+px-/, '/200px-') || null;
-        imageCache.set(cacheKey, img);
-        setImageUrl(img);
-      })
-      .catch(() => {});
+    const base = place.name.replace(/\s+/g, '_');
+    const wikiVariants = [base + ',_Jamaica', base + '_(Jamaica)', base];
+
+    async function tryWiki() {
+      for (const title of wikiVariants) {
+        try {
+          const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (cancelled) return;
+          // For generic name, verify it's about Jamaica
+          if (title === base && data.extract) {
+            const lower = data.extract.toLowerCase();
+            if (!lower.includes('jamaica') && !lower.includes('kingston') && !lower.includes('caribbean') && !lower.includes('west indies')) continue;
+          }
+          const img = data?.thumbnail?.source?.replace(/\/\d+px-/, '/200px-') || null;
+          if (img) {
+            imageCache.set(cacheKey, img);
+            if (!cancelled) setImageUrl(img);
+            return;
+          }
+        } catch { /* ignore */ }
+      }
+      imageCache.set(cacheKey, null);
+    }
+    tryWiki();
 
     return () => { cancelled = true; };
   }, [place]);

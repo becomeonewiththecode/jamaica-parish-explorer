@@ -598,6 +598,7 @@
 /* INFO NAV BAR */
 .info-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 10px;
   flex-shrink: 0;
@@ -669,6 +670,42 @@
   border-color: #f0c040;
   color: #f0c040;
   font-weight: 600;
+}
+
+/* CATEGORY DROPDOWN */
+.info-category-select {
+  padding: 6px 28px 6px 14px;
+  background: rgba(240, 192, 64, 0.1);
+  border: 1px solid rgba(240, 192, 64, 0.35);
+  border-radius: 6px;
+  color: #f0c040;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23f0c040' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: all 0.2s ease;
+}
+
+.info-category-select:hover {
+  background: rgba(240, 192, 64, 0.25);
+  border-color: #f0c040;
+  color: #fff;
+}
+
+.info-category-select:focus {
+  outline: none;
+  border-color: #f0c040;
+}
+
+.info-category-select option {
+  background: #0f2240;
+  color: #e0e0e0;
+  padding: 6px;
 }
 
 /* INFO CONTEXT HEADER — parish + category indicator */
@@ -790,6 +827,7 @@
   top: 50%;
   right: 16px;
   margin-top: -200px;
+  left: auto;
   background: #0f2240;
   border: 1px solid #1e3a5f;
   border-radius: 12px;
@@ -805,6 +843,18 @@
 @keyframes popup-slide-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+.place-popup-anchored {
+  top: auto;
+  right: auto;
+  margin-top: 0;
+}
+
+.airport-popup-anchored {
+  top: auto;
+  right: auto;
+  margin-top: 0;
 }
 
 .popup-close {

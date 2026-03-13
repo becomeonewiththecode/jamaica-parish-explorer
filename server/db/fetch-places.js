@@ -83,6 +83,8 @@ const queries = [
   { category: 'bank', query: '"amenity"="bank"' },
   { category: 'gas_station', query: '"amenity"="fuel"' },
   { category: 'park', query: '"leisure"="park"' },
+  { category: 'stadium', query: '"leisure"="stadium"' },
+  { category: 'stadium', query: '"leisure"="pitch"["name"]' },
   { category: 'nightlife', query: '"amenity"~"bar|pub|nightclub"' },
   { category: 'shopping', query: '"shop"~"supermarket|mall|department_store|convenience"' },
   { category: 'car_rental', query: '"amenity"="car_rental"' },

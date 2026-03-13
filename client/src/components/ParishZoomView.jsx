@@ -19,6 +19,7 @@ const categoryStyles = {
   shopping: { color: '#ffc107', label: 'Shopping', icon: '\u{1F6CD}' },
   airport: { color: '#00bcd4', label: 'Airport', icon: '✈' },
   car_rental: { color: '#e65100', label: 'Car Rental', icon: '\u{1F697}' },
+  stadium: { color: '#1b5e20', label: 'Stadiums', icon: '\u{1F3DF}' },
 };
 
 const ZOOM_WIDTH = 800;

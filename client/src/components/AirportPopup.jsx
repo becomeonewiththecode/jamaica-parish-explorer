@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
 
-function AirportPopup({ airport, onClose }) {
+function AirportPopup({ airport, onClose, anchorPos }) {
   const [imgError, setImgError] = useState(false);
   const { pos, onMouseDown } = useDraggable();
 
@@ -11,8 +11,11 @@ function AirportPopup({ airport, onClose }) {
 
   return (
     <div
-      className="airport-popup"
-      style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
+      className={`airport-popup${anchorPos ? ' airport-popup-anchored' : ''}`}
+      style={anchorPos
+        ? { left: anchorPos.x + 'px', top: anchorPos.y + 'px', transform: `translate(${pos.x}px, ${pos.y}px)` }
+        : { transform: `translate(${pos.x}px, ${pos.y}px)` }
+      }
       onDoubleClick={onClose}
     >
       <div className="drag-handle" onMouseDown={onMouseDown}>

@@ -52,6 +52,7 @@ const categoryStyles = {
   nightlife: { color: '#ce93d8', label: 'Nightlife', icon: '🍸' },
   shopping: { color: '#ffc107', label: 'Shopping', icon: '🛍' },
   car_rental: { color: '#e65100', label: 'Car Rental', icon: '🚗' },
+  stadium: { color: '#1b5e20', label: 'Stadiums', icon: '🏟' },
 };
 
 // Jamaica bounds — tight to the island
@@ -146,13 +147,74 @@ function FlyToBounds({ bounds, activeSlug }) {
   return null;
 }
 
+function MapRefExporter({ mapRef }) {
+  const map = useMap();
+  useEffect(() => { mapRef.current = map; }, [map, mapRef]);
+  return null;
+}
+
+function ClosePopupOnMove({ onClose }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!onClose) return;
+    map.on('movestart', onClose);
+    return () => { map.off('movestart', onClose); };
+  }, [map, onClose]);
+  return null;
+}
+
 function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey }) {
   const [geojson, setGeojson] = useState(null);
   const [airports, setAirports] = useState([]);
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
+  const [popupPos, setPopupPos] = useState(null);
+  const mapRef = useRef(null);
   const geoJsonRef = useRef(null);
+
+  const getPopupPosition = useCallback((lat, lon) => {
+    const map = mapRef.current;
+    if (!map) return null;
+    const pt = map.latLngToContainerPoint([lat, lon]);
+    const mapEl = map.getContainer();
+    const rect = mapEl.getBoundingClientRect();
+    // Convert to screen coordinates
+    const screenX = rect.left + pt.x;
+    const screenY = rect.top + pt.y;
+    // Position popup to the right of the marker, or above if near the right edge
+    const popupWidth = 240;
+    const popupHeight = 350;
+    let x, y;
+    if (screenX + 40 + popupWidth < window.innerWidth) {
+      x = screenX + 30;
+    } else {
+      x = screenX - popupWidth - 30;
+    }
+    if (screenY - popupHeight / 2 > 0 && screenY + popupHeight / 2 < window.innerHeight) {
+      y = screenY - popupHeight / 2;
+    } else if (screenY - popupHeight / 2 < 0) {
+      y = 10;
+    } else {
+      y = window.innerHeight - popupHeight - 10;
+    }
+    return { x, y };
+  }, []);
+
+  const handlePlaceClick = useCallback((place) => {
+    setPopupPos(getPopupPosition(place.lat, place.lon));
+    setSelectedPlace(place);
+  }, [getPopupPosition]);
+
+  const handleAirportClick = useCallback((airport) => {
+    setPopupPos(getPopupPosition(airport.lat, airport.lon));
+    setSelectedAirport(airport);
+  }, [getPopupPosition]);
+
+  const closeAllPopups = useCallback(() => {
+    setSelectedPlace(null);
+    setSelectedAirport(null);
+  }, []);
 
   useEffect(() => {
     fetch('/jamaica-parishes.geojson')
@@ -312,6 +374,8 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
+          <MapRefExporter mapRef={mapRef} />
+          <ClosePopupOnMove onClose={closeAllPopups} />
           <FlyToBounds bounds={activeBounds} activeSlug={activeSlug} />
           <FlyToPlace place={focusPlace} />
 
@@ -333,7 +397,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
               position={[ap.lat, ap.lon]}
               icon={airportIcon}
               eventHandlers={{
-                click: () => setSelectedAirport(ap),
+                click: () => handleAirportClick(ap),
               }}
             >
               <Tooltip direction="top" offset={[0, -16]} className="airport-leaflet-tooltip">
@@ -358,7 +422,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
                 position={[p.lat, p.lon]}
                 icon={icon}
                 eventHandlers={{
-                  click: () => setSelectedPlace(p),
+                  click: () => handlePlaceClick(p),
                 }}
               >
                 <Tooltip direction="top" offset={[0, -14]} className="place-leaflet-tooltip">
@@ -377,7 +441,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
               eventHandlers={{
                 click: () => {
                   const full = parishPlaces?.find(p => p.id === highlightedPlace.id);
-                  if (full) setSelectedPlace(full);
+                  if (full) handlePlaceClick(full);
                 },
               }}
             >
@@ -410,6 +474,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
         <PlacePopup
           place={selectedPlace}
           onClose={() => setSelectedPlace(null)}
+          anchorPos={popupPos}
         />
       )}
 
@@ -418,6 +483,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
         <AirportPopup
           airport={selectedAirport}
           onClose={() => setSelectedAirport(null)}
+          anchorPos={popupPos}
         />
       )}
     </section>

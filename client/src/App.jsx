@@ -60,6 +60,7 @@ function App() {
         onClose={() => setSelectedSlug(null)}
         onSelectParish={handleParishSelect}
         activeCategories={activeCategories}
+        onCategoriesChange={setActiveCategories}
         filteredPlaces={filteredPlaces}
         allPlaces={places}
         onPlaceSelect={handleInfoPlaceSelect}
