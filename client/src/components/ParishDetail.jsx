@@ -1,4 +1,5 @@
 import NotesPanel from './NotesPanel';
+import ParishMiniMap from './ParishMiniMap';
 
 function ParishDetail({ parish, notes, onAddNote, places, onFeatureClick }) {
 
@@ -20,6 +21,7 @@ function ParishDetail({ parish, notes, onAddNote, places, onFeatureClick }) {
         <h2>{parish.name}</h2>
         <span className="county">{parish.county}</span>
       </div>
+      <ParishMiniMap slug={parish.slug} />
       <div className="stats-grid">
         <div className="stat-card">
           <div className="label">Population</div>
