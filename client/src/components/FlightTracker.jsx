@@ -1,31 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Marker, Tooltip, useMap } from 'react-leaflet';
+import { Marker, Tooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { fetchFlights } from '../api/parishes';
 
-const POLL_INTERVAL = 900000; // 15 minutes (matches server poll schedule)
+const POLL_INTERVAL = 30000; // 30 seconds (matches server live radar poll)
 
-const arrivalIcon = L.divIcon({
-  className: 'flight-leaflet-icon',
-  html: '<div class="flight-icon-inner flight-icon-arrival">✈</div>',
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
-});
-
-const departureIcon = L.divIcon({
-  className: 'flight-leaflet-icon',
-  html: '<div class="flight-icon-inner flight-icon-departure">✈</div>',
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
-});
-
-// For OpenSky live data fallback
-function buildLiveIcon(heading) {
+// Build a rotated plane icon for live aircraft
+function buildLiveIcon(heading, type) {
+  const color = type === 'arrival' ? '#4caf50' : '#ff9800';
   return L.divIcon({
     className: 'flight-leaflet-icon',
-    html: `<div class="flight-icon-inner" style="transform:rotate(${heading || 0}deg)">✈</div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    html: `<div class="flight-icon-inner" style="transform:rotate(${heading || 0}deg);color:${color};font-size:22px">✈</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
   });
 }
 
@@ -50,82 +37,103 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
   if (!visible || !data || !data.flights || data.flights.length === 0) return null;
 
   const flights = data.flights;
-  const source = data.source;
   const flightAirports = data.airports || [];
 
-  // For AeroDataBox data: show markers at airport positions
-  if (source === 'aerodatabox' || source === 'mixed') {
-    // Group flights by airport
-    const airportFlights = {};
-    for (const ap of flightAirports) {
-      airportFlights[ap.icao] = { ...ap, arrivals: 0, departures: 0 };
-    }
-    for (const f of flights) {
-      if (f.type === 'arrival' && f.destIata) {
-        const ap = flightAirports.find(a => a.iata === f.destIata);
-        if (ap && airportFlights[ap.icao]) airportFlights[ap.icao].arrivals++;
-      }
-      if (f.type === 'departure' && f.originIata) {
-        const ap = flightAirports.find(a => a.iata === f.originIata);
-        if (ap && airportFlights[ap.icao]) airportFlights[ap.icao].departures++;
-      }
-    }
+  // Separate scheduled (count badges) and live (plane markers) flights
+  const scheduledFlights = flights.filter(f => f.dataSource === 'scheduled' || (!f.dataSource && f.scheduledTime));
+  const liveFlights = flights.filter(f => (f.dataSource === 'live' || (!f.dataSource && !f.scheduledTime)) && f.lat && f.lon);
 
-    return (
-      <>
-        {/* Airport flight count markers */}
-        {Object.values(airportFlights).map(ap => {
-          if (ap.arrivals === 0 && ap.departures === 0) return null;
-          const icon = L.divIcon({
-            className: 'flight-count-icon',
-            html: `<div class="flight-count-inner"><span class="flight-count-arr">↓${ap.arrivals}</span><span class="flight-count-dep">↑${ap.departures}</span></div>`,
-            iconSize: [52, 24],
-            iconAnchor: [26, -8],
-          });
-          return (
-            <Marker
-              key={`fc-${ap.icao}`}
-              position={[ap.lat, ap.lon]}
-              icon={icon}
-              zIndexOffset={900}
-              eventHandlers={{ click: () => {
-                // Find the full airport object to open in InfoSection
-                const fullAirport = airports?.find(a => a.icao === ap.icao || a.code === ap.iata);
-                if (fullAirport && onAirportSelect) onAirportSelect(fullAirport);
-              }}}
-            >
-              <Tooltip direction="top" offset={[0, -16]} className="flight-leaflet-tooltip">
-                <strong>{ap.name}</strong><br />
-                Arrivals: {ap.arrivals} | Departures: {ap.departures}<br />
-                <em>Click for flight info</em>
-              </Tooltip>
-            </Marker>
-          );
-        })}
-
-      </>
-    );
+  // Group scheduled flights by airport for count badges
+  const airportCounts = {};
+  for (const ap of flightAirports) {
+    airportCounts[ap.icao] = { ...ap, arrivals: 0, departures: 0 };
+  }
+  for (const f of scheduledFlights) {
+    if (f.type === 'arrival' && f.destIata) {
+      const ap = flightAirports.find(a => a.iata === f.destIata);
+      if (ap && airportCounts[ap.icao]) airportCounts[ap.icao].arrivals++;
+    }
+    if (f.type === 'departure' && f.originIata) {
+      const ap = flightAirports.find(a => a.iata === f.originIata);
+      if (ap && airportCounts[ap.icao]) airportCounts[ap.icao].departures++;
+    }
   }
 
-  // OpenSky live data: show markers at actual positions
   return (
     <>
-      {flights.map(f => {
-        const icon = buildLiveIcon(f.heading);
-        const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
-        const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
+      {/* Airport flight count badges (scheduled data) */}
+      {Object.values(airportCounts).map(ap => {
+        if (ap.arrivals === 0 && ap.departures === 0) return null;
+        const icon = L.divIcon({
+          className: 'flight-count-icon',
+          html: `<div class="flight-count-inner"><span class="flight-count-arr">↓${ap.arrivals}</span><span class="flight-count-dep">↑${ap.departures}</span></div>`,
+          iconSize: [52, 24],
+          iconAnchor: [26, -8],
+        });
         return (
           <Marker
-            key={f.id}
+            key={`fc-${ap.icao}`}
+            position={[ap.lat, ap.lon]}
+            icon={icon}
+            zIndexOffset={900}
+            eventHandlers={{ click: () => {
+              const fullAirport = airports?.find(a => a.icao === ap.icao || a.code === ap.iata);
+              if (fullAirport && onAirportSelect) onAirportSelect(fullAirport);
+            }}}
+          >
+            <Tooltip direction="top" offset={[0, -16]} className="flight-leaflet-tooltip">
+              <strong>{ap.name}</strong><br />
+              Arrivals: {ap.arrivals} | Departures: {ap.departures}<br />
+              <em>Click for flight info</em>
+            </Tooltip>
+          </Marker>
+        );
+      })}
+
+      {/* Live aircraft approach/departure lines */}
+      {liveFlights.map(f => {
+        const airportLat = f.type === 'arrival' ? f.destLat : f.originLat;
+        const airportLon = f.type === 'arrival' ? f.destLon : f.originLon;
+        if (!airportLat || !airportLon) return null;
+        return (
+          <Polyline
+            key={`line-${f.id}`}
+            positions={[[f.lat, f.lon], [airportLat, airportLon]]}
+            pathOptions={{
+              color: f.type === 'arrival' ? '#4caf50' : '#ff9800',
+              weight: 1.5,
+              opacity: 0.5,
+              dashArray: '6, 8',
+            }}
+          />
+        );
+      })}
+
+      {/* Live aircraft markers */}
+      {liveFlights.map(f => {
+        const icon = buildLiveIcon(f.heading, f.type);
+        const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
+        const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
+        const airportName = f.type === 'arrival' ? f.destName : f.originName;
+
+        return (
+          <Marker
+            key={`plane-${f.id}`}
             position={[f.lat, f.lon]}
             icon={icon}
-            zIndexOffset={1000}
+            zIndexOffset={1100}
           >
             <Tooltip direction="top" offset={[0, -14]} className="flight-leaflet-tooltip">
-              <strong>{f.callsign || f.id}</strong><br />
-              {f.from && <span>From: {f.from}<br /></span>}
-              {altFt && <span>Alt: {altFt.toLocaleString()} ft<br /></span>}
-              {speedKts && <span>Speed: {speedKts} kts<br /></span>}
+              <strong>{f.callsign || f.flightNumber || f.id}</strong><br />
+              {f.airline && <span>{f.airline}<br /></span>}
+              {f.type === 'arrival' && airportName && <span>→ {airportName}<br /></span>}
+              {f.type === 'departure' && airportName && <span>← {airportName}<br /></span>}
+              {f.aircraft && <span>{f.aircraft}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}<br /></span>}
+              {altFt != null && <span>Alt: {altFt.toLocaleString()} ft<br /></span>}
+              {speedKts != null && <span>Speed: {speedKts} kts<br /></span>}
+              <em style={{color: f.type === 'arrival' ? '#4caf50' : '#ff9800'}}>
+                {f.status || (f.type === 'arrival' ? 'Approaching' : 'Departing')}
+              </em>
             </Tooltip>
           </Marker>
         );

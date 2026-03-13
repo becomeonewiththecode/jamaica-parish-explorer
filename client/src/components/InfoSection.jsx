@@ -20,7 +20,7 @@ const categoryIcons = {
   airport: '\u{2708}',
 };
 
-function InfoSection({ parish, notes, loading, addNote, selectedSlug, selectedAirport, onClose, onSelectParish, activeCategories, onCategoriesChange, filteredPlaces, allPlaces, onPlaceSelect, onAirportSelect }) {
+function InfoSection({ parish, notes, loading, addNote, selectedSlug, selectedAirport, onClose, onSelectParish, activeCategories, onCategoriesChange, filteredPlaces, allPlaces, onPlaceSelect, onAirportSelect, onFlightSelect }) {
   const [visible, setVisible] = useState(false);
   const [displayedSlug, setDisplayedSlug] = useState(null);
   const [selectedPlace, setSelectedPlace] = useState(null);
@@ -175,7 +175,7 @@ function InfoSection({ parish, notes, loading, addNote, selectedSlug, selectedAi
         )}
         <div id="info-content">
           {selectedAirport ? (
-            <AirportDetail airport={selectedAirport} onClose={onClose} />
+            <AirportDetail airport={selectedAirport} onClose={onClose} onFlightSelect={onFlightSelect} />
           ) : loading ? (
             <div id="info-placeholder">
               <h2>Loading...</h2>

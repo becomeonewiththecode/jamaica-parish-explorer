@@ -48,6 +48,14 @@ function App() {
     setFocusPlace(place);
   }, []);
 
+  const handleFlightSelect = useCallback((flight) => {
+    if (flight && flight.lat && flight.lon) {
+      focusKeyRef.current += 1;
+      setFocusKey(focusKeyRef.current);
+      setFocusPlace({ lat: flight.lat, lon: flight.lon, id: flight.id });
+    }
+  }, []);
+
   return (
     <div className="app">
       <MapSection
@@ -77,6 +85,7 @@ function App() {
         filteredPlaces={filteredPlaces}
         allPlaces={places}
         onPlaceSelect={handleInfoPlaceSelect}
+        onFlightSelect={handleFlightSelect}
       />
       <SearchBar onSelectPlace={handleSearchSelect} />
     </div>

@@ -26,7 +26,7 @@
 }
 
 #info-section.info-airport {
-  width: 587px;
+  width: 680px;
 }
 
 #info-section.info-visible {
@@ -480,9 +480,10 @@
   font-size: 20px;
   line-height: 24px;
   text-align: center;
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7));
   color: #ffeb3b;
   transition: transform 0.3s ease;
+  animation: flight-pulse 2s ease-in-out infinite;
 }
 
 .flight-leaflet-tooltip {
@@ -537,6 +538,11 @@
 
 .flight-icon-departure {
   color: #ff9800;
+}
+
+@keyframes flight-pulse {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7)); }
+  50% { opacity: 0.75; filter: drop-shadow(0 2px 8px rgba(255,235,59,0.5)); }
 }
 
 /* Airport flight count markers */
@@ -2196,7 +2202,7 @@
 
 .airport-flight-row {
   display: grid;
-  grid-template-columns: 65px 1fr 44px 70px;
+  grid-template-columns: 72px 100px 1fr 48px 76px 32px;
   gap: 6px;
   padding: 5px 4px;
   font-size: 0.68rem;
@@ -2212,6 +2218,14 @@
 .airport-flight-number {
   font-weight: 700;
   color: #ffeb3b;
+}
+
+.airport-flight-airline {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #90caf9;
+  font-size: 0.63rem;
 }
 
 .airport-flight-route {
@@ -2250,6 +2264,39 @@
 .airport-flight-status-cancelled,
 .airport-flight-status-diverted {
   color: #f44336;
+}
+
+.airport-flight-track {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: center;
+}
+
+.airport-flight-track a {
+  color: #5a7a9a;
+  transition: color 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.airport-flight-track a:hover {
+  color: #ffeb3b;
+}
+
+.airport-flight-locate {
+  background: none;
+  border: none;
+  color: #4caf50;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.airport-flight-locate:hover {
+  color: #ffeb3b;
 }
 
 .airport-flight-empty {

@@ -168,10 +168,12 @@ const AERODATABOX_AIRPORTS = JAMAICA_AIRPORTS.filter(a => a.iata === 'KIN' || a.
 // OpenSky: smaller airports with no AeroDataBox coverage
 const OPENSKY_AIRPORTS = JAMAICA_AIRPORTS.filter(a => a.iata === 'OCJ' || a.iata === 'KTP');
 
-// Schedule-based polling: fetch every 15 minutes (2 API calls x 4 per hour = ~192 calls/month)
-const POLL_INTERVAL = 15 * 60 * 1000; // 15 minutes
-const CACHE_TTL = POLL_INTERVAL;
+// Separate poll intervals: scheduled flights (rate-limited API) vs live radar (free APIs)
+const SCHEDULED_POLL_INTERVAL = 15 * 60 * 1000; // 15 minutes for AeroDataBox
+const LIVE_POLL_INTERVAL = 30 * 1000;            // 30 seconds for adsb.lol / OpenSky
 let flightsCache = { data: null, timestamp: 0 };
+let cachedScheduledFlights = [];
+let cachedScheduledSources = [];
 
 // --- AeroDataBox (primary) ---
 async function fetchAeroDataBox(airport) {
@@ -192,8 +194,12 @@ async function fetchAeroDataBox(airport) {
     });
     clearTimeout(timer);
 
-    if (!res.ok || res.status === 204) return null;
+    if (!res.ok || res.status === 204) {
+      console.log(`[Flights] AeroDataBox ${airport.iata}: HTTP ${res.status}`);
+      return null;
+    }
     const data = await res.json();
+    console.log(`[Flights] AeroDataBox ${airport.iata}: ${(data.arrivals || []).length} arrivals, ${(data.departures || []).length} departures`);
 
     const flights = [];
 
@@ -247,6 +253,7 @@ async function fetchAeroDataBox(airport) {
 
     return flights;
   } catch (e) {
+    console.error(`[Flights] AeroDataBox ${airport.iata} error:`, e.message);
     return null;
   }
 }
@@ -454,110 +461,107 @@ function storeFlights(flights) {
   }
 }
 
-// --- Scheduled background fetch ---
-async function scheduledFetch() {
-  let scheduledFlights = [];  // AeroDataBox schedule data
-  let liveFlights = [];       // adsb.lol / OpenSky live positions
+// --- Fetch scheduled flights (AeroDataBox — rate-limited, every 15 min) ---
+async function fetchScheduledFlights() {
+  let flights = [];
   let sources = [];
 
-  // 1. AeroDataBox for scheduled flights (KIN, MBJ)
   if (RAPIDAPI_KEY) {
     try {
       for (const airport of AERODATABOX_AIRPORTS) {
-        const flights = await fetchAeroDataBox(airport);
-        if (flights) scheduledFlights.push(...flights);
+        const result = await fetchAeroDataBox(airport);
+        if (result) flights.push(...result);
         if (airport !== AERODATABOX_AIRPORTS[AERODATABOX_AIRPORTS.length - 1]) {
           await new Promise(r => setTimeout(r, 1100));
         }
       }
-      if (scheduledFlights.length > 0) sources.push('aerodatabox');
+      if (flights.length > 0) sources.push('aerodatabox');
     } catch (e) {}
   }
 
-  // 2. If AeroDataBox failed, try OpenSky as Jamaica-wide fallback
-  if (scheduledFlights.length === 0) {
+  // Fallback: if AeroDataBox failed, try OpenSky Jamaica-wide
+  if (flights.length === 0) {
     const openSkyFlights = await fetchOpenSky();
     if (openSkyFlights.length > 0) {
-      scheduledFlights = openSkyFlights;
+      flights = openSkyFlights;
       sources.push('opensky');
     }
   }
 
-  // 3. adsb.lol live positions for ALL airports (with OpenSky fallback per airport)
+  for (const f of flights) { f.dataSource = 'scheduled'; }
+  cachedScheduledFlights = flights;
+  cachedScheduledSources = sources;
+  console.log(`[Flights] Scheduled: ${flights.length} flights from ${sources.join(', ') || 'none'}`);
+}
+
+// --- Fetch live radar (adsb.lol / OpenSky — free, every 30s) ---
+async function fetchLiveRadar() {
+  let liveFlights = [];
+
   for (const airport of JAMAICA_AIRPORTS) {
     let flights = [];
 
     // Try adsb.lol first (better Caribbean coverage, no auth needed)
     try {
       flights = await fetchAdsbLolForAirport(airport);
-      if (flights.length > 0) {
-        console.log(`[Flights] adsb.lol: ${flights.length} live aircraft near ${airport.name} (${airport.iata})`);
-      }
     } catch (e) {}
 
     // Fallback to OpenSky if adsb.lol returned nothing
     if (flights.length === 0) {
       try {
         flights = await fetchOpenSkyForAirport(airport);
-        if (flights.length > 0) {
-          console.log(`[Flights] OpenSky: ${flights.length} live aircraft near ${airport.name} (${airport.iata})`);
-        }
       } catch (e) {}
     }
 
     if (flights.length > 0) liveFlights.push(...flights);
   }
 
-  if (liveFlights.length > 0 && !sources.includes('adsb.lol')) sources.push('adsb.lol');
-
-  // Deduplicate live flights (same aircraft may appear near multiple airports)
-  const seenLiveIds = new Set();
+  // Deduplicate (same aircraft may appear near multiple airports)
+  const seen = new Set();
   liveFlights = liveFlights.filter(f => {
     const key = f.id + '-' + (f.destIata || f.originIata || '');
-    if (seenLiveIds.has(key)) return false;
-    seenLiveIds.add(key);
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 
-  // Tag live flights so frontend can distinguish them
-  for (const f of liveFlights) {
-    f.dataSource = 'live';
-  }
-  for (const f of scheduledFlights) {
-    f.dataSource = 'scheduled';
-  }
+  for (const f of liveFlights) { f.dataSource = 'live'; }
 
-  const allFlights = [...scheduledFlights, ...liveFlights];
+  // Merge with cached scheduled flights and update cache
+  const allFlights = [...cachedScheduledFlights, ...liveFlights];
+  const sources = [...cachedScheduledSources];
+  if (liveFlights.length > 0 && !sources.includes('adsb.lol')) sources.push('adsb.lol');
 
-  // Determine source label
   let source = 'none';
   if (sources.length === 0 && allFlights.length === 0) source = 'none';
   else if (sources.length === 1) source = sources[0];
   else source = 'mixed';
 
-  // Store in database
-  if (allFlights.length > 0 && source !== 'none') {
-    storeFlights(allFlights.filter(f => f.type === 'arrival' || f.type === 'departure'));
-  }
+  // Store in database (only new live flights worth storing)
+  const storable = liveFlights.filter(f => f.type === 'arrival' || f.type === 'departure');
+  if (storable.length > 0) storeFlights(storable);
 
   const now = Date.now();
-  const result = {
-    flights: allFlights,
-    source,
-    time: Math.floor(now / 1000),
-    airports: JAMAICA_AIRPORTS.map(a => ({ icao: a.icao, iata: a.iata, name: a.name, lat: a.lat, lon: a.lon })),
+  flightsCache = {
+    data: {
+      flights: allFlights,
+      source,
+      time: Math.floor(now / 1000),
+      airports: JAMAICA_AIRPORTS.map(a => ({ icao: a.icao, iata: a.iata, name: a.name, lat: a.lat, lon: a.lon })),
+    },
+    timestamp: now,
   };
 
-  flightsCache = { data: result, timestamp: now };
-  const scheduledCount = scheduledFlights.length;
-  const liveCount = liveFlights.length;
-  console.log(`[Flights] Fetched ${allFlights.length} flights (${scheduledCount} scheduled, ${liveCount} live) from ${source} — next poll in ${POLL_INTERVAL / 60000} min`);
-  return result;
+  console.log(`[Flights] Live radar: ${liveFlights.length} aircraft — total ${allFlights.length} flights (source: ${source})`);
 }
 
 // Start background polling on server boot
-scheduledFetch();
-setInterval(scheduledFetch, POLL_INTERVAL);
+(async () => {
+  await fetchScheduledFlights();  // Get scheduled flights first
+  await fetchLiveRadar();         // Then live radar
+})();
+setInterval(fetchScheduledFlights, SCHEDULED_POLL_INTERVAL);  // Every 15 min
+setInterval(fetchLiveRadar, LIVE_POLL_INTERVAL);               // Every 30 sec
 
 // GET /api/flights — returns cached data (never triggers an API call)
 router.get('/', (req, res) => {

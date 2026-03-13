@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchFlights } from '../api/parishes';
 
-function AirportDetail({ airport, onClose }) {
+function AirportDetail({ airport, onClose, onFlightSelect }) {
   const [imgError, setImgError] = useState(false);
   const [flightData, setFlightData] = useState(null);
   const [activeTab, setActiveTab] = useState('arrivals');
@@ -10,9 +10,16 @@ function AirportDetail({ airport, onClose }) {
   const originRef = useRef(null);
 
   useEffect(() => {
-    fetchFlights()
-      .then(data => setFlightData(data))
-      .catch(() => {});
+    let cancelled = false;
+    const load = () => {
+      fetchFlights()
+        .then(data => { if (!cancelled) setFlightData(data); })
+        .catch(() => {});
+    };
+    load();
+    // Refresh every 15s to stay in sync with live radar data
+    const interval = setInterval(load, 15000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [airport]);
 
   if (!airport) return null;
@@ -199,18 +206,29 @@ function AirportDetail({ airport, onClose }) {
           {(activeTab === 'arrivals' ? scheduledArrivals : scheduledDepartures).length > 0 && (
             <div className="airport-flight-section-label">Scheduled</div>
           )}
-          {(activeTab === 'arrivals' ? scheduledArrivals : scheduledDepartures).map((f, i) => (
-            <div key={`s-${i}`} className="airport-flight-row">
-              <span className="airport-flight-number">{f.flightNumber}</span>
-              <span className="airport-flight-route">
-                {activeTab === 'arrivals' ? `${f.from} (${f.fromIata})` : `${f.to} (${f.toIata})`}
-              </span>
-              <span className="airport-flight-time">{f.scheduledTime?.slice(11, 16) || '--:--'}</span>
-              <span className={`airport-flight-status airport-flight-status-${(f.status || '').toLowerCase().replace(/\s/g, '')}`}>
-                {f.status}
-              </span>
-            </div>
-          ))}
+          {(activeTab === 'arrivals' ? scheduledArrivals : scheduledDepartures).map((f, i) => {
+            const trackId = (f.flightNumber || '').replace(/\s/g, '');
+            return (
+              <div key={`s-${i}`} className="airport-flight-row">
+                <span className="airport-flight-number">{f.flightNumber}</span>
+                <span className="airport-flight-airline">{f.airline || ''}</span>
+                <span className="airport-flight-route">
+                  {activeTab === 'arrivals' ? `${f.from} (${f.fromIata})` : `${f.to} (${f.toIata})`}
+                </span>
+                <span className="airport-flight-time">{f.scheduledTime?.slice(11, 16) || '--:--'}</span>
+                <span className={`airport-flight-status airport-flight-status-${(f.status || '').toLowerCase().replace(/\s/g, '')}`}>
+                  {f.status}
+                </span>
+                {trackId && (
+                  <span className="airport-flight-track">
+                    <a href={`https://www.flightradar24.com/${trackId}`} target="_blank" rel="noopener noreferrer" title="Track on Flightradar24">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/><path d="M12 3v9l6 3"/></svg>
+                    </a>
+                  </span>
+                )}
+              </div>
+            );
+          })}
 
           {/* Live radar flights section */}
           {(activeTab === 'arrivals' ? liveArrivals : liveDepartures).length > 0 && (
@@ -218,16 +236,34 @@ function AirportDetail({ airport, onClose }) {
           )}
           {(activeTab === 'arrivals' ? liveArrivals : liveDepartures).map((f, i) => {
             const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
-            const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
+            const trackId = (f.flightNumber || f.callsign || '').replace(/\s/g, '');
+            const hasPosition = f.lat && f.lon;
             return (
               <div key={`l-${i}`} className="airport-flight-row airport-flight-row-live">
                 <span className="airport-flight-number">{f.flightNumber || f.callsign || '---'}</span>
+                <span className="airport-flight-airline">{f.airline || ''}</span>
                 <span className="airport-flight-route">
-                  {f.airline || f.aircraft || ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}
+                  {f.aircraft || ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}
                 </span>
                 <span className="airport-flight-time">{altFt ? `${altFt.toLocaleString()}ft` : '---'}</span>
                 <span className={`airport-flight-status airport-flight-status-${(f.status || '').toLowerCase().replace(/\s/g, '')}`}>
                   {f.status}
+                </span>
+                <span className="airport-flight-track">
+                  {hasPosition && (
+                    <button
+                      className="airport-flight-locate"
+                      title="Show on map"
+                      onClick={() => onFlightSelect && onFlightSelect(f)}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-10-10h4m12 0h4"/></svg>
+                    </button>
+                  )}
+                  {trackId && (
+                    <a href={`https://www.flightradar24.com/${trackId}`} target="_blank" rel="noopener noreferrer" title="Track on Flightradar24">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/><path d="M12 3v9l6 3"/></svg>
+                    </a>
+                  )}
                 </span>
               </div>
             );
