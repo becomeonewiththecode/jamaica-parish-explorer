@@ -223,7 +223,7 @@ function AirportDetail({ airport, onClose }) {
               <div key={`l-${i}`} className="airport-flight-row airport-flight-row-live">
                 <span className="airport-flight-number">{f.flightNumber || f.callsign || '---'}</span>
                 <span className="airport-flight-route">
-                  {f.aircraft ? f.aircraft : ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}
+                  {f.airline || f.aircraft || ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}
                 </span>
                 <span className="airport-flight-time">{altFt ? `${altFt.toLocaleString()}ft` : '---'}</span>
                 <span className={`airport-flight-status airport-flight-status-${(f.status || '').toLowerCase().replace(/\s/g, '')}`}>

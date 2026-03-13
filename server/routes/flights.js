@@ -7,6 +7,123 @@ const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '';
 const OPENSKY_CLIENT_ID = process.env.OPENSKY_CLIENT_ID || '';
 const OPENSKY_CLIENT_SECRET = process.env.OPENSKY_CLIENT_SECRET || '';
 
+// ICAO airline code → name lookup (covers Jamaica routes + major international carriers)
+const ICAO_AIRLINES = {
+  // Caribbean & Jamaica
+  BWA: 'Caribbean Airlines', BW: 'Caribbean Airlines',
+  FPO: 'Fly Jamaica Airways',
+  IWD: 'InterCaribbean Airways',
+  CAY: 'Cayman Airways', KX: 'Cayman Airways',
+  BHS: 'Bahamasair', UP: 'Bahamasair',
+  SVA: 'SVAIR', // Jamaica charter
+  JMA: 'Jamaica Air Shuttle',
+  TPA: 'TAPA', // Caribbean air taxi
+
+  // US majors
+  AAL: 'American Airlines', AA: 'American Airlines',
+  DAL: 'Delta Air Lines', DL: 'Delta Air Lines',
+  UAL: 'United Airlines', UA: 'United Airlines',
+  SWA: 'Southwest Airlines', WN: 'Southwest Airlines',
+  JBU: 'JetBlue Airways', B6: 'JetBlue Airways',
+  NKS: 'Spirit Airlines', NK: 'Spirit Airlines',
+  FFT: 'Frontier Airlines', F9: 'Frontier Airlines',
+  ASA: 'Alaska Airlines', AS: 'Alaska Airlines',
+  HAL: 'Hawaiian Airlines', HA: 'Hawaiian Airlines',
+  ENY: 'Envoy Air', // American Eagle regional
+  RPA: 'Republic Airways',
+  SKW: 'SkyWest Airlines',
+  PDT: 'Piedmont Airlines',
+  CPZ: 'Compass Airlines',
+  JIA: 'PSA Airlines',
+
+  // Canadian
+  ACA: 'Air Canada', AC: 'Air Canada',
+  WJA: 'WestJet', WS: 'WestJet',
+  TSC: 'Air Transat', TS: 'Air Transat',
+  SWG: 'Sunwing Airlines', WG: 'Sunwing Airlines',
+  ROU: 'Rouge', // Air Canada Rouge
+  FLE: 'Flair Airlines', F8: 'Flair Airlines',
+
+  // European
+  BAW: 'British Airways', BA: 'British Airways',
+  VIR: 'Virgin Atlantic', VS: 'Virgin Atlantic',
+  DLH: 'Lufthansa', LH: 'Lufthansa',
+  AFR: 'Air France', AF: 'Air France',
+  KLM: 'KLM', KL: 'KLM',
+  IBE: 'Iberia', IB: 'Iberia',
+  SAS: 'Scandinavian Airlines', SK: 'Scandinavian Airlines',
+  TAP: 'TAP Air Portugal', TP: 'TAP Air Portugal',
+  AZA: 'ITA Airways', AZ: 'ITA Airways',
+  SWR: 'Swiss', LX: 'Swiss',
+  AUA: 'Austrian Airlines', OS: 'Austrian Airlines',
+  TUI: 'TUI Airways', BY: 'TUI Airways',
+  TCX: 'Thomas Cook Airlines',
+  EZY: 'easyJet', U2: 'easyJet',
+  RYR: 'Ryanair', FR: 'Ryanair',
+  ICE: 'Icelandair', FI: 'Icelandair',
+  EIN: 'Aer Lingus', EI: 'Aer Lingus',
+  NOZ: 'Norwegian', DY: 'Norwegian',
+  COA: 'Condor', DE: 'Condor',
+  EWG: 'Eurowings', EW: 'Eurowings',
+
+  // Latin America & Central America
+  CMP: 'Copa Airlines', CM: 'Copa Airlines',
+  AVA: 'Avianca', AV: 'Avianca',
+  ARE: 'Aerolíneas Argentinas', AR: 'Aerolíneas Argentinas',
+  TAM: 'LATAM Brasil', JJ: 'LATAM Brasil',
+  LAN: 'LATAM', LA: 'LATAM',
+  AMX: 'Aeroméxico', AM: 'Aeroméxico',
+  VIV: 'Viva Aerobus', VB: 'Viva Aerobus',
+  VOI: 'Volaris', Y4: 'Volaris',
+  GLO: 'GOL', G3: 'GOL',
+  AZU: 'Azul', AD: 'Azul',
+
+  // Middle East & Asia
+  UAE: 'Emirates', EK: 'Emirates',
+  QTR: 'Qatar Airways', QR: 'Qatar Airways',
+  ETH: 'Ethiopian Airlines', ET: 'Ethiopian Airlines',
+  THY: 'Turkish Airlines', TK: 'Turkish Airlines',
+  ELY: 'El Al', LY: 'El Al',
+  SIA: 'Singapore Airlines', SQ: 'Singapore Airlines',
+  CPA: 'Cathay Pacific', CX: 'Cathay Pacific',
+  ANA: 'All Nippon Airways', NH: 'All Nippon Airways',
+  JAL: 'Japan Airlines', JL: 'Japan Airlines',
+  KAL: 'Korean Air', KE: 'Korean Air',
+  CSN: 'China Southern', CZ: 'China Southern',
+  CCA: 'Air China', CA: 'Air China',
+  CES: 'China Eastern', MU: 'China Eastern',
+
+  // Other
+  QFA: 'Qantas', QF: 'Qantas',
+  ANZ: 'Air New Zealand', NZ: 'Air New Zealand',
+  SAA: 'South African Airways', SA: 'South African Airways',
+
+  // Cargo (sometimes visible on radar)
+  FDX: 'FedEx', FX: 'FedEx',
+  UPS: 'UPS Airlines', '5X': 'UPS Airlines',
+  GTI: 'Atlas Air',
+  CLX: 'Cargolux', CV: 'Cargolux',
+  ABW: 'AirBridgeCargo',
+  DHL: 'DHL Aviation',
+
+  // Military / Government (may appear on ADS-B)
+  RCH: 'US Air Force',
+  CNV: 'US Navy',
+  PAT: 'Patriot Express',
+  CFC: 'Canadian Forces',
+  RRR: 'Royal Air Force',
+};
+
+// Extract ICAO prefix from callsign (letters before digits)
+function resolveAirline(callsign) {
+  if (!callsign) return '';
+  const match = callsign.match(/^([A-Z]{2,4})/);
+  if (!match) return '';
+  const prefix = match[1];
+  // Try full prefix first (3-letter ICAO), then 2-letter IATA
+  return ICAO_AIRLINES[prefix] || ICAO_AIRLINES[prefix.slice(0, 3)] || ICAO_AIRLINES[prefix.slice(0, 2)] || '';
+}
+
 // OpenSky OAuth token cache
 let openSkyToken = { token: null, expiresAt: 0 };
 
@@ -147,19 +264,23 @@ async function fetchOpenSky() {
     clearTimeout(timer);
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.states || []).map(s => ({
-      id: s[0],
-      callsign: (s[1] || '').trim(),
-      flightNumber: (s[1] || '').trim(),
-      status: s[8] ? 'On Ground' : 'In Flight',
-      type: 'live',
-      from: s[2] || '',
-      lat: s[6],
-      lon: s[5],
-      altitude: s[7],
-      velocity: s[9],
-      heading: s[10],
-    })).filter(f => f.lat && f.lon);
+    return (data.states || []).map(s => {
+      const callsign = (s[1] || '').trim();
+      return {
+        id: s[0],
+        callsign,
+        flightNumber: callsign,
+        airline: resolveAirline(callsign),
+        status: s[8] ? 'On Ground' : 'In Flight',
+        type: 'live',
+        from: s[2] || '',
+        lat: s[6],
+        lon: s[5],
+        altitude: s[7],
+        velocity: s[9],
+        heading: s[10],
+      };
+    }).filter(f => f.lat && f.lon);
   } catch (e) {
     return [];
   }
@@ -217,7 +338,7 @@ async function fetchOpenSkyForAirport(airport) {
         to: direction === 'departure' ? (s[2] || 'Unknown') : '',
         toIata: '',
         toCountry: direction === 'departure' ? (s[2] || '') : '',
-        airline: '',
+        airline: resolveAirline(callsign),
         aircraft: '',
         aircraftReg: '',
         scheduledTime: '',
@@ -279,7 +400,7 @@ async function fetchAdsbLolForAirport(airport) {
         to: direction === 'departure' ? '' : '',
         toIata: '',
         toCountry: '',
-        airline: a.ownOp || '',
+        airline: a.ownOp || resolveAirline(callsign),
         aircraft: a.t || '',
         aircraftReg: a.r || '',
         scheduledTime: '',
