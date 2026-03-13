@@ -355,6 +355,43 @@
   letter-spacing: 1px;
 }
 
+.parish-select-dropdown {
+  display: block;
+  margin: 8px auto 0;
+  padding: 7px 32px 7px 14px;
+  background: rgba(240, 192, 64, 0.1);
+  border: 1px solid rgba(240, 192, 64, 0.35);
+  border-radius: 20px;
+  color: #f0c040;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23f0c040' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: all 0.2s ease;
+}
+
+.parish-select-dropdown:hover {
+  background-color: rgba(240, 192, 64, 0.2);
+  border-color: #f0c040;
+}
+
+.parish-select-dropdown:focus {
+  outline: none;
+  border-color: #f0c040;
+  box-shadow: 0 0 8px rgba(240, 192, 64, 0.25);
+}
+
+.parish-select-dropdown option {
+  background: #0f2240;
+  color: #e0e0e0;
+  padding: 6px;
+}
+
 #map-container {
   flex: 1;
   position: relative;
@@ -414,6 +451,119 @@
 
 .airport-leaflet-tooltip::before {
   border-top-color: #00bcd4 !important;
+}
+
+/* FLIGHT TRACKING */
+.flight-leaflet-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.flight-icon-inner {
+  font-size: 20px;
+  line-height: 24px;
+  text-align: center;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+  color: #ffeb3b;
+  transition: transform 0.3s ease;
+}
+
+.flight-leaflet-tooltip {
+  background: rgba(10, 22, 40, 0.95) !important;
+  border: 1px solid #ffeb3b !important;
+  color: #fff !important;
+  padding: 6px 12px !important;
+  border-radius: 4px !important;
+  font-size: 0.72rem !important;
+  font-family: inherit !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+  line-height: 1.5 !important;
+}
+
+.flight-leaflet-tooltip::before {
+  border-top-color: #ffeb3b !important;
+}
+
+.flight-toggle-btn {
+  position: fixed;
+  top: 18px;
+  right: 355px;
+  z-index: 1100;
+  padding: 6px 14px;
+  background: rgba(10, 22, 40, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #1e3a5f;
+  border-radius: 20px;
+  color: #5a7a9a;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.flight-toggle-btn:hover {
+  border-color: #ffeb3b;
+  color: #ffeb3b;
+}
+
+.flight-toggle-btn.flight-toggle-active {
+  border-color: #ffeb3b;
+  color: #ffeb3b;
+  background: rgba(255, 235, 59, 0.12);
+}
+
+.zoom-level-control {
+  position: fixed;
+  top: 18px;
+  right: 510px;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(10, 22, 40, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #1e3a5f;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-family: inherit;
+}
+
+.zoom-level-label {
+  color: #5a7a9a;
+  font-weight: 600;
+}
+
+.zoom-level-value {
+  color: #f0c040;
+  font-weight: 700;
+  min-width: 18px;
+  text-align: center;
+}
+
+.zoom-level-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid #1e3a5f;
+  border-radius: 50%;
+  color: #b0c4de;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.zoom-level-btn:hover {
+  background: rgba(240, 192, 64, 0.2);
+  border-color: #f0c040;
+  color: #f0c040;
 }
 
 .highlight-leaflet-tooltip {
@@ -1078,6 +1228,27 @@
   color: #ff5c7c;
 }
 
+.popup-instagram-btn {
+  color: #e1306c;
+}
+.popup-instagram-btn:hover {
+  color: #e85a8a;
+}
+
+.popup-booking-btn {
+  color: #003580;
+}
+.popup-booking-btn:hover {
+  color: #1a5296;
+}
+
+.popup-tripadvisor-btn {
+  color: #00aa6c;
+}
+.popup-tripadvisor-btn:hover {
+  color: #2bc48a;
+}
+
 .popup-description {
   color: #b0c4de;
   font-size: 0.72rem;
@@ -1147,7 +1318,7 @@
   top: 16px;
   right: 24px;
   z-index: 1100;
-  width: 340px;
+  width: 323px;
 }
 
 .search-input-wrap {
@@ -1523,9 +1694,14 @@
   }
 
   .search-bar {
-    width: 260px;
+    width: 247px;
     right: 12px;
     top: 12px;
+  }
+
+  .flight-toggle-btn {
+    right: 267px;
+    top: 14px;
   }
 
   .map-header h1 { font-size: 1.2rem; }

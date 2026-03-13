@@ -329,6 +329,30 @@ function PlacePopup({ place, onClose, anchorPos }) {
             </a>
           )}
 
+          {/* Instagram link */}
+          {place.instagram_url && (
+            <a className="popup-link-btn popup-instagram-btn" href={place.instagram_url} target="_blank" rel="noopener noreferrer">
+              <span>{'\u{1F4F7}'}</span>
+              Instagram
+            </a>
+          )}
+
+          {/* Booking.com link */}
+          {place.booking_url && (
+            <a className="popup-link-btn popup-booking-btn" href={place.booking_url} target="_blank" rel="noopener noreferrer">
+              <span>{'\u{1F3E8}'}</span>
+              Book on Booking.com
+            </a>
+          )}
+
+          {/* TripAdvisor link */}
+          {place.tripadvisor_url && (
+            <a className="popup-link-btn popup-tripadvisor-btn" href={place.tripadvisor_url} target="_blank" rel="noopener noreferrer">
+              <span>{'\u{1F30D}'}</span>
+              TripAdvisor Reviews
+            </a>
+          )}
+
           {/* Google Maps driving directions (from Kingston, Jamaica) */}
           <a
             className="popup-directions-btn"

@@ -112,12 +112,12 @@ router.get('/:slug/places', (req, res) => {
 
   if (category) {
     places = db.prepare(`
-      SELECT id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars, description, image_url, menu_url, tiktok_url
+      SELECT id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars, description, image_url, menu_url, tiktok_url, instagram_url, booking_url, tripadvisor_url
       FROM places WHERE parish_id = ? AND category = ? ORDER BY name
     `).all(parish.id, category);
   } else {
     places = db.prepare(`
-      SELECT id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars, description, image_url, menu_url, tiktok_url
+      SELECT id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars, description, image_url, menu_url, tiktok_url, instagram_url, booking_url, tripadvisor_url
       FROM places WHERE parish_id = ? ORDER BY category, name
     `).all(parish.id);
   }

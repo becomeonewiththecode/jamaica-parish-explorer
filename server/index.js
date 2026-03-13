@@ -5,6 +5,7 @@ const parishRoutes = require('./routes/parishes');
 const noteRoutes = require('./routes/notes');
 const placeRoutes = require('./routes/places');
 const airportRoutes = require('./routes/airports');
+const flightRoutes = require('./routes/flights');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,6 +26,7 @@ app.use('/api/parishes', noteRoutes);
 app.use('/api/parishes', placeRoutes);
 app.use('/api/places', placeRoutes);
 app.use('/api/airports', airportRoutes);
+app.use('/api/flights', flightRoutes);
 
 // Production: serve React build
 if (process.env.NODE_ENV === 'production') {

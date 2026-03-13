@@ -67,6 +67,12 @@ export async function fetchAirports() {
   return res.json();
 }
 
+export async function fetchFlights() {
+  const res = await fetch(`${API}/flights`);
+  if (!res.ok) return { flights: [], time: 0 };
+  return res.json();
+}
+
 export async function fetchWebsiteImage(url) {
   const res = await fetch(`${API}/places/website-image?url=${encodeURIComponent(url)}`);
   if (!res.ok) return null;

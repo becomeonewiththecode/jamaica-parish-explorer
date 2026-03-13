@@ -11,10 +11,15 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-import { fetchAirports } from '../api/parishes';
+import { fetchAirports, fetchAllPlaces } from '../api/parishes';
 import { mapAirport } from '../data/airports';
 import PlacePopup from './PlacePopup';
 import AirportPopup from './AirportPopup';
+import FlightTracker from './FlightTracker';
+
+// "Always on" categories — visible on map when zoomed in, no parish selection needed
+const ALWAYS_ON_CATEGORIES = ['hotel', 'resort', 'guest_house', 'restaurant', 'beach'];
+const ALWAYS_ON_MIN_ZOOM = 10; // Show when zoom >= this level
 
 const nameToSlug = {
   "Hanover": "hanover", "Westmoreland": "westmoreland",
@@ -165,9 +170,23 @@ function ClosePopupOnMove({ onClose }) {
   return null;
 }
 
+function ZoomTracker({ onZoomChange }) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = () => onZoomChange(map.getZoom());
+    map.on('zoomend', handler);
+    onZoomChange(map.getZoom()); // initial
+    return () => { map.off('zoomend', handler); };
+  }, [map, onZoomChange]);
+  return null;
+}
+
 function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey }) {
   const [geojson, setGeojson] = useState(null);
   const [airports, setAirports] = useState([]);
+  const [alwaysOnPlaces, setAlwaysOnPlaces] = useState([]);
+  const [currentZoom, setCurrentZoom] = useState(10);
+  const [showFlights, setShowFlights] = useState(true);
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
@@ -226,6 +245,10 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
     fetchAirports()
       .then(list => setAirports(list.map(mapAirport)))
       .catch(console.error);
+    // Load always-on category places (lightweight: id, name, category, lat, lon)
+    Promise.all(ALWAYS_ON_CATEGORIES.map(cat => fetchAllPlaces(cat)))
+      .then(results => setAlwaysOnPlaces(results.flat()))
+      .catch(console.error);
   }, []);
 
   // Reset selection when parish changes
@@ -248,6 +271,23 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
     if (activeCategories.size === 0) return parishPlaces;
     return parishPlaces.filter(p => activeCategories.has(p.category));
   }, [parishPlaces, activeCategories]);
+
+  // Always-on markers: show when zoomed in, whether or not a parish is selected
+  // When a parish IS selected, filter out duplicates already in parishPlaces
+  const visibleAlwaysOn = useMemo(() => {
+    if (currentZoom < ALWAYS_ON_MIN_ZOOM) return [];
+    if (!alwaysOnPlaces.length) return [];
+    if (activeSlug && parishPlaces && parishPlaces.length) {
+      // Exclude places already shown as parish markers
+      const parishIds = new Set(parishPlaces.map(p => p.id));
+      return alwaysOnPlaces.filter(p => !parishIds.has(p.id));
+    }
+    return alwaysOnPlaces;
+  }, [currentZoom, alwaysOnPlaces, activeSlug, parishPlaces]);
+
+  const handleZoomChange = useCallback((zoom) => {
+    setCurrentZoom(zoom);
+  }, []);
 
   // Available categories for filter bar
   const availableCategories = useMemo(() => {
@@ -328,6 +368,39 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
           <div className="map-header">
             <h1>Jamaica</h1>
             <p className="subtitle">Click a parish to explore</p>
+            {geojson && (
+              <select
+                className="parish-select-dropdown"
+                value=""
+                onChange={(e) => { if (e.target.value) onSelect(e.target.value); }}
+              >
+                <option value="">Select a Parish...</option>
+                {Object.entries(nameToSlug)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([name, slug]) => (
+                    <option key={slug} value={slug}>{name}</option>
+                  ))}
+              </select>
+            )}
+          </div>
+        )}
+
+        {/* Flight tracking toggle */}
+        <button
+          className={`flight-toggle-btn${showFlights ? ' flight-toggle-active' : ''}`}
+          onClick={() => setShowFlights(prev => !prev)}
+          title={showFlights ? 'Hide live flights' : 'Show live flights'}
+        >
+          ✈ Live Flights {showFlights ? 'ON' : 'OFF'}
+        </button>
+
+        {/* Zoom level indicator */}
+        {activeSlug && (
+          <div className="zoom-level-control">
+            <span className="zoom-level-label">Zoom</span>
+            <span className="zoom-level-value">{currentZoom}</span>
+            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
+            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
           </div>
         )}
 
@@ -405,6 +478,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
 
           <MapRefExporter mapRef={mapRef} />
           <ClosePopupOnMove onClose={closeAllPopups} />
+          <ZoomTracker onZoomChange={handleZoomChange} />
           <FlyToBounds bounds={activeBounds} activeSlug={activeSlug} />
           <FlyToPlace place={focusPlace} />
 
@@ -434,6 +508,27 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
               </Tooltip>
             </Marker>
           ))}
+
+          {/* Always-on category markers (visible when zoomed in) */}
+          {visibleAlwaysOn.map(p => {
+            const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
+            const icon = categoryIcons[p.category] || defaultPlaceIcon;
+            return (
+              <Marker
+                key={`ao-${p.id}`}
+                position={[p.lat, p.lon]}
+                icon={icon}
+                eventHandlers={{
+                  click: () => handlePlaceClick(p),
+                }}
+              >
+                <Tooltip direction="top" offset={[0, -14]} className="place-leaflet-tooltip">
+                  <strong>{p.name}</strong><br />
+                  <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>{style.label}</span>
+                </Tooltip>
+              </Marker>
+            );
+          })}
 
           {/* Place markers when a parish is selected */}
           {activeSlug && filteredPlaces.map(p => {
@@ -479,6 +574,9 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
               </Tooltip>
             </Marker>
           )}
+
+          {/* Live flight tracking */}
+          <FlightTracker visible={showFlights} />
         </MapContainer>
       </div>
 
