@@ -164,49 +164,41 @@ function AirportDetail({ airport, onClose }) {
         </div>
       )}
 
-      {/* Flight board */}
-      {flightData && flightData.source === 'aerodatabox' && (arrivals.length > 0 || departures.length > 0) && (
-        <div className="airport-detail-flights">
-          <h3>Flight Board</h3>
-          <div className="airport-flight-tabs">
-            <button
-              className={`airport-flight-tab${activeTab === 'arrivals' ? ' active' : ''}`}
-              onClick={() => setActiveTab('arrivals')}
-            >
-              Arrivals ({arrivals.length})
-            </button>
-            <button
-              className={`airport-flight-tab${activeTab === 'departures' ? ' active' : ''}`}
-              onClick={() => setActiveTab('departures')}
-            >
-              Departures ({departures.length})
-            </button>
-          </div>
-          <div className="airport-flight-list">
-            {(activeTab === 'arrivals' ? arrivals : departures).map((f, i) => (
-              <div key={i} className="airport-flight-row">
-                <span className="airport-flight-number">{f.flightNumber}</span>
-                <span className="airport-flight-route">
-                  {activeTab === 'arrivals' ? `${f.from} (${f.fromIata})` : `${f.to} (${f.toIata})`}
-                </span>
-                <span className="airport-flight-time">{f.scheduledTime?.slice(11, 16) || '--:--'}</span>
-                <span className={`airport-flight-status airport-flight-status-${(f.status || '').toLowerCase().replace(/\s/g, '')}`}>
-                  {f.status}
-                </span>
-              </div>
-            ))}
-            {(activeTab === 'arrivals' ? arrivals : departures).length === 0 && (
-              <div className="airport-flight-empty">No {activeTab} scheduled</div>
-            )}
-          </div>
+      {/* Flight board — always shown */}
+      <div className="airport-detail-flights">
+        <h3>Flight Board</h3>
+        <div className="airport-flight-tabs">
+          <button
+            className={`airport-flight-tab${activeTab === 'arrivals' ? ' active' : ''}`}
+            onClick={() => setActiveTab('arrivals')}
+          >
+            Arrivals ({arrivals.length})
+          </button>
+          <button
+            className={`airport-flight-tab${activeTab === 'departures' ? ' active' : ''}`}
+            onClick={() => setActiveTab('departures')}
+          >
+            Departures ({departures.length})
+          </button>
         </div>
-      )}
-
-      {flightData && flightData.source !== 'aerodatabox' && (
-        <div className="airport-detail-flights">
-          <p className="airport-flight-empty">Flight schedule data not currently available</p>
+        <div className="airport-flight-list">
+          {(activeTab === 'arrivals' ? arrivals : departures).map((f, i) => (
+            <div key={i} className="airport-flight-row">
+              <span className="airport-flight-number">{f.flightNumber}</span>
+              <span className="airport-flight-route">
+                {activeTab === 'arrivals' ? `${f.from} (${f.fromIata})` : `${f.to} (${f.toIata})`}
+              </span>
+              <span className="airport-flight-time">{f.scheduledTime?.slice(11, 16) || '--:--'}</span>
+              <span className={`airport-flight-status airport-flight-status-${(f.status || '').toLowerCase().replace(/\s/g, '')}`}>
+                {f.status}
+              </span>
+            </div>
+          ))}
+          {(activeTab === 'arrivals' ? arrivals : departures).length === 0 && (
+            <div className="airport-flight-empty">No {activeTab} at this time</div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

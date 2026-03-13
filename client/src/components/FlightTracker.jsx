@@ -54,7 +54,7 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
   const flightAirports = data.airports || [];
 
   // For AeroDataBox data: show markers at airport positions
-  if (source === 'aerodatabox') {
+  if (source === 'aerodatabox' || source === 'mixed') {
     // Group flights by airport
     const airportFlights = {};
     for (const ap of flightAirports) {

@@ -2,8 +2,41 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/connection');
 
-// Load API key from environment
+// Load API keys from environment
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '';
+const OPENSKY_CLIENT_ID = process.env.OPENSKY_CLIENT_ID || '';
+const OPENSKY_CLIENT_SECRET = process.env.OPENSKY_CLIENT_SECRET || '';
+
+// OpenSky OAuth token cache
+let openSkyToken = { token: null, expiresAt: 0 };
+
+async function getOpenSkyToken() {
+  const now = Date.now();
+  // Return cached token if still valid (with 60s buffer)
+  if (openSkyToken.token && openSkyToken.expiresAt > now + 60000) {
+    return openSkyToken.token;
+  }
+  if (!OPENSKY_CLIENT_ID || !OPENSKY_CLIENT_SECRET) return null;
+
+  try {
+    const res = await fetch('https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=client_credentials&client_id=${OPENSKY_CLIENT_ID}&client_secret=${OPENSKY_CLIENT_SECRET}`,
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    openSkyToken = {
+      token: data.access_token,
+      expiresAt: now + (data.expires_in * 1000),
+    };
+    console.log('[Flights] OpenSky OAuth token acquired, expires in', data.expires_in, 'seconds');
+    return data.access_token;
+  } catch (e) {
+    console.error('[Flights] OpenSky token error:', e.message);
+    return null;
+  }
+}
 
 // Jamaica airports: ICAO code, IATA code, name, lat, lon
 const JAMAICA_AIRPORTS = [
@@ -13,8 +46,10 @@ const JAMAICA_AIRPORTS = [
   { icao: 'MKTP', iata: 'KTP', name: 'Tinson Pen', lat: 17.9886, lon: -76.8238 },
 ];
 
-// Only query the two international airports (Ian Fleming & Tinson Pen have no scheduled flights)
-const QUERIED_AIRPORTS = JAMAICA_AIRPORTS.filter(a => a.iata === 'KIN' || a.iata === 'MBJ');
+// AeroDataBox: only the two international airports (have scheduled flight data)
+const AERODATABOX_AIRPORTS = JAMAICA_AIRPORTS.filter(a => a.iata === 'KIN' || a.iata === 'MBJ');
+// OpenSky: smaller airports with no AeroDataBox coverage
+const OPENSKY_AIRPORTS = JAMAICA_AIRPORTS.filter(a => a.iata === 'OCJ' || a.iata === 'KTP');
 
 // Schedule-based polling: fetch every 15 minutes (2 API calls x 4 per hour = ~192 calls/month)
 const POLL_INTERVAL = 15 * 60 * 1000; // 15 minutes
@@ -102,10 +137,13 @@ async function fetchAeroDataBox(airport) {
 // --- OpenSky fallback ---
 async function fetchOpenSky() {
   try {
+    const token = await getOpenSkyToken();
     const url = 'https://opensky-network.org/api/states/all?lamin=16.5&lamax=20.0&lomin=-80.0&lomax=-74.5';
+    const headers = { 'User-Agent': 'JamaicaParishExplorer/1.0' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'JamaicaParishExplorer/1.0' } });
+    const res = await fetch(url, { signal: controller.signal, headers });
     clearTimeout(timer);
     if (!res.ok) return [];
     const data = await res.json();
@@ -122,6 +160,80 @@ async function fetchOpenSky() {
       velocity: s[9],
       heading: s[10],
     })).filter(f => f.lat && f.lon);
+  } catch (e) {
+    return [];
+  }
+}
+
+// --- OpenSky for a specific airport (nearby flights within ~25km radius) ---
+async function fetchOpenSkyForAirport(airport) {
+  const RADIUS = 0.25; // ~25km in degrees
+  const lamin = airport.lat - RADIUS;
+  const lamax = airport.lat + RADIUS;
+  const lomin = airport.lon - RADIUS;
+  const lomax = airport.lon + RADIUS;
+
+  try {
+    const token = await getOpenSkyToken();
+    const url = `https://opensky-network.org/api/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`;
+    const headers = { 'User-Agent': 'JamaicaParishExplorer/1.0' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(url, { signal: controller.signal, headers });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data.states || data.states.length === 0) return [];
+
+    return data.states.map(s => {
+      const lat = s[6];
+      const lon = s[5];
+      const altitude = s[7]; // meters
+      const onGround = s[8];
+      const velocity = s[9];
+      const heading = s[10];
+      const callsign = (s[1] || '').trim();
+      const verticalRate = s[11]; // m/s, negative = descending
+
+      // Classify: descending or on ground near airport = arrival, ascending = departure
+      let direction = 'arrival';
+      if (verticalRate > 1) direction = 'departure';
+      else if (verticalRate < -1 || onGround) direction = 'arrival';
+      else if (altitude && altitude > 3000) direction = 'arrival'; // high altitude approaching
+      else direction = onGround ? 'arrival' : 'departure';
+
+      const altFt = altitude ? Math.round(altitude * 3.281) : null;
+
+      return {
+        id: s[0] || callsign,
+        callsign,
+        flightNumber: callsign,
+        status: onGround ? 'On Ground' : (direction === 'arrival' ? 'Approaching' : 'Departing'),
+        type: direction,
+        from: direction === 'arrival' ? (s[2] || 'Unknown') : '',
+        fromIata: '',
+        fromCountry: direction === 'arrival' ? (s[2] || '') : '',
+        to: direction === 'departure' ? (s[2] || 'Unknown') : '',
+        toIata: '',
+        toCountry: direction === 'departure' ? (s[2] || '') : '',
+        airline: '',
+        aircraft: '',
+        aircraftReg: '',
+        scheduledTime: '',
+        lat,
+        lon,
+        altitude,
+        velocity,
+        heading,
+        // Set airport references
+        ...(direction === 'arrival' ? {
+          destLat: airport.lat, destLon: airport.lon, destName: airport.name, destIata: airport.iata,
+        } : {
+          originLat: airport.lat, originLon: airport.lon, originName: airport.name, originIata: airport.iata,
+        }),
+      };
+    }).filter(f => f.lat && f.lon);
   } catch (e) {
     return [];
   }
@@ -165,23 +277,24 @@ async function scheduledFetch() {
   let allFlights = [];
   let source = 'none';
 
+  // AeroDataBox for major airports (KIN, MBJ)
   if (RAPIDAPI_KEY) {
     try {
-      for (const airport of QUERIED_AIRPORTS) {
+      for (const airport of AERODATABOX_AIRPORTS) {
         const flights = await fetchAeroDataBox(airport);
         if (flights) allFlights.push(...flights);
         // 1.1s delay between requests to respect 1 req/sec rate limit
-        if (airport !== QUERIED_AIRPORTS[QUERIED_AIRPORTS.length - 1]) {
+        if (airport !== AERODATABOX_AIRPORTS[AERODATABOX_AIRPORTS.length - 1]) {
           await new Promise(r => setTimeout(r, 1100));
         }
       }
       if (allFlights.length > 0) source = 'aerodatabox';
     } catch (e) {
-      // Fall through to OpenSky
+      // Fall through to OpenSky for all
     }
   }
 
-  // Fallback to OpenSky
+  // If AeroDataBox failed entirely, try OpenSky for all Jamaica
   if (allFlights.length === 0) {
     const openSkyFlights = await fetchOpenSky();
     if (openSkyFlights.length > 0) {
@@ -190,9 +303,26 @@ async function scheduledFetch() {
     }
   }
 
+  // OpenSky for smaller airports (OCJ, KTP) — always attempt
+  try {
+    for (const airport of OPENSKY_AIRPORTS) {
+      const flights = await fetchOpenSkyForAirport(airport);
+      if (flights.length > 0) {
+        allFlights.push(...flights);
+        console.log(`[Flights] OpenSky: ${flights.length} flights near ${airport.name} (${airport.iata})`);
+      }
+    }
+    if (source === 'none' && allFlights.length > 0) source = 'opensky';
+    else if (source === 'aerodatabox' && allFlights.some(f => f.destIata === 'OCJ' || f.destIata === 'KTP' || f.originIata === 'OCJ' || f.originIata === 'KTP')) {
+      source = 'mixed'; // Both sources active
+    }
+  } catch (e) {
+    console.error('[Flights] OpenSky small airports error:', e.message);
+  }
+
   // Store in database
-  if (allFlights.length > 0 && source === 'aerodatabox') {
-    storeFlights(allFlights);
+  if (allFlights.length > 0 && source !== 'none') {
+    storeFlights(allFlights.filter(f => f.type === 'arrival' || f.type === 'departure'));
   }
 
   const now = Date.now();
