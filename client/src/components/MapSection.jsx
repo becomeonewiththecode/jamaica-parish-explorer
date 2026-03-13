@@ -90,6 +90,16 @@ for (const [cat, s] of Object.entries(categoryStyles)) {
 }
 const defaultHighlightIcon = buildHighlightIcon('📍', '#888');
 
+// Build a fresh focus icon each call so CSS animation always restarts
+function buildFocusIcon(emoji, color) {
+  return L.divIcon({
+    className: 'category-leaflet-icon',
+    html: `<div class="cat-icon-inner cat-icon-focus" style="background:${color};border-color:#fff"><span>${emoji}</span></div>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+}
+
 const airportIcon = L.divIcon({
   className: 'airport-leaflet-icon',
   html: '<div class="airport-icon-inner">✈</div>',
@@ -105,6 +115,16 @@ const starIcon = L.divIcon({
 });
 
 // Component to fly map to bounds when parish changes, and create custom panes
+function FlyToPlace({ place }) {
+  const map = useMap();
+  useEffect(() => {
+    if (place && place.lat && place.lon) {
+      map.flyTo([place.lat, place.lon], 16, { duration: 0.8 });
+    }
+  }, [place, map]);
+  return null;
+}
+
 function FlyToBounds({ bounds, activeSlug }) {
   const map = useMap();
 
@@ -126,10 +146,10 @@ function FlyToBounds({ bounds, activeSlug }) {
   return null;
 }
 
-function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onClearHighlight }) {
+function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey }) {
   const [geojson, setGeojson] = useState(null);
   const [airports, setAirports] = useState([]);
-  const [activeCategories, setActiveCategories] = useState(new Set());
+  const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
   const geoJsonRef = useRef(null);
@@ -144,9 +164,8 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
       .catch(console.error);
   }, []);
 
-  // Reset filters when parish changes
+  // Reset selection when parish changes
   useEffect(() => {
-    setActiveCategories(new Set());
     setSelectedPlace(null);
   }, [activeSlug]);
 
@@ -294,6 +313,7 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
           />
 
           <FlyToBounds bounds={activeBounds} activeSlug={activeSlug} />
+          <FlyToPlace place={focusPlace} />
 
           {/* Parish boundaries */}
           {geojson && (
@@ -326,12 +346,15 @@ function MapSection({ activeSlug, onSelect, parishPlaces, highlightedPlace, onCl
           {activeSlug && filteredPlaces.map(p => {
             const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
             const isHighlighted = highlightedPlace && highlightedPlace.id === p.id;
-            const icon = isHighlighted
+            const isFocused = focusPlace && focusPlace.id === p.id;
+            const icon = isFocused
+              ? buildFocusIcon(style.icon, style.color)
+              : isHighlighted
               ? (categoryIconsHighlight[p.category] || defaultHighlightIcon)
               : (categoryIcons[p.category] || defaultPlaceIcon);
             return (
               <Marker
-                key={p.id}
+                key={isFocused ? `${p.id}-focus-${focusKey}` : p.id}
                 position={[p.lat, p.lon]}
                 icon={icon}
                 eventHandlers={{

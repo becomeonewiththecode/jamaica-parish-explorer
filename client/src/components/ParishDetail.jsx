@@ -1,6 +1,19 @@
 import NotesPanel from './NotesPanel';
 
-function ParishDetail({ parish, notes, onAddNote }) {
+function ParishDetail({ parish, notes, onAddNote, places, onFeatureClick }) {
+
+  const handleFeatureClick = (featureName) => {
+    if (!places || !places.length || !onFeatureClick) return;
+    // Find a place whose name matches (case-insensitive, partial match)
+    const lower = featureName.toLowerCase();
+    const match = places.find(p => p.name.toLowerCase() === lower)
+      || places.find(p => p.name.toLowerCase().includes(lower))
+      || places.find(p => lower.includes(p.name.toLowerCase()));
+    if (match) {
+      onFeatureClick(match);
+    }
+  };
+
   return (
     <div id="parish-detail">
       <div className="parish-header">
@@ -34,7 +47,13 @@ function ParishDetail({ parish, notes, onAddNote }) {
           <h3>Notable Features</h3>
           <div className="features-list">
             {parish.features.map((f, i) => (
-              <span key={i} className="feature-tag">{f}</span>
+              <button
+                key={i}
+                className="feature-tag feature-tag-link"
+                onClick={() => handleFeatureClick(f)}
+              >
+                {f}
+              </button>
             ))}
           </div>
         </div>
