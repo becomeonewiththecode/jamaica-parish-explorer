@@ -20,12 +20,25 @@ function AirportDetail({ airport, onClose }) {
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${airport.lat},${airport.lon}&travelmode=driving`;
 
   // Filter flights for this airport
-  const arrivals = flightData?.flights?.filter(
-    f => f.type === 'arrival' && f.destIata === airport.code
+  const airportFlights = flightData?.flights?.filter(
+    f => f.destIata === airport.code || f.originIata === airport.code
   ) || [];
-  const departures = flightData?.flights?.filter(
-    f => f.type === 'departure' && f.originIata === airport.code
-  ) || [];
+
+  // Classify: if dataSource is set use it, otherwise infer from presence of scheduledTime
+  const isScheduled = (f) => f.dataSource === 'scheduled' || (!f.dataSource && f.scheduledTime);
+  const isLive = (f) => f.dataSource === 'live' || (!f.dataSource && !f.scheduledTime);
+
+  // Scheduled flights (AeroDataBox)
+  const scheduledArrivals = airportFlights.filter(f => f.type === 'arrival' && isScheduled(f));
+  const scheduledDepartures = airportFlights.filter(f => f.type === 'departure' && isScheduled(f));
+
+  // Live flights (adsb.lol / OpenSky)
+  const liveArrivals = airportFlights.filter(f => f.type === 'arrival' && isLive(f));
+  const liveDepartures = airportFlights.filter(f => f.type === 'departure' && isLive(f));
+
+  // Combined for tab counts
+  const arrivals = airportFlights.filter(f => f.type === 'arrival');
+  const departures = airportFlights.filter(f => f.type === 'departure');
 
   return (
     <div className="airport-detail">
@@ -182,8 +195,12 @@ function AirportDetail({ airport, onClose }) {
           </button>
         </div>
         <div className="airport-flight-list">
-          {(activeTab === 'arrivals' ? arrivals : departures).map((f, i) => (
-            <div key={i} className="airport-flight-row">
+          {/* Scheduled flights section */}
+          {(activeTab === 'arrivals' ? scheduledArrivals : scheduledDepartures).length > 0 && (
+            <div className="airport-flight-section-label">Scheduled</div>
+          )}
+          {(activeTab === 'arrivals' ? scheduledArrivals : scheduledDepartures).map((f, i) => (
+            <div key={`s-${i}`} className="airport-flight-row">
               <span className="airport-flight-number">{f.flightNumber}</span>
               <span className="airport-flight-route">
                 {activeTab === 'arrivals' ? `${f.from} (${f.fromIata})` : `${f.to} (${f.toIata})`}
@@ -194,6 +211,28 @@ function AirportDetail({ airport, onClose }) {
               </span>
             </div>
           ))}
+
+          {/* Live radar flights section */}
+          {(activeTab === 'arrivals' ? liveArrivals : liveDepartures).length > 0 && (
+            <div className="airport-flight-section-label">Live Radar</div>
+          )}
+          {(activeTab === 'arrivals' ? liveArrivals : liveDepartures).map((f, i) => {
+            const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
+            const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
+            return (
+              <div key={`l-${i}`} className="airport-flight-row airport-flight-row-live">
+                <span className="airport-flight-number">{f.flightNumber || f.callsign || '---'}</span>
+                <span className="airport-flight-route">
+                  {f.aircraft ? f.aircraft : ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}
+                </span>
+                <span className="airport-flight-time">{altFt ? `${altFt.toLocaleString()}ft` : '---'}</span>
+                <span className={`airport-flight-status airport-flight-status-${(f.status || '').toLowerCase().replace(/\s/g, '')}`}>
+                  {f.status}
+                </span>
+              </div>
+            );
+          })}
+
           {(activeTab === 'arrivals' ? arrivals : departures).length === 0 && (
             <div className="airport-flight-empty">No {activeTab} at this time</div>
           )}

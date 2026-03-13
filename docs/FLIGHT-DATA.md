@@ -19,11 +19,21 @@ Flight data comes from two external APIs, each covering different airports:
 ### OpenSky Network (Secondary — Live Radar)
 - **Provider:** OpenSky Network
 - **Airports covered:** Ian Fleming Intl (OCJ) and Tinson Pen (KTP)
-- **Data type:** Live ADS-B radar positions of aircraft within a ~25 km radius of each airport
+- **Data type:** Live ADS-B radar positions of aircraft within a ~25 km bounding box of each airport
 - **Authentication:** OAuth2 client credentials flow (Keycloak). Token is cached for 30 minutes and refreshed automatically
 - **Token endpoint:** `https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token`
 - **API endpoint:** `https://opensky-network.org/api/states/all?lamin=...&lamax=...&lomin=...&lomax=...`
 - **Fallback role:** If AeroDataBox fails entirely, OpenSky is also used as a Jamaica-wide fallback (bounding box covering the full island)
+- **Note:** Caribbean ADS-B receiver coverage is sparse — OpenSky may return zero aircraft even when flights are active
+
+### adsb.lol (Tertiary — Live Radar, Free)
+- **Provider:** adsb.lol (open ADS-B data aggregator)
+- **Airports covered:** Ian Fleming Intl (OCJ) and Tinson Pen (KTP) — used as fallback when OpenSky returns no data
+- **Data type:** Live ADS-B transponder data within a 25 nautical mile radius of each airport
+- **Authentication:** None required (free, no API key)
+- **API endpoint:** `https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius_nm}`
+- **Data includes:** Callsign, aircraft type, registration, operator, lat/lon, altitude, ground speed, heading, barometric rate
+- **Advantage:** Aggregates data from multiple ADS-B feeder networks, providing better Caribbean coverage than OpenSky alone
 
 ### Airport Coverage Summary
 
@@ -31,8 +41,8 @@ Flight data comes from two external APIs, each covering different airports:
 |---------|------|------|-------------|-----------|
 | Norman Manley International | KIN | MKJP | AeroDataBox | Scheduled flights |
 | Sangster International | MBJ | MKJS | AeroDataBox | Scheduled flights |
-| Ian Fleming International | OCJ | MKBS | OpenSky Network | Live radar |
-| Tinson Pen Aerodrome | KTP | MKTP | OpenSky Network | Live radar |
+| Ian Fleming International | OCJ | MKBS | OpenSky → adsb.lol | Live radar |
+| Tinson Pen Aerodrome | KTP | MKTP | OpenSky → adsb.lol | Live radar |
 
 ---
 
@@ -61,18 +71,27 @@ The server fetches flight data on a **15-minute interval** using background poll
 
 1. **AeroDataBox** — Query KIN and MBJ sequentially (1.1s delay between requests to respect rate limit)
 2. **OpenSky fallback** — If AeroDataBox returns zero flights, query OpenSky for all Jamaica airspace
-3. **OpenSky per-airport** — Always query OpenSky for OCJ and KTP (~25 km bounding box around each)
+3. **Small airports (OCJ, KTP)** — For each airport:
+   - Try **OpenSky** first (~25 km bounding box)
+   - If OpenSky returns zero aircraft, try **adsb.lol** (25 nautical mile radius)
 
-### OpenSky Flight Classification
+### Live Radar Flight Classification
 
-Since OpenSky provides raw aircraft positions (not schedule data), flights near OCJ and KTP are classified by vertical rate:
-- **Descending** (vertical rate < -1 m/s) or **on ground** → classified as **arrival**
-- **Ascending** (vertical rate > 1 m/s) → classified as **departure**
+Since OpenSky and adsb.lol provide raw aircraft positions (not schedule data), flights near OCJ and KTP are classified by vertical rate:
+
+**OpenSky:**
+- Descending (vertical rate < -1 m/s) or on ground → **arrival**
+- Ascending (vertical rate > 1 m/s) → **departure**
+
+**adsb.lol:**
+- Descending (baro rate < -200 ft/min) or on ground → **arrival**
+- Ascending (baro rate > 200 ft/min) → **departure**
 
 ### API Usage Estimate
 
 - AeroDataBox: 2 calls per poll × 4 polls/hour × 24 hours = **~192 calls/day**
 - OpenSky: 2 calls per poll (authenticated, no strict rate limit)
+- adsb.lol: 0–2 calls per poll (only when OpenSky returns nothing, no rate limit)
 
 ---
 

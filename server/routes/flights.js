@@ -239,6 +239,67 @@ async function fetchOpenSkyForAirport(airport) {
   }
 }
 
+// --- adsb.lol (free, no API key — secondary for small airports) ---
+async function fetchAdsbLolForAirport(airport) {
+  const RADIUS_NM = 25; // nautical miles
+  try {
+    const url = `https://api.adsb.lol/v2/lat/${airport.lat}/lon/${airport.lon}/dist/${RADIUS_NM}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const ac = data.ac || [];
+    if (ac.length === 0) return [];
+
+    return ac.map(a => {
+      const callsign = (a.flight || '').trim();
+      const altitude = a.alt_baro === 'ground' ? 0 : (a.alt_baro || 0);
+      const onGround = a.alt_baro === 'ground';
+      const baroRate = a.baro_rate || 0; // ft/min
+      const heading = a.track || a.true_heading || 0;
+      const velocity = a.gs || 0; // ground speed in knots
+
+      // Classify by vertical rate (ft/min)
+      let direction = 'arrival';
+      if (baroRate > 200) direction = 'departure';
+      else if (baroRate < -200 || onGround) direction = 'arrival';
+      else direction = onGround ? 'arrival' : 'arrival';
+
+      return {
+        id: a.hex || callsign || 'unknown',
+        callsign,
+        flightNumber: callsign,
+        status: onGround ? 'On Ground' : (direction === 'arrival' ? 'Approaching' : 'Departing'),
+        type: direction,
+        from: direction === 'arrival' ? '' : '',
+        fromIata: '',
+        fromCountry: '',
+        to: direction === 'departure' ? '' : '',
+        toIata: '',
+        toCountry: '',
+        airline: a.ownOp || '',
+        aircraft: a.t || '',
+        aircraftReg: a.r || '',
+        scheduledTime: '',
+        lat: a.lat,
+        lon: a.lon,
+        altitude: onGround ? 0 : (altitude * 0.3048), // convert ft to meters
+        velocity: velocity * 0.5144, // convert knots to m/s
+        heading,
+        ...(direction === 'arrival' ? {
+          destLat: airport.lat, destLon: airport.lon, destName: airport.name, destIata: airport.iata,
+        } : {
+          originLat: airport.lat, originLon: airport.lon, originName: airport.name, originIata: airport.iata,
+        }),
+      };
+    }).filter(f => f.lat && f.lon);
+  } catch (e) {
+    return [];
+  }
+}
+
 // --- Store flights in database ---
 function storeFlights(flights) {
   try {
@@ -274,51 +335,84 @@ function storeFlights(flights) {
 
 // --- Scheduled background fetch ---
 async function scheduledFetch() {
-  let allFlights = [];
-  let source = 'none';
+  let scheduledFlights = [];  // AeroDataBox schedule data
+  let liveFlights = [];       // adsb.lol / OpenSky live positions
+  let sources = [];
 
-  // AeroDataBox for major airports (KIN, MBJ)
+  // 1. AeroDataBox for scheduled flights (KIN, MBJ)
   if (RAPIDAPI_KEY) {
     try {
       for (const airport of AERODATABOX_AIRPORTS) {
         const flights = await fetchAeroDataBox(airport);
-        if (flights) allFlights.push(...flights);
-        // 1.1s delay between requests to respect 1 req/sec rate limit
+        if (flights) scheduledFlights.push(...flights);
         if (airport !== AERODATABOX_AIRPORTS[AERODATABOX_AIRPORTS.length - 1]) {
           await new Promise(r => setTimeout(r, 1100));
         }
       }
-      if (allFlights.length > 0) source = 'aerodatabox';
-    } catch (e) {
-      // Fall through to OpenSky for all
-    }
+      if (scheduledFlights.length > 0) sources.push('aerodatabox');
+    } catch (e) {}
   }
 
-  // If AeroDataBox failed entirely, try OpenSky for all Jamaica
-  if (allFlights.length === 0) {
+  // 2. If AeroDataBox failed, try OpenSky as Jamaica-wide fallback
+  if (scheduledFlights.length === 0) {
     const openSkyFlights = await fetchOpenSky();
     if (openSkyFlights.length > 0) {
-      allFlights = openSkyFlights;
-      source = 'opensky';
+      scheduledFlights = openSkyFlights;
+      sources.push('opensky');
     }
   }
 
-  // OpenSky for smaller airports (OCJ, KTP) — always attempt
-  try {
-    for (const airport of OPENSKY_AIRPORTS) {
-      const flights = await fetchOpenSkyForAirport(airport);
+  // 3. adsb.lol live positions for ALL airports (with OpenSky fallback per airport)
+  for (const airport of JAMAICA_AIRPORTS) {
+    let flights = [];
+
+    // Try adsb.lol first (better Caribbean coverage, no auth needed)
+    try {
+      flights = await fetchAdsbLolForAirport(airport);
       if (flights.length > 0) {
-        allFlights.push(...flights);
-        console.log(`[Flights] OpenSky: ${flights.length} flights near ${airport.name} (${airport.iata})`);
+        console.log(`[Flights] adsb.lol: ${flights.length} live aircraft near ${airport.name} (${airport.iata})`);
       }
+    } catch (e) {}
+
+    // Fallback to OpenSky if adsb.lol returned nothing
+    if (flights.length === 0) {
+      try {
+        flights = await fetchOpenSkyForAirport(airport);
+        if (flights.length > 0) {
+          console.log(`[Flights] OpenSky: ${flights.length} live aircraft near ${airport.name} (${airport.iata})`);
+        }
+      } catch (e) {}
     }
-    if (source === 'none' && allFlights.length > 0) source = 'opensky';
-    else if (source === 'aerodatabox' && allFlights.some(f => f.destIata === 'OCJ' || f.destIata === 'KTP' || f.originIata === 'OCJ' || f.originIata === 'KTP')) {
-      source = 'mixed'; // Both sources active
-    }
-  } catch (e) {
-    console.error('[Flights] OpenSky small airports error:', e.message);
+
+    if (flights.length > 0) liveFlights.push(...flights);
   }
+
+  if (liveFlights.length > 0 && !sources.includes('adsb.lol')) sources.push('adsb.lol');
+
+  // Deduplicate live flights (same aircraft may appear near multiple airports)
+  const seenLiveIds = new Set();
+  liveFlights = liveFlights.filter(f => {
+    const key = f.id + '-' + (f.destIata || f.originIata || '');
+    if (seenLiveIds.has(key)) return false;
+    seenLiveIds.add(key);
+    return true;
+  });
+
+  // Tag live flights so frontend can distinguish them
+  for (const f of liveFlights) {
+    f.dataSource = 'live';
+  }
+  for (const f of scheduledFlights) {
+    f.dataSource = 'scheduled';
+  }
+
+  const allFlights = [...scheduledFlights, ...liveFlights];
+
+  // Determine source label
+  let source = 'none';
+  if (sources.length === 0 && allFlights.length === 0) source = 'none';
+  else if (sources.length === 1) source = sources[0];
+  else source = 'mixed';
 
   // Store in database
   if (allFlights.length > 0 && source !== 'none') {
@@ -334,7 +428,9 @@ async function scheduledFetch() {
   };
 
   flightsCache = { data: result, timestamp: now };
-  console.log(`[Flights] Fetched ${allFlights.length} flights from ${source} — next poll in ${POLL_INTERVAL / 60000} min`);
+  const scheduledCount = scheduledFlights.length;
+  const liveCount = liveFlights.length;
+  console.log(`[Flights] Fetched ${allFlights.length} flights (${scheduledCount} scheduled, ${liveCount} live) from ${source} — next poll in ${POLL_INTERVAL / 60000} min`);
   return result;
 }
 
