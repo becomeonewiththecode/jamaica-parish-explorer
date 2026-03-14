@@ -324,27 +324,31 @@ async function fetchOpenSkyForAirport(airport) {
       const callsign = (s[1] || '').trim();
       const verticalRate = s[11]; // m/s, negative = descending
 
-      // Classify: descending or on ground near airport = arrival, ascending = departure
-      let direction = 'arrival';
-      if (verticalRate > 1) direction = 'departure';
-      else if (verticalRate < -1 || onGround) direction = 'arrival';
-      else if (altitude && altitude > 3000) direction = 'arrival'; // high altitude approaching
-      else direction = onGround ? 'arrival' : 'departure';
+      // Distance from airport (rough nm)
+      const distNm = Math.hypot((lat - airport.lat) * 60, (lon - airport.lon) * 60 * Math.cos(airport.lat * Math.PI / 180));
+      const altFt = altitude ? altitude * 3.281 : 0;
 
-      const altFt = altitude ? Math.round(altitude * 3.281) : null;
+      // Classify by vertical rate, altitude, and distance
+      let direction;
+      if (onGround) direction = 'arrival';
+      else if (verticalRate < -1 && altFt <= 20000) direction = 'arrival';
+      else if (verticalRate < -1 && altFt > 20000 && distNm <= 40) direction = 'arrival';
+      else if (verticalRate > 1 && altFt <= 15000) direction = 'departure';
+      else if (altFt <= 10000 && distNm <= 15) direction = 'arrival';
+      else direction = 'flyover';
 
       return {
         id: s[0] || callsign,
         callsign,
         flightNumber: callsign,
-        status: onGround ? 'On Ground' : (direction === 'arrival' ? 'Approaching' : 'Departing'),
+        status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
         type: direction,
-        from: direction === 'arrival' ? (s[2] || 'Unknown') : '',
+        from: s[2] || '',
         fromIata: '',
-        fromCountry: direction === 'arrival' ? (s[2] || '') : '',
-        to: direction === 'departure' ? (s[2] || 'Unknown') : '',
+        fromCountry: s[2] || '',
+        to: '',
         toIata: '',
-        toCountry: direction === 'departure' ? (s[2] || '') : '',
+        toCountry: '',
         airline: resolveAirline(callsign),
         aircraft: '',
         aircraftReg: '',
@@ -354,12 +358,12 @@ async function fetchOpenSkyForAirport(airport) {
         altitude,
         velocity,
         heading,
-        // Set airport references
+        nearestAirport: airport.iata,
         ...(direction === 'arrival' ? {
           destLat: airport.lat, destLon: airport.lon, destName: airport.name, destIata: airport.iata,
-        } : {
+        } : direction === 'departure' ? {
           originLat: airport.lat, originLon: airport.lon, originName: airport.name, originIata: airport.iata,
-        }),
+        } : {}),
       };
     }).filter(f => f.lat && f.lon);
   } catch (e) {
@@ -389,22 +393,28 @@ async function fetchAdsbLolForAirport(airport) {
       const heading = a.track || a.true_heading || 0;
       const velocity = a.gs || 0; // ground speed in knots
 
-      // Classify by vertical rate (ft/min)
-      let direction = 'arrival';
-      if (baroRate > 200) direction = 'departure';
-      else if (baroRate < -200 || onGround) direction = 'arrival';
-      else direction = onGround ? 'arrival' : 'arrival';
+      // Distance from airport (rough nm: 1 deg lat ≈ 60nm)
+      const distNm = Math.hypot((a.lat - airport.lat) * 60, (a.lon - airport.lon) * 60 * Math.cos(airport.lat * Math.PI / 180));
+
+      // Classify by vertical rate, altitude, and distance
+      let direction;
+      if (onGround) direction = 'arrival';
+      else if (baroRate < -200 && altitude <= 20000) direction = 'arrival';       // descending at reasonable alt
+      else if (baroRate < -200 && altitude > 20000 && distNm <= 40) direction = 'arrival'; // high but close & descending
+      else if (baroRate > 200 && altitude <= 15000) direction = 'departure';      // climbing from airport
+      else if (altitude <= 10000 && distNm <= 15) direction = 'arrival';          // low + close = landing pattern
+      else direction = 'flyover';                                                  // everything else is passing through
 
       return {
         id: a.hex || callsign || 'unknown',
         callsign,
         flightNumber: callsign,
-        status: onGround ? 'On Ground' : (direction === 'arrival' ? 'Approaching' : 'Departing'),
+        status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
         type: direction,
-        from: direction === 'arrival' ? '' : '',
+        from: '',
         fromIata: '',
         fromCountry: '',
-        to: direction === 'departure' ? '' : '',
+        to: '',
         toIata: '',
         toCountry: '',
         airline: a.ownOp || resolveAirline(callsign),
@@ -416,11 +426,12 @@ async function fetchAdsbLolForAirport(airport) {
         altitude: onGround ? 0 : (altitude * 0.3048), // convert ft to meters
         velocity: velocity * 0.5144, // convert knots to m/s
         heading,
+        nearestAirport: airport.iata,
         ...(direction === 'arrival' ? {
           destLat: airport.lat, destLon: airport.lon, destName: airport.name, destIata: airport.iata,
-        } : {
+        } : direction === 'departure' ? {
           originLat: airport.lat, originLon: airport.lon, originName: airport.name, originIata: airport.iata,
-        }),
+        } : {}),
       };
     }).filter(f => f.lat && f.lon);
   } catch (e) {
@@ -516,14 +527,26 @@ async function fetchLiveRadar() {
     if (flights.length > 0) liveFlights.push(...flights);
   }
 
-  // Deduplicate (same aircraft may appear near multiple airports)
-  const seen = new Set();
-  liveFlights = liveFlights.filter(f => {
-    const key = f.id + '-' + (f.destIata || f.originIata || '');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  // Deduplicate: same aircraft near multiple airports — keep only the nearest
+  const byAircraft = new Map();
+  for (const f of liveFlights) {
+    const existing = byAircraft.get(f.id);
+    if (!existing) {
+      byAircraft.set(f.id, f);
+    } else {
+      // Compare distance to assigned airport — keep the closer one
+      const apLat = f.type === 'arrival' ? f.destLat : f.originLat;
+      const apLon = f.type === 'arrival' ? f.destLon : f.originLon;
+      const existApLat = existing.type === 'arrival' ? existing.destLat : existing.originLat;
+      const existApLon = existing.type === 'arrival' ? existing.destLon : existing.originLon;
+      const dist = Math.hypot(f.lat - apLat, f.lon - apLon);
+      const existDist = Math.hypot(existing.lat - existApLat, existing.lon - existApLon);
+      if (dist < existDist) {
+        byAircraft.set(f.id, f);
+      }
+    }
+  }
+  liveFlights = Array.from(byAircraft.values());
 
   for (const f of liveFlights) { f.dataSource = 'live'; }
 

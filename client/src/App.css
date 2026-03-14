@@ -2266,6 +2266,34 @@
   color: #f44336;
 }
 
+.airport-flight-status-flyover {
+  color: #90caf9;
+}
+
+.airport-flight-row-flyover {
+  opacity: 0.7;
+}
+
+.airport-flight-section-flyover {
+  border-top: 1px solid rgba(144, 202, 249, 0.2);
+  margin-top: 4px;
+  color: #90caf9 !important;
+}
+
+.airport-flight-section-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 8px 2px;
+  color: #5a9fd4;
+}
+
+.airport-flight-row-live {
+  background: rgba(76, 175, 80, 0.06);
+  border-left: 2px solid rgba(76, 175, 80, 0.3);
+}
+
 .airport-flight-track {
   display: flex;
   align-items: center;

@@ -7,10 +7,12 @@ const POLL_INTERVAL = 30000; // 30 seconds (matches server live radar poll)
 
 // Build a rotated plane icon for live aircraft
 function buildLiveIcon(heading, type) {
-  const color = type === 'arrival' ? '#4caf50' : '#ff9800';
+  const color = type === 'arrival' ? '#4caf50' : type === 'departure' ? '#ff9800' : '#1a1a1a';
+  const opacity = type === 'flyover' ? '0.8' : '1';
+  const size = type === 'flyover' ? '18px' : '22px';
   return L.divIcon({
     className: 'flight-leaflet-icon',
-    html: `<div class="flight-icon-inner" style="transform:rotate(${heading || 0}deg);color:${color};font-size:22px">✈</div>`,
+    html: `<div class="flight-icon-inner" style="transform:rotate(${heading || 0}deg);color:${color};font-size:${size};opacity:${opacity}${type === 'flyover' ? ';-webkit-text-stroke:0.5px rgba(255,255,255,0.6)' : ''}">✈</div>`,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   });
@@ -34,7 +36,7 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
     return () => clearInterval(interval);
   }, [visible, refresh]);
 
-  if (!visible || !data || !data.flights || data.flights.length === 0) return null;
+  if (!visible || !data || !data.flights) return null;
 
   const flights = data.flights;
   const flightAirports = data.airports || [];
@@ -43,18 +45,20 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
   const scheduledFlights = flights.filter(f => f.dataSource === 'scheduled' || (!f.dataSource && f.scheduledTime));
   const liveFlights = flights.filter(f => (f.dataSource === 'live' || (!f.dataSource && !f.scheduledTime)) && f.lat && f.lon);
 
-  // Group scheduled flights by airport for count badges
+  // Group ALL flights (scheduled + live) by airport for count badges
   const airportCounts = {};
   for (const ap of flightAirports) {
     airportCounts[ap.icao] = { ...ap, arrivals: 0, departures: 0 };
   }
-  for (const f of scheduledFlights) {
-    if (f.type === 'arrival' && f.destIata) {
-      const ap = flightAirports.find(a => a.iata === f.destIata);
+  for (const f of flights) {
+    if (f.type === 'arrival') {
+      const iata = f.destIata || f.nearestAirport;
+      const ap = flightAirports.find(a => a.iata === iata);
       if (ap && airportCounts[ap.icao]) airportCounts[ap.icao].arrivals++;
     }
-    if (f.type === 'departure' && f.originIata) {
-      const ap = flightAirports.find(a => a.iata === f.originIata);
+    if (f.type === 'departure') {
+      const iata = f.originIata || f.nearestAirport;
+      const ap = flightAirports.find(a => a.iata === iata);
       if (ap && airportCounts[ap.icao]) airportCounts[ap.icao].departures++;
     }
   }
@@ -90,8 +94,8 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
         );
       })}
 
-      {/* Live aircraft approach/departure lines */}
-      {liveFlights.map(f => {
+      {/* Live aircraft approach/departure lines (not for flyovers) */}
+      {liveFlights.filter(f => f.type !== 'flyover').map(f => {
         const airportLat = f.type === 'arrival' ? f.destLat : f.originLat;
         const airportLon = f.type === 'arrival' ? f.destLon : f.originLon;
         if (!airportLat || !airportLon) return null;
@@ -114,14 +118,15 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
         const icon = buildLiveIcon(f.heading, f.type);
         const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
         const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
-        const airportName = f.type === 'arrival' ? f.destName : f.originName;
+        const airportName = f.type === 'arrival' ? f.destName : f.type === 'departure' ? f.originName : null;
+        const statusColor = f.type === 'arrival' ? '#4caf50' : f.type === 'departure' ? '#ff9800' : '#999';
 
         return (
           <Marker
             key={`plane-${f.id}`}
             position={[f.lat, f.lon]}
             icon={icon}
-            zIndexOffset={1100}
+            zIndexOffset={f.type === 'flyover' ? 1000 : 1100}
           >
             <Tooltip direction="top" offset={[0, -14]} className="flight-leaflet-tooltip">
               <strong>{f.callsign || f.flightNumber || f.id}</strong><br />
@@ -131,8 +136,8 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
               {f.aircraft && <span>{f.aircraft}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}<br /></span>}
               {altFt != null && <span>Alt: {altFt.toLocaleString()} ft<br /></span>}
               {speedKts != null && <span>Speed: {speedKts} kts<br /></span>}
-              <em style={{color: f.type === 'arrival' ? '#4caf50' : '#ff9800'}}>
-                {f.status || (f.type === 'arrival' ? 'Approaching' : 'Departing')}
+              <em style={{color: statusColor}}>
+                {f.status || (f.type === 'flyover' ? 'Flyover' : f.type === 'arrival' ? 'Approaching' : 'Departing')}
               </em>
             </Tooltip>
           </Marker>

@@ -28,7 +28,7 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
 
   // Filter flights for this airport
   const airportFlights = flightData?.flights?.filter(
-    f => f.destIata === airport.code || f.originIata === airport.code
+    f => f.destIata === airport.code || f.originIata === airport.code || f.nearestAirport === airport.code
   ) || [];
 
   // Classify: if dataSource is set use it, otherwise infer from presence of scheduledTime
@@ -42,6 +42,9 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
   // Live flights (adsb.lol / OpenSky)
   const liveArrivals = airportFlights.filter(f => f.type === 'arrival' && isLive(f));
   const liveDepartures = airportFlights.filter(f => f.type === 'departure' && isLive(f));
+
+  // Flyovers near this airport
+  const flyovers = airportFlights.filter(f => f.type === 'flyover');
 
   // Combined for tab counts
   const arrivals = airportFlights.filter(f => f.type === 'arrival');
@@ -272,6 +275,43 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
           {(activeTab === 'arrivals' ? arrivals : departures).length === 0 && (
             <div className="airport-flight-empty">No {activeTab} at this time</div>
           )}
+
+          {/* Flyovers section (shown on both tabs) */}
+          {flyovers.length > 0 && (
+            <div className="airport-flight-section-label airport-flight-section-flyover">Flyovers ({flyovers.length})</div>
+          )}
+          {flyovers.map((f, i) => {
+            const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
+            const trackId = (f.flightNumber || f.callsign || '').replace(/\s/g, '');
+            const hasPosition = f.lat && f.lon;
+            return (
+              <div key={`fo-${i}`} className="airport-flight-row airport-flight-row-flyover">
+                <span className="airport-flight-number">{f.flightNumber || f.callsign || '---'}</span>
+                <span className="airport-flight-airline">{f.airline || ''}</span>
+                <span className="airport-flight-route">
+                  {f.aircraft || ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}
+                </span>
+                <span className="airport-flight-time">{altFt ? `${altFt.toLocaleString()}ft` : '---'}</span>
+                <span className="airport-flight-status airport-flight-status-flyover">Flyover</span>
+                <span className="airport-flight-track">
+                  {hasPosition && (
+                    <button
+                      className="airport-flight-locate"
+                      title="Show on map"
+                      onClick={() => onFlightSelect && onFlightSelect(f)}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-10-10h4m12 0h4"/></svg>
+                    </button>
+                  )}
+                  {trackId && (
+                    <a href={`https://www.flightradar24.com/${trackId}`} target="_blank" rel="noopener noreferrer" title="Track on Flightradar24">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/><path d="M12 3v9l6 3"/></svg>
+                    </a>
+                  )}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
