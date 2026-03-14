@@ -133,11 +133,14 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
               {f.airline && <span>{f.airline}<br /></span>}
               {f.type === 'arrival' && airportName && <span>→ {airportName}<br /></span>}
               {f.type === 'departure' && airportName && <span>← {airportName}<br /></span>}
+              {f.type === 'flyover' && f.routeOrigin && f.routeDestination && (
+                <span style={{color:'#90caf9'}}>{f.routeOrigin} → {f.routeDestination}<br /></span>
+              )}
               {f.aircraft && <span>{f.aircraft}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}<br /></span>}
               {altFt != null && <span>Alt: {altFt.toLocaleString()} ft<br /></span>}
               {speedKts != null && <span>Speed: {speedKts} kts<br /></span>}
               <em style={{color: statusColor}}>
-                {f.status || (f.type === 'flyover' ? 'Flyover' : f.type === 'arrival' ? 'Approaching' : 'Departing')}
+                {f.confirmedFlyover ? 'Overflying' : f.status || (f.type === 'flyover' ? 'Flyover' : f.type === 'arrival' ? 'Approaching' : 'Departing')}
               </em>
             </Tooltip>
           </Marker>

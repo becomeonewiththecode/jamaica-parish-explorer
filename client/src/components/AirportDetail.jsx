@@ -35,9 +35,24 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
   const isScheduled = (f) => f.dataSource === 'scheduled' || (!f.dataSource && f.scheduledTime);
   const isLive = (f) => f.dataSource === 'live' || (!f.dataSource && !f.scheduledTime);
 
-  // Scheduled flights (AeroDataBox)
-  const scheduledArrivals = airportFlights.filter(f => f.type === 'arrival' && isScheduled(f));
-  const scheduledDepartures = airportFlights.filter(f => f.type === 'departure' && isScheduled(f));
+  // Hide confirmed completed flights (Landed/Departed) that are old
+  const isStillRelevant = (f) => {
+    const status = (f.status || '').toLowerCase();
+    if (status === 'landed' || status === 'departed') {
+      // Keep on board for 15 min after confirmation so user sees confirmation
+      if (!f.scheduledTime) return false;
+      try {
+        const scheduled = new Date(f.scheduledTime.replace(' ', 'T'));
+        const now = new Date();
+        return (now - scheduled) < 60 * 60 * 1000; // keep for up to 1 hour past scheduled
+      } catch (e) { return false; }
+    }
+    return true;
+  };
+
+  // Scheduled flights (AeroDataBox) — hide old completed flights
+  const scheduledArrivals = airportFlights.filter(f => f.type === 'arrival' && isScheduled(f) && isStillRelevant(f));
+  const scheduledDepartures = airportFlights.filter(f => f.type === 'departure' && isScheduled(f) && isStillRelevant(f));
 
   // Live flights (adsb.lol / OpenSky)
   const liveArrivals = airportFlights.filter(f => f.type === 'arrival' && isLive(f));
@@ -205,6 +220,15 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
           </button>
         </div>
         <div className="airport-flight-list">
+          {/* Column headers */}
+          <div className="airport-flight-header">
+            <span className="airport-flight-number">Flight</span>
+            <span className="airport-flight-airline">Airline</span>
+            <span className="airport-flight-route">{activeTab === 'arrivals' ? 'From' : 'To'}</span>
+            <span className="airport-flight-time">Time</span>
+            <span className="airport-flight-status">Status</span>
+            <span className="airport-flight-track"></span>
+          </div>
           {/* Scheduled flights section */}
           {(activeTab === 'arrivals' ? scheduledArrivals : scheduledDepartures).length > 0 && (
             <div className="airport-flight-section-label">Scheduled</div>
@@ -284,15 +308,28 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
             const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
             const trackId = (f.flightNumber || f.callsign || '').replace(/\s/g, '');
             const hasPosition = f.lat && f.lon;
+            // Route info: show origin → destination if available
+            const routeStr = (f.routeOrigin || f.fromIata) && (f.routeDestination || f.toIata)
+              ? `${f.routeOrigin || f.fromIata} → ${f.routeDestination || f.toIata}`
+              : (f.routeDestination || f.toIata) ? `→ ${f.routeDestination || f.toIata}` : '';
             return (
               <div key={`fo-${i}`} className="airport-flight-row airport-flight-row-flyover">
                 <span className="airport-flight-number">{f.flightNumber || f.callsign || '---'}</span>
                 <span className="airport-flight-airline">{f.airline || ''}</span>
                 <span className="airport-flight-route">
-                  {f.aircraft || ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}
+                  {routeStr ? (
+                    <span className="airport-flight-route-path">{routeStr}</span>
+                  ) : (
+                    <>{f.aircraft || ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}</>
+                  )}
+                  {routeStr && f.aircraft && (
+                    <span className="airport-flight-aircraft-small"> {f.aircraft}</span>
+                  )}
                 </span>
                 <span className="airport-flight-time">{altFt ? `${altFt.toLocaleString()}ft` : '---'}</span>
-                <span className="airport-flight-status airport-flight-status-flyover">Flyover</span>
+                <span className="airport-flight-status airport-flight-status-flyover">
+                  {f.confirmedFlyover ? 'Overflying' : 'Flyover'}
+                </span>
                 <span className="airport-flight-track">
                   {hasPosition && (
                     <button

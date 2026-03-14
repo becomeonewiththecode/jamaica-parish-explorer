@@ -2200,6 +2200,23 @@
   overflow-y: auto;
 }
 
+.airport-flight-header {
+  display: grid;
+  grid-template-columns: 72px 100px 1fr 48px 76px 32px;
+  gap: 6px;
+  padding: 4px 4px 3px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #5a7a9a;
+  border-bottom: 1px solid rgba(30, 58, 95, 0.5);
+  position: sticky;
+  top: 0;
+  background: rgba(10, 22, 40, 0.95);
+  z-index: 1;
+}
+
 .airport-flight-row {
   display: grid;
   grid-template-columns: 72px 100px 1fr 48px 76px 32px;
@@ -2247,6 +2264,7 @@
 }
 
 .airport-flight-status-arrived,
+.airport-flight-status-landed,
 .airport-flight-status-landing {
   color: #4caf50;
 }
@@ -2292,6 +2310,17 @@
 .airport-flight-row-live {
   background: rgba(76, 175, 80, 0.06);
   border-left: 2px solid rgba(76, 175, 80, 0.3);
+}
+
+.airport-flight-route-path {
+  color: #90caf9;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.airport-flight-aircraft-small {
+  color: #5a7a9a;
+  font-size: 0.75rem;
 }
 
 .airport-flight-track {
