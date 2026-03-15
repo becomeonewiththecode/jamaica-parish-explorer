@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
 import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -11,7 +11,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
+import union from '@turf/union';
 import { fetchAirports, fetchAllPlaces } from '../api/parishes';
+import { fetchWeatherIsland } from '../api/weather';
 import { mapAirport } from '../data/airports';
 import PlacePopup from './PlacePopup';
 import AirportPopup from './AirportPopup';
@@ -20,6 +22,10 @@ import FlightTracker from './FlightTracker';
 // "Always on" categories — visible on map when zoomed in, no parish selection needed
 const ALWAYS_ON_CATEGORIES = ['hotel', 'resort', 'guest_house', 'restaurant', 'beach'];
 const ALWAYS_ON_MIN_ZOOM = 10; // Show when zoom >= this level
+
+// Weather view: when on, show only airports + weather (temp, wind, cloud) at zoom 9–10, no place icons
+const WEATHER_ZOOM_MIN = 9;
+const WEATHER_ZOOM_MAX = 10;
 
 const nameToSlug = {
   "Hanover": "hanover", "Westmoreland": "westmoreland",
@@ -30,6 +36,7 @@ const nameToSlug = {
   "Saint Andrew": "st-andrew", "Kingston": "kingston",
   "Saint Thomas": "st-thomas", "Portland": "portland",
 };
+const slugToName = Object.fromEntries(Object.entries(nameToSlug).map(([n, s]) => [s, n]));
 
 const parishColors = {
   "hanover": "#2e7d32", "westmoreland": "#388e3c",
@@ -122,6 +129,56 @@ const starIcon = L.divIcon({
   iconAnchor: [16, 40],
 });
 
+function buildWeatherIcon(temp) {
+  const t = temp != null ? Math.round(Number(temp)) : '—';
+  return L.divIcon({
+    className: 'weather-leaflet-icon',
+    html: `<div class="weather-icon-inner"><span class="weather-temp">${t}°</span></div>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+}
+
+// Wind arrow: direction = meteorological (from), arrow points where wind blows. Size 48 at zoom 9.
+function buildWindArrowIcon(windDirection, windSpeed) {
+  const deg = Number(windDirection) || 0;
+  const speed = Number(windSpeed) || 0;
+  const rot = (deg + 180) % 360; // arrow points downwind
+  const len = Math.min(26, Math.max(12, 12 + (speed / 30) * 14));
+  const size = 48;
+  const half = size / 2;
+  return L.divIcon({
+    className: 'wind-leaflet-icon',
+    html: `<div class="wind-arrow-wrap" style="--rot:${rot}deg">
+      <svg class="wind-arrow-svg" viewBox="0 0 48 48" width="${size}" height="${size}">
+        <line x1="${half}" y1="40" x2="${half}" y2="${48 - len}" stroke="rgba(100,180,255,0.98)" stroke-width="3" stroke-linecap="round"/>
+        <polygon points="${half},6 10,20 ${half},16 38,20" fill="rgba(100,180,255,0.98)"/>
+      </svg>
+    </div>`,
+    iconSize: [size, size],
+    iconAnchor: [half, half],
+  });
+}
+
+// Cloud: opacity from cloud cover (min 0.5 so always visible at zoom 9), drift direction from wind.
+function buildCloudIcon(cloudCover, windDirection) {
+  const cover = Math.min(100, Math.max(0, Number(cloudCover) || 0));
+  const opacity = Math.max(0.5, cover / 100); // always visible
+  const deg = (Number(windDirection) || 0) + 180;
+  const rad = (deg * Math.PI) / 180;
+  const moveX = (24 * Math.sin(rad)).toFixed(1);
+  const moveY = (-24 * Math.cos(rad)).toFixed(1);
+  const size = 64;
+  return L.divIcon({
+    className: 'cloud-leaflet-icon',
+    html: `<div class="cloud-wrap" style="--cloud-opacity:${opacity};--move-x:${moveX}px;--move-y:${moveY}px;--cloud-size:${size}px">
+      <span class="cloud-emoji" aria-hidden="true">☁</span>
+    </div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
 // Component to fly map to bounds when parish changes, and create custom panes
 function FlyToPlace({ place }) {
   const map = useMap();
@@ -136,11 +193,19 @@ function FlyToPlace({ place }) {
 function FlyToBounds({ bounds, activeSlug }) {
   const map = useMap();
 
-  // Create custom panes so GeoJSON is always below markers
+  // Create custom panes: mask (hide other countries) < parish < weather < markers
   useEffect(() => {
+    if (!map.getPane('maskPane')) {
+      const p = map.createPane('maskPane');
+      p.style.zIndex = 250; // above tiles (200), below parish (300)
+    }
     if (!map.getPane('parishPane')) {
       const pane = map.createPane('parishPane');
-      pane.style.zIndex = 300; // below default marker pane (600)
+      pane.style.zIndex = 300; // below weather
+    }
+    if (!map.getPane('weatherPane')) {
+      const wp = map.createPane('weatherPane');
+      wp.style.zIndex = 450; // above parishes, below default marker pane (600)
     }
   }, [map]);
 
@@ -157,6 +222,29 @@ function FlyToBounds({ bounds, activeSlug }) {
 function MapRefExporter({ mapRef }) {
   const map = useMap();
   useEffect(() => { mapRef.current = map; }, [map, mapRef]);
+  return null;
+}
+
+function JamaicaMaskLayer({ maskData }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!maskData) return;
+    if (!map.getPane('maskPane')) {
+      const p = map.createPane('maskPane');
+      p.style.zIndex = 250;
+    }
+    const layer = L.geoJSON(maskData, {
+      style: () => ({
+        pane: 'maskPane',
+        fillColor: '#0d1f3c',
+        fillOpacity: 1,
+        weight: 0,
+        interactive: false,
+      }),
+    });
+    layer.addTo(map);
+    return () => { map.removeLayer(layer); };
+  }, [map, maskData]);
   return null;
 }
 
@@ -181,12 +269,14 @@ function ZoomTracker({ onZoomChange }) {
   return null;
 }
 
-function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey }) {
+function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey, children }) {
   const [geojson, setGeojson] = useState(null);
   const [airports, setAirports] = useState([]);
   const [alwaysOnPlaces, setAlwaysOnPlaces] = useState([]);
   const [currentZoom, setCurrentZoom] = useState(11);
   const [showFlights, setShowFlights] = useState(true);
+  const [showWeatherView, setShowWeatherView] = useState(false); // when on: zoom 9–10 only airports + weather, no places
+  const [islandWeather, setIslandWeather] = useState([]);
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
@@ -288,6 +378,20 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
     setCurrentZoom(zoom);
   }, []);
 
+  // Weather layer: when Weather View is on, show at zoom 9–10 only
+  const zoomRounded = Math.round(currentZoom);
+  const showWeatherLayer = showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX;
+  // When weather view is on, prefetch island weather for zoom 8–10
+  useEffect(() => {
+    if (!showWeatherView) return;
+    if (zoomRounded < 8 || zoomRounded > 10) return;
+    fetchWeatherIsland()
+      .then(setIslandWeather)
+      .catch(() => setIslandWeather([]));
+  }, [showWeatherView, zoomRounded]);
+  // Hide place icons when weather view is on (only airports + weather at 9–10)
+  const hidePlaceIcons = showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX;
+
   // Available categories for filter bar
   const availableCategories = useMemo(() => {
     if (!parishPlaces || !parishPlaces.length) return [];
@@ -346,12 +450,39 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
   // Force GeoJSON re-render when activeSlug changes
   const geoJsonKey = useMemo(() => `geojson-${activeSlug || 'none'}`, [activeSlug]);
 
+  // Mask: cover everything outside Jamaica so only the island is visible (no other countries)
+  const jamaicaMask = useMemo(() => {
+    if (!geojson || !geojson.features || geojson.features.length < 2) return null;
+    try {
+      const jamaica = union(geojson);
+      if (!jamaica || !jamaica.geometry) return null;
+      const coords = jamaica.geometry.coordinates;
+      // Polygon: [exterior, ...holes]; MultiPolygon: [ [ [exterior, ...], ... ], ... ]
+      const jamaicaRing = jamaica.geometry.type === 'Polygon'
+        ? coords[0]
+        : coords[0][0]; // first polygon's exterior ring
+      if (!jamaicaRing || jamaicaRing.length < 3) return null;
+      // GeoJSON hole must be clockwise; exterior is counter-clockwise. Reverse for hole.
+      const hole = [...jamaicaRing].reverse();
+      // Very large rectangle so at zoom 9 (and any pan) the whole view is covered — exterior counter-clockwise
+      const outer = [[-95, 14], [-95, 22], [-72, 22], [-72, 14], [-95, 14]];
+      return {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Polygon', coordinates: [outer, hole] }
+      };
+    } catch (_) {
+      return null;
+    }
+  }, [geojson]);
+
   return (
-    <section id="map-section">
-      {/* Header + filters */}
-      <div className="map-top-bar">
+    <>
+      <div className="map-top-strip">
+        <div className="map-controls-grid">
+        {/* Column 1: Parish select (no parish) or Back + title (parish selected) */}
         {activeSlug ? (
-          <div className="parish-zoom-header">
+          <div className="parish-zoom-header map-grid-cell-1">
             <button className="zoom-back-btn" onClick={() => onSelect(null)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -364,9 +495,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
             <span className="zoom-place-count">{parishPlaces ? parishPlaces.length : 0} places</span>
           </div>
         ) : (
-          <div className="map-header">
-            <h1>Jamaica</h1>
-            <p className="subtitle">Click a parish to explore</p>
+          <div className="map-grid-cell-1">
             {geojson && (
               <select
                 className="parish-select-dropdown"
@@ -384,27 +513,40 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
           </div>
         )}
 
-        {/* Flight tracking toggle */}
-        <button
-          className={`flight-toggle-btn${showFlights ? ' flight-toggle-active' : ''}`}
-          onClick={() => setShowFlights(prev => !prev)}
-          title={showFlights ? 'Hide live flights' : 'Show live flights'}
-        >
-          ✈ Live Flights {showFlights ? 'ON' : 'OFF'}
-        </button>
+        {/* Column 2: Zoom */}
+        <div className="zoom-level-control map-grid-cell-2">
+          <span className="zoom-level-label">Zoom</span>
+          <span className="zoom-level-value">{currentZoom}</span>
+          <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
+          <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
+        </div>
 
-        {/* Zoom level indicator */}
-        {(
-          <div className="zoom-level-control">
-            <span className="zoom-level-label">Zoom</span>
-            <span className="zoom-level-value">{currentZoom}</span>
-            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
-            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
-          </div>
-        )}
+        {/* Column 3: Flight + Weather toggles */}
+        <div className="map-toggle-buttons map-grid-cell-3">
+          <button
+            className={`flight-toggle-btn${showFlights ? ' flight-toggle-active' : ''}`}
+            onClick={() => setShowFlights(prev => !prev)}
+            title={showFlights ? 'Hide live flights' : 'Show live flights'}
+          >
+            ✈ Live Flights <span className="toggle-value">{showFlights ? 'ON' : 'OFF'}</span>
+          </button>
+          <button
+            className={`flight-toggle-btn weather-view-btn${showWeatherView ? ' flight-toggle-active' : ''}`}
+            onClick={() => setShowWeatherView(prev => !prev)}
+            title={showWeatherView ? 'Hide island weather' : 'Show island weather (zoom 9–10, no places)'}
+          >
+            ☀ Weather <span className="toggle-value">{showWeatherView ? 'ON' : 'OFF'}</span>
+          </button>
+        </div>
+        </div>
+        {children}
+      </div>
 
-        {/* Category filters when parish is selected */}
-        {activeSlug && availableCategories.length > 0 && (() => {
+      <section id="map-section">
+      {/* Category filters when parish is selected — only render when needed to avoid blue bar at top */}
+      {!hidePlaceIcons && activeSlug && availableCategories.length > 0 && (
+      <div className="map-top-bar">
+        {(() => {
           const prominent = ['hotel', 'guest_house', 'resort', 'beach', 'car_rental', 'nightlife'];
           const prominentCats = prominent.filter(c => availableCategories.some(a => a.category === c));
           const otherCats = availableCategories.filter(a => !prominent.includes(a.category));
@@ -457,6 +599,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
           );
         })()}
       </div>
+      )}
 
       {/* Leaflet Map */}
       <div id="map-container">
@@ -468,12 +611,15 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
           maxBounds={MAX_BOUNDS}
           maxBoundsViscosity={1.0}
           style={{ width: '100%', height: '100%' }}
-          zoomControl={true}
+          zoomControl={false}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+
+          {/* Mask: only Jamaica visible; everything else covered (added imperatively so pane is set) */}
+          <JamaicaMaskLayer maskData={jamaicaMask} />
 
           <MapRefExporter mapRef={mapRef} />
           <ClosePopupOnMove onClose={closeAllPopups} />
@@ -492,6 +638,49 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
             />
           )}
 
+          {/* Weather at zoom 9: cloud north, wind SE, temp SW — each in its own area */}
+          {showWeatherLayer && islandWeather.map((w) => {
+            const offset = 0.065; // degrees — keeps all three icons well separated
+            const cloudPos = [w.lat + offset, w.lon];             // north
+            const windPos = [w.lat - offset, w.lon + offset];    // south-east
+            const tempPos = [w.lat - offset, w.lon - offset];    // south-west
+            return (
+            <Fragment key={`weather-${w.slug}`}>
+              {/* Cloud — north */}
+              <Marker
+                position={cloudPos}
+                icon={buildCloudIcon(w.cloudCover ?? 0, w.windDirection ?? 0)}
+                zIndexOffset={500}
+                pane="weatherPane"
+              />
+              {/* Wind — south-east */}
+              <Marker
+                position={windPos}
+                icon={buildWindArrowIcon(w.windDirection ?? 0, w.windSpeed ?? 0)}
+                zIndexOffset={501}
+                pane="weatherPane"
+              />
+              {/* Temperature — south-west */}
+              <Marker
+                position={tempPos}
+                icon={buildWeatherIcon(w.temperature)}
+                zIndexOffset={600}
+                pane="weatherPane"
+              >
+                <Tooltip direction="top" offset={[0, -18]} className="weather-leaflet-tooltip">
+                  <strong>{slugToName[w.slug] || w.slug}</strong>
+                  <br />
+                  {w.temperature != null ? `${Math.round(w.temperature)}°C` : '—'} · {w.description || '—'}
+                  <br />
+                  <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>
+                    Humidity {w.humidity}% · Wind {w.windSpeed} km/h
+                  </span>
+                </Tooltip>
+              </Marker>
+            </Fragment>
+            );
+          })}
+
           {/* Airport markers */}
           {airports.map(ap => (
             <Marker
@@ -508,8 +697,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
             </Marker>
           ))}
 
-          {/* Always-on category markers (visible when zoomed in) */}
-          {visibleAlwaysOn.map(p => {
+          {/* Always-on category markers — hidden when Weather View is on at zoom 9–10 */}
+          {!hidePlaceIcons && visibleAlwaysOn.map(p => {
             const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
             const icon = categoryIcons[p.category] || defaultPlaceIcon;
             return (
@@ -529,8 +718,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
             );
           })}
 
-          {/* Place markers when a parish is selected */}
-          {activeSlug && filteredPlaces.map(p => {
+          {/* Place markers when a parish is selected — hidden when Weather View is on at zoom 9–10 */}
+          {!hidePlaceIcons && activeSlug && filteredPlaces.map(p => {
             const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
             const isHighlighted = highlightedPlace && highlightedPlace.id === p.id;
             const isFocused = focusPlace && focusPlace.id === p.id;
@@ -556,8 +745,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
             );
           })}
 
-          {/* Highlighted place from search */}
-          {highlightedPlace && activeSlug && (
+          {/* Highlighted place from search — hidden when Weather View is on at zoom 9–10 */}
+          {!hidePlaceIcons && highlightedPlace && activeSlug && (
             <Marker
               position={[highlightedPlace.lat, highlightedPlace.lon]}
               icon={starIcon}
@@ -579,8 +768,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
         </MapContainer>
       </div>
 
-      {/* Category legend when parish selected */}
-      {activeSlug && availableCategories.length > 0 && (
+      {/* Category legend when parish selected — hidden in Weather View */}
+      {!hidePlaceIcons && activeSlug && availableCategories.length > 0 && (
         <div className="zoom-legend">
           {availableCategories.map(({ category, count }) => {
             const style = categoryStyles[category] || { color: '#fff', label: category };
@@ -604,7 +793,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
         />
       )}
 
-    </section>
+      </section>
+    </>
   );
 }
 

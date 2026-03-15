@@ -122,9 +122,11 @@ function FlightAltitudeLegend({ visible }) {
         el.className = 'flight-altitude-legend leaflet-control';
         el.innerHTML = `
           <div class="flight-altitude-legend-title">Altitude</div>
+          <div class="flight-altitude-legend-items">
           ${LEGEND_ITEMS.map(([ft, label, color]) =>
             `<div class="flight-altitude-legend-row"><span class="flight-altitude-legend-swatch" style="background:${color}"></span><span class="flight-altitude-legend-label">${label}</span></div>`
           ).join('')}
+          </div>
         `;
         return el;
       },

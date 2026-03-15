@@ -1,5 +1,6 @@
 import NotesPanel from './NotesPanel';
 import ParishMiniMap from './ParishMiniMap';
+import WeatherWidget from './WeatherWidget';
 
 function ParishDetail({ parish, notes, onAddNote, places, onFeatureClick }) {
 
@@ -22,6 +23,7 @@ function ParishDetail({ parish, notes, onAddNote, places, onFeatureClick }) {
         <span className="county">{parish.county}</span>
       </div>
       <ParishMiniMap slug={parish.slug} />
+      <WeatherWidget parishSlug={parish.slug} />
       <div className="stats-grid">
         <div className="stat-card">
           <div className="label">Population</div>

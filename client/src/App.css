@@ -177,6 +177,55 @@
   color: #e8e8e8;
 }
 
+.weather-widget {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid #1e3a5f;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+}
+
+.weather-widget-label {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: #5a8ab5;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.weather-widget-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.weather-widget-temp {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #e8e8e8;
+}
+
+.weather-widget-desc {
+  font-size: 0.82rem;
+  color: #b0c4de;
+}
+
+.weather-widget-meta {
+  font-size: 0.7rem;
+  color: #7a9cc6;
+  margin-top: 4px;
+  display: flex;
+  gap: 12px;
+}
+
+.weather-widget-loading .weather-widget-value,
+.weather-widget-error .weather-widget-value {
+  font-size: 0.82rem;
+  color: #b0c4de;
+}
+
 .description {
   line-height: 1.55;
   color: #b0c4de;
@@ -345,6 +394,38 @@
   position: relative;
 }
 
+/* Top strip: centered controls + search */
+.map-top-strip {
+  position: fixed;
+  top: 18px;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+}
+
+.map-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  max-width: calc(100vw - 400px);
+}
+
+.map-grid-cell-1 {
+  min-width: 0;
+}
+
+.map-grid-cell-2,
+.map-grid-cell-3 {
+  /* grid items, no extra rules */
+}
+
 .map-top-bar {
   padding: 14px 20px 10px;
   display: flex;
@@ -374,33 +455,37 @@
 
 .parish-select-dropdown {
   display: block;
-  margin: 8px auto 0;
   padding: 7px 32px 7px 14px;
-  background: rgba(240, 192, 64, 0.1);
-  border: 1px solid rgba(240, 192, 64, 0.35);
+  width: 100%;
+  min-width: 160px;
+  max-width: 220px;
+  box-sizing: border-box;
+  background: rgba(10, 22, 40, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #1e3a5f;
   border-radius: 20px;
-  color: #f0c040;
+  color: #e0e0e0;
   font-size: 0.8rem;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23f0c040' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a8ab5' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   transition: all 0.2s ease;
 }
 
 .parish-select-dropdown:hover {
-  background-color: rgba(240, 192, 64, 0.2);
-  border-color: #f0c040;
+  border-color: #5a8ab5;
+  color: #fff;
 }
 
 .parish-select-dropdown:focus {
   outline: none;
-  border-color: #f0c040;
-  box-shadow: 0 0 8px rgba(240, 192, 64, 0.25);
+  border-color: #5a8ab5;
+  box-shadow: 0 0 8px rgba(90, 138, 181, 0.3);
 }
 
 .parish-select-dropdown option {
@@ -511,8 +596,18 @@
   border-top-color: #ffeb3b !important;
 }
 
-/* Altitude legend (adsb.lol-style color scale) */
+/* Altitude legend (adsb.lol-style color scale) — centered at bottom of map */
+#map-container .leaflet-bottom.leaflet-left {
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  right: auto;
+}
+
 .flight-altitude-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 12px !important;
   background: rgba(10, 22, 40, 0.92) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
@@ -525,17 +620,23 @@
 
 .flight-altitude-legend-title {
   font-weight: 600;
-  margin-bottom: 6px;
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   padding-bottom: 4px;
 }
 
+.flight-altitude-legend-items {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
 .flight-altitude-legend-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 3px;
+  gap: 6px;
 }
 
 .flight-altitude-legend-swatch {
@@ -550,11 +651,13 @@
   white-space: nowrap;
 }
 
+.map-toggle-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
 .flight-toggle-btn {
-  position: fixed;
-  top: 18px;
-  right: 355px;
-  z-index: 1100;
   padding: 6px 14px;
   background: rgba(10, 22, 40, 0.85);
   backdrop-filter: blur(8px);
@@ -568,15 +671,19 @@
   transition: all 0.2s ease;
 }
 
-.flight-toggle-btn:hover {
-  border-color: #ffeb3b;
-  color: #ffeb3b;
+/* Match zoom: grey label text, yellow only for value (ON/OFF) */
+.flight-toggle-btn .toggle-value {
+  color: #b0c4de;
+  font-weight: 700;
 }
-
-.flight-toggle-btn.flight-toggle-active {
-  border-color: #ffeb3b;
-  color: #ffeb3b;
-  background: rgba(255, 235, 59, 0.12);
+.flight-toggle-btn:hover {
+  border-color: #1e3a5f;
+}
+.flight-toggle-btn:hover .toggle-value {
+  color: #f0c040;
+}
+.flight-toggle-btn.flight-toggle-active .toggle-value {
+  color: #f0c040;
 }
 
 /* Flight arrival/departure icon colors */
@@ -760,10 +867,6 @@
 }
 
 .zoom-level-control {
-  position: fixed;
-  top: 18px;
-  right: 510px;
-  z-index: 1100;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -926,6 +1029,85 @@
 .airport-icon-inner:hover {
   background: rgba(0, 188, 212, 0.25);
   border-color: #fff;
+}
+
+/* Weather markers on map (zoom 9–12) */
+.weather-leaflet-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.weather-leaflet-icon .weather-icon-inner {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 22, 40, 0.92);
+  border: 2px solid #5a8ab5;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  cursor: default;
+}
+
+.weather-leaflet-icon .weather-temp {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #e8e8e8;
+}
+
+.weather-leaflet-tooltip.leaflet-tooltip {
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  max-width: 220px;
+  white-space: normal;
+}
+
+/* Wind arrows (zoom 9–12) */
+.wind-leaflet-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.wind-arrow-wrap {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(var(--rot, 0deg));
+}
+
+.wind-arrow-svg {
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+/* Drifting clouds (zoom 9–12) */
+.cloud-leaflet-icon {
+  background: none !important;
+  border: none !important;
+  pointer-events: none;
+}
+
+.cloud-wrap {
+  width: var(--cloud-size, 64px);
+  height: var(--cloud-size, 64px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: cloud-drift 8s ease-in-out infinite;
+}
+
+.cloud-emoji {
+  font-size: calc(var(--cloud-size, 64px) * 0.5);
+  opacity: var(--cloud-opacity, 0.6);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+}
+
+@keyframes cloud-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(var(--move-x, 10px), var(--move-y, -5px)); }
 }
 
 /* Highlighted search star icon on Leaflet map */
@@ -1645,13 +1827,10 @@
   flex-shrink: 0;
 }
 
-/* SEARCH BAR */
+/* SEARCH BAR — inside .map-top-strip, centered with controls */
 .search-bar {
-  position: fixed;
-  top: 16px;
-  right: 24px;
-  z-index: 1100;
   width: 323px;
+  flex-shrink: 0;
 }
 
 .search-input-wrap {
@@ -2422,15 +2601,14 @@
     left: 16px;
   }
 
-  .search-bar {
-    width: 247px;
-    right: 12px;
+  .map-top-strip {
     top: 12px;
+    padding: 0 12px;
+    gap: 12px;
   }
 
-  .flight-toggle-btn {
-    right: 267px;
-    top: 14px;
+  .search-bar {
+    width: 247px;
   }
 
   .map-header h1 { font-size: 1.2rem; }

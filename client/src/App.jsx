@@ -69,7 +69,9 @@ function App() {
         onCategoriesChange={setActiveCategories}
         focusPlace={focusPlace}
         focusKey={focusKey}
-      />
+      >
+        <SearchBar onSelectPlace={handleSearchSelect} />
+      </MapSection>
       <InfoSection
         parish={parish}
         notes={notes}
@@ -87,7 +89,6 @@ function App() {
         onPlaceSelect={handleInfoPlaceSelect}
         onFlightSelect={handleFlightSelect}
       />
-      <SearchBar onSelectPlace={handleSearchSelect} />
     </div>
   );
 }
