@@ -77,6 +77,7 @@ const ICAO_AIRLINES = {
   VOI: 'Volaris', Y4: 'Volaris',
   GLO: 'GOL', G3: 'GOL',
   AZU: 'Azul', AD: 'Azul',
+  LAE: 'Línea Aérea de Servicio Ejecutivo',
 
   // Middle East & Asia
   UAE: 'Emirates', EK: 'Emirates',
@@ -633,6 +634,35 @@ async function fetchOpenSkyForAirport(airport) {
   }
 }
 
+// Extract route (origin/destination) from adsb.lol aircraft object — API may provide from/to/from_icao/to_icao/departure/arrival/route
+function routeFromAdsbLol(a) {
+  let fromIcao = (a.from_icao ?? a.from ?? a.departure_icao ?? a.dep ?? '').toString().toUpperCase().trim() || null;
+  let toIcao = (a.to_icao ?? a.to ?? a.arrival_icao ?? a.arr ?? '').toString().toUpperCase().trim() || null;
+  if (!fromIcao && !toIcao && a.route) {
+    const routeStr = String(a.route).trim();
+    const match = routeStr.match(/^([A-Z0-9]{3,4})[\s\-–—]+([A-Z0-9]{3,4})$/i);
+    if (match) {
+      fromIcao = match[1].toUpperCase();
+      toIcao = match[2].toUpperCase();
+    }
+  }
+  if (!fromIcao && !toIcao) return null;
+  const origin = fromIcao ? resolveAirportByIcao(fromIcao) : null;
+  const dest = toIcao ? resolveAirportByIcao(toIcao) : null;
+  return {
+    routeOrigin: fromIcao ?? null,
+    routeDestination: toIcao ?? null,
+    from: origin?.name ?? fromIcao,
+    fromIata: origin?.iata ?? fromIcao,
+    to: dest?.name ?? toIcao,
+    toIata: dest?.iata ?? toIcao,
+    originName: origin?.name ?? null,
+    originIata: origin?.iata ?? null,
+    destName: dest?.name ?? null,
+    destIata: dest?.iata ?? null,
+  };
+}
+
 // --- adsb.lol (free, no API key — secondary for small airports) ---
 async function fetchAdsbLolForAirport(airport) {
   const RADIUS_NM = 25; // nautical miles
@@ -644,19 +674,22 @@ async function fetchAdsbLolForAirport(airport) {
     clearTimeout(timer);
     if (!res.ok) return [];
     const data = await res.json();
-    const ac = data.ac || [];
+    const ac = data.ac || data.aircraft || data.planes || [];
     if (ac.length === 0) return [];
 
     return ac.map(a => {
-      const callsign = (a.flight || '').trim();
+      const callsign = (a.flight || a.callsign || '').trim();
+      const lat = Number(a.lat ?? a.latitude);
+      const lon = Number(a.lon ?? a.lng ?? a.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
       const altitude = a.alt_baro === 'ground' ? 0 : (a.alt_baro || 0);
       const onGround = a.alt_baro === 'ground';
       const baroRate = a.baro_rate || 0; // ft/min
-      const heading = a.track || a.true_heading || 0;
+      const heading = a.track ?? a.true_heading ?? a.heading ?? 0;
       const velocity = a.gs || 0; // ground speed in knots
 
       // Distance from airport (rough nm: 1 deg lat ≈ 60nm)
-      const distNm = Math.hypot((a.lat - airport.lat) * 60, (a.lon - airport.lon) * 60 * Math.cos(airport.lat * Math.PI / 180));
+      const distNm = Math.hypot((lat - airport.lat) * 60, (lon - airport.lon) * 60 * Math.cos(airport.lat * Math.PI / 180));
 
       // Classify by vertical rate, altitude, and distance
       let direction;
@@ -667,35 +700,37 @@ async function fetchAdsbLolForAirport(airport) {
       else if (altitude <= 10000 && distNm <= 15) direction = 'arrival';          // low + close = landing pattern
       else direction = 'flyover';                                                  // everything else is passing through
 
+      const routeInfo = routeFromAdsbLol(a);
       return {
-        id: a.hex || callsign || 'unknown',
+        id: (a.hex && String(a.hex).trim()) || (callsign && callsign.replace(/\s/g, '')) || 'unknown',
         callsign,
         flightNumber: callsign,
         status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
         type: direction,
-        from: '',
-        fromIata: '',
+        from: routeInfo?.from ?? '',
+        fromIata: routeInfo?.fromIata ?? '',
         fromCountry: '',
-        to: '',
-        toIata: '',
+        to: routeInfo?.to ?? '',
+        toIata: routeInfo?.toIata ?? '',
         toCountry: '',
         airline: a.ownOp || resolveAirline(callsign),
         aircraft: a.t || '',
         aircraftReg: a.r || '',
         scheduledTime: '',
-        lat: a.lat,
-        lon: a.lon,
+        lat,
+        lon,
         altitude: onGround ? 0 : (altitude * 0.3048), // convert ft to meters
         velocity: velocity * 0.5144, // convert knots to m/s
         heading,
         nearestAirport: airport.iata,
+        ...(routeInfo ? { routeOrigin: routeInfo.routeOrigin, routeDestination: routeInfo.routeDestination, originName: routeInfo.originName, destName: routeInfo.destName, originIata: routeInfo.originIata, destIata: routeInfo.destIata } : {}),
         ...(direction === 'arrival' ? {
           destLat: airport.lat, destLon: airport.lon, destName: airport.name, destIata: airport.iata,
         } : direction === 'departure' ? {
           originLat: airport.lat, originLon: airport.lon, originName: airport.name, originIata: airport.iata,
         } : {}),
       };
-    }).filter(f => f.lat && f.lon);
+    }).filter(f => f != null && Number.isFinite(f.lat) && Number.isFinite(f.lon));
   } catch (e) {
     return [];
   }
@@ -719,18 +754,22 @@ async function fetchAdsbLolJamaicaWide() {
     clearTimeout(timer);
     if (!res.ok) return [];
     const data = await res.json();
-    const ac = data.ac || [];
+    const ac = data.ac || data.aircraft || data.planes || [];
     if (ac.length === 0) return [];
 
-    return ac.map(a => {
-      const callsign = (a.flight || '').trim();
+    return ac.map((a, idx) => {
+      const callsign = (a.flight || a.callsign || '').trim();
       const altitude = a.alt_baro === 'ground' ? 0 : (a.alt_baro || 0);
       const onGround = a.alt_baro === 'ground';
       const baroRate = a.baro_rate || 0; // ft/min
-      const lat = a.lat;
-      const lon = a.lon;
-      const heading = a.track || a.true_heading || 0;
+      const lat = Number(a.lat ?? a.latitude);
+      const lon = Number(a.lon ?? a.lng ?? a.longitude);
+      const heading = a.track ?? a.true_heading ?? a.heading ?? 0;
       const velocity = a.gs || 0;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+      // Stable id: hex preferred, else callsign (no spaces so LAE2506 matches), else unique so we never collapse two aircraft
+      const id = (a.hex && String(a.hex).trim()) || (callsign && callsign.replace(/\s/g, '')) || `wide-${lat.toFixed(4)}-${lon.toFixed(4)}-${idx}`;
 
       // Nearest Jamaica airport (for display, dest/origin, dedup)
       let nearest = JAMAICA_AIRPORTS[0];
@@ -749,17 +788,18 @@ async function fetchAdsbLolJamaicaWide() {
       else if (altitude <= 10000 && minDist <= 15) direction = 'arrival';
       else direction = 'flyover';
 
+      const routeInfo = routeFromAdsbLol(a);
       return {
-        id: a.hex || callsign || 'unknown',
+        id,
         callsign,
         flightNumber: callsign,
         status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
         type: direction,
-        from: '',
-        fromIata: '',
+        from: routeInfo?.from ?? '',
+        fromIata: routeInfo?.fromIata ?? '',
         fromCountry: '',
-        to: '',
-        toIata: '',
+        to: routeInfo?.to ?? '',
+        toIata: routeInfo?.toIata ?? '',
         toCountry: '',
         airline: a.ownOp || resolveAirline(callsign),
         aircraft: a.t || '',
@@ -771,13 +811,14 @@ async function fetchAdsbLolJamaicaWide() {
         velocity: velocity * 0.5144,
         heading,
         nearestAirport: nearest.iata,
+        ...(routeInfo ? { routeOrigin: routeInfo.routeOrigin, routeDestination: routeInfo.routeDestination, originName: routeInfo.originName, destName: routeInfo.destName, originIata: routeInfo.originIata, destIata: routeInfo.destIata } : {}),
         ...(direction === 'arrival' ? {
           destLat: nearest.lat, destLon: nearest.lon, destName: nearest.name, destIata: nearest.iata,
         } : direction === 'departure' ? {
           originLat: nearest.lat, originLon: nearest.lon, originName: nearest.name, originIata: nearest.iata,
         } : {}),
       };
-    }).filter(f => f.lat && f.lon);
+    }).filter(f => f != null && Number.isFinite(f.lat) && Number.isFinite(f.lon));
   } catch (e) {
     return [];
   }
@@ -877,17 +918,18 @@ async function fetchLiveRadar() {
     liveFlights.push(...wideFlights);
   } catch (e) {}
 
-  // Deduplicate: same aircraft near multiple airports — keep only the nearest; Jamaica-wide only adds if id not seen
+  // Deduplicate: same aircraft (by id) — keep one; use id so Jamaica-wide flights like LAE2506 are not dropped
   const byAircraft = new Map();
   for (const f of liveFlights) {
-    const existing = byAircraft.get(f.id);
+    const key = f.id;
+    const existing = byAircraft.get(key);
     if (!existing) {
-      byAircraft.set(f.id, f);
+      byAircraft.set(key, f);
     } else {
       // Prefer per-airport (has destLat/originLat) over Jamaica-wide flyover
       const hasAssignedAirport = (x) => (x.type === 'arrival' && x.destLat != null) || (x.type === 'departure' && x.originLat != null) || (x.type === 'flyover' && (x.destLat != null || x.originLat != null));
       if (hasAssignedAirport(f) && !hasAssignedAirport(existing)) {
-        byAircraft.set(f.id, f);
+        byAircraft.set(key, f);
       } else if (hasAssignedAirport(existing) && !hasAssignedAirport(f)) {
         // keep existing
       } else {
@@ -899,7 +941,7 @@ async function fetchLiveRadar() {
         const dist = (apLat != null && apLon != null) ? Math.hypot(f.lat - apLat, f.lon - apLon) : Infinity;
         const existDist = (existApLat != null && existApLon != null) ? Math.hypot(existing.lat - existApLat, existing.lon - existApLon) : Infinity;
         if (dist < existDist) {
-          byAircraft.set(f.id, f);
+          byAircraft.set(key, f);
         }
       }
     }
@@ -909,10 +951,7 @@ async function fetchLiveRadar() {
   // Apply 150 nm and “landed” rules: arrivals stop when they land; departures and flyovers stop when past 150 nm
   liveFlights = liveFlights.filter(f => {
     const dist = distNmFromJamaicaCenter(f.lat, f.lon);
-    const status = (f.status || '').toLowerCase();
-    if (f.type === 'arrival') return dist <= JAMAICA_WIDE_RADIUS_NM && status !== 'landed' && status !== 'on ground';
-    if (f.type === 'departure') return dist <= JAMAICA_WIDE_RADIUS_NM;
-    if (f.type === 'flyover') return dist <= JAMAICA_WIDE_RADIUS_NM;
+    if (f.type === 'arrival' || f.type === 'departure' || f.type === 'flyover') return dist <= JAMAICA_WIDE_RADIUS_NM;
     return true;
   });
 
@@ -946,7 +985,8 @@ async function fetchLiveRadar() {
     timestamp: now,
   };
 
-  console.log(`[Flights] Live radar: ${liveFlights.length} aircraft — total ${allFlights.length} flights (source: ${source})`);
+  const laeCount = liveFlights.filter(f => (f.callsign || '').replace(/\s/g, '').toUpperCase().includes('LAE')).length;
+  console.log(`[Flights] Live radar: ${liveFlights.length} aircraft — total ${allFlights.length} flights (source: ${source})${laeCount ? ` — LAE in list: ${laeCount}` : ''}`);
 }
 
 // Start background polling on server boot

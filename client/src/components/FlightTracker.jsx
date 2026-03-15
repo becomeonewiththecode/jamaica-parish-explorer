@@ -48,7 +48,10 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
     const lon = Number(f.lon);
     return Number.isFinite(lat) && Number.isFinite(lon);
   };
-  const isLive = (f) => f.dataSource === 'live' || (!f.dataSource && !f.scheduledTime) || (f.type === 'flyover' && (f.lat != null || f.lon != null));
+  const isLive = (f) =>
+    f.dataSource === 'live' ||
+    (!f.dataSource && !f.scheduledTime) ||
+    (['arrival', 'departure', 'flyover'].includes(f.type) && f.lat != null && f.lon != null);
   const liveFlights = flights.filter(f => isLive(f) && hasValidPosition(f));
 
   // Group ALL flights (scheduled + live) by airport for count badges
