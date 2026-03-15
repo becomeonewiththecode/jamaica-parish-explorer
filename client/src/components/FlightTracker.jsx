@@ -43,7 +43,13 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
 
   // Separate scheduled (count badges) and live (plane markers) flights
   const scheduledFlights = flights.filter(f => f.dataSource === 'scheduled' || (!f.dataSource && f.scheduledTime));
-  const liveFlights = flights.filter(f => (f.dataSource === 'live' || (!f.dataSource && !f.scheduledTime)) && f.lat && f.lon);
+  const hasValidPosition = (f) => {
+    const lat = Number(f.lat);
+    const lon = Number(f.lon);
+    return Number.isFinite(lat) && Number.isFinite(lon);
+  };
+  const isLive = (f) => f.dataSource === 'live' || (!f.dataSource && !f.scheduledTime) || (f.type === 'flyover' && (f.lat != null || f.lon != null));
+  const liveFlights = flights.filter(f => isLive(f) && hasValidPosition(f));
 
   // Group ALL flights (scheduled + live) by airport for count badges
   const airportCounts = {};
@@ -114,7 +120,10 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
       })}
 
       {/* Live aircraft markers */}
-      {liveFlights.map(f => {
+      {liveFlights.map((f, i) => {
+        const lat = Number(f.lat);
+        const lon = Number(f.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
         const icon = buildLiveIcon(f.heading, f.type);
         const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
         const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
@@ -123,8 +132,8 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
 
         return (
           <Marker
-            key={`plane-${f.id}`}
-            position={[f.lat, f.lon]}
+            key={`plane-${f.id ?? i}-${i}`}
+            position={[lat, lon]}
             icon={icon}
             zIndexOffset={f.type === 'flyover' ? 1000 : 1100}
           >
