@@ -28,10 +28,12 @@ Flight data comes from two external APIs, each covering different airports:
 
 ### adsb.lol (Tertiary — Live Radar, Free)
 - **Provider:** adsb.lol (open ADS-B data aggregator)
-- **Airports covered:** Ian Fleming Intl (OCJ) and Tinson Pen (KTP) — used as fallback when OpenSky returns no data
-- **Data type:** Live ADS-B transponder data within a 25 nautical mile radius of each airport
+- **Airports covered:** Ian Fleming Intl (OCJ) and Tinson Pen (KTP) — used as fallback when OpenSky returns no data; also used for all Jamaica airports (KIN, MBJ, OCJ, KTP) and Jamaica-wide
+- **Data type:** Live ADS-B transponder data within a 25 nautical mile radius of each airport; Jamaica-wide within 165 nm of island center
 - **Authentication:** None required (free, no API key)
-- **API endpoint:** `https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius_nm}`
+- **API endpoints:**  
+  - `https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius_nm}` — aircraft near a point  
+  - `https://api.adsb.lol/api/0/routeset` (POST) — batch route lookup by callsign/lat/lng; returns `airport_codes_icao` or `airport_codes` (ICAO preferred for Jamaica matching)
 - **Data includes:** Callsign, aircraft type, registration, operator, lat/lon, altitude, ground speed, heading, barometric rate
 - **Advantage:** Aggregates data from multiple ADS-B feeder networks, providing better Caribbean coverage than OpenSky alone
 
@@ -84,12 +86,17 @@ OPENSKY_CLIENT_SECRET=<your-opensky-client-secret>
 **Cache cleanup (every 2 min):**  
 A scheduled job removes **live** landed arrivals and departed departures from the cache once they are more than **45 minutes** past their completed time (from radar). **Scheduled** (AeroDataBox) flights are never removed by the server — they often have past scheduled times and would otherwise be wiped; the client hides completed scheduled flights after 45 minutes.
 
+**Key intervals (in code):**  
+- Scheduled poll: 15 min. Live radar poll: 30 s. Cleanup: every 2 min.  
+- Completed flights hidden after **45 min** (client and server cleanup for live only).  
+- No radar contact: scheduled flight marked Landed/Departed **15 min** after scheduled time.
+
 ### Live Radar Flight Classification
 
 Since OpenSky and adsb.lol provide raw aircraft positions (not schedule data), flights are initially classified by vertical rate and distance. **Route enrichment** then reclassifies flyovers to arrivals or departures when the route shows a Jamaica airport as destination or origin.
 
 **Initial classification (single source of truth):**  
-All live flights (OpenSky and adsb.lol) use a shared **classifyLiveFlight()** so that direction and status are derived the same way from **position, destination (distance to airport), and altitude**. That keeps the flight board and map in sync:
+All live flights (OpenSky and adsb.lol) use a shared **classifyLiveFlight()** so that direction and status are derived the same way from **position, distance to airport, and altitude**. It accepts vertical rate in m/s (OpenSky) or baro rate in ft/min (adsb.lol), so the same rules apply to both sources and the flight board and map stay in sync:
 - **On ground** → arrival, status “On Ground”
 - **Descending** (vertical rate or baro rate) and (altitude ≤ 20,000 ft, or high but within 40 nm) → arrival, “Approaching”
 - **Climbing** and altitude ≤ 15,000 ft → departure, “Departing”
@@ -110,7 +117,7 @@ Scheduled flights (AeroDataBox) are cross-referenced with live radar so the boar
 2. **Radar “On Ground”:** If a live flight with a matching callsign has status “On Ground”, the scheduled flight is shown as **Landed** (arrival) or **Departed** (departure).
 3. **Persisted “Landed”:** When a flight is seen “On Ground”, that state is remembered under all callsign variants. If the aircraft later drops off the live feed (e.g. no longer in the polled area), the scheduled flight still shows **Landed** / **Departed** instead of reverting to Expected.
 4. **No radar contact:** If there is no live match and the scheduled time is more than **15 minutes** in the past, the flight is marked **Landed** / **Departed** (assumed completed) so “Expected” does not persist indefinitely.
-5. **Completed flights** are hidden 45 minutes after the completed time: the client hides them in the UI, and the server **scheduled cleanup** (every 2 minutes) removes landed arrivals and departed departures from the cached flight list once they are past that 45-minute window, so the flight board and API stay in sync.
+5. **Completed flights** are hidden 45 minutes after the completed time. The client hides them in the UI. The server **scheduled cleanup** (every 2 minutes) removes only **live** landed arrivals and departed departures from the cache once they are past that 45-minute window; **scheduled** flights are never removed by the server (the client hides completed scheduled flights after 45 minutes).
 
 ### API Usage Estimate
 
@@ -227,7 +234,7 @@ Parishes containing airports (Kingston, St. James, St. Mary) include an **Airpor
 
 | File | Purpose |
 |------|---------|
-| `server/routes/flights.js` | API routes, data fetching, polling, OAuth, DB storage |
+| `server/routes/flights.js` | API routes, data fetching, polling, OAuth, DB storage; contains `classifyLiveFlight()`, `getCallsignMatchKeys()`, `confirmFlightStatuses()`, `removeCompletedFlightsFromCache()` |
 | `server/db/schema.sql` | Database schema including `flights` table |
 | `server/.env` | API credentials (gitignored) |
 | `client/src/data/aircraftTypeDesignators.js` | Typecode → icon category (ICAO + TCCA Standard 421.40) |
