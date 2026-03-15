@@ -5,17 +5,68 @@ import { fetchFlights } from '../api/parishes';
 
 const POLL_INTERVAL = 30000; // 30 seconds (matches server live radar poll)
 
-// Build a rotated plane icon for live aircraft
-function buildLiveIcon(heading, type) {
-  const color = type === 'arrival' ? '#4caf50' : type === 'departure' ? '#ff9800' : '#1a1a1a';
-  const opacity = type === 'flyover' ? '0.8' : '1';
-  const size = type === 'flyover' ? '18px' : '22px';
+// Altitude-based colors (adsb.lol style: low → high = blue → green → yellow → orange → red)
+const ALTITUDE_BANDS_FT = [
+  [0, 10000, '#2196F3'],      // blue — low (approach / pattern)
+  [10000, 25000, '#4CAF50'],  // green
+  [25000, 35000, '#FFEB3B'],  // yellow
+  [35000, 45000, '#FF9800'],  // orange
+  [45000, Infinity, '#F44336'], // red — high
+];
+function colorByAltitudeFt(altFt) {
+  if (altFt == null || !Number.isFinite(altFt) || altFt < 0) return '#9E9E9E'; // gray: ground / unknown
+  for (const [low, high, color] of ALTITUDE_BANDS_FT) {
+    if (altFt >= low && altFt < high) return color;
+  }
+  return ALTITUDE_BANDS_FT[ALTITUDE_BANDS_FT.length - 1][2];
+}
+
+// Build a rotated plane icon for live aircraft (color by altitude)
+function buildLiveIcon(heading, altitudeM) {
+  const altFt = altitudeM != null ? altitudeM * 3.281 : null;
+  const color = colorByAltitudeFt(altFt);
+  const opacity = '1';
+  const size = '22px';
   return L.divIcon({
     className: 'flight-leaflet-icon',
-    html: `<div class="flight-icon-inner" style="transform:rotate(${heading || 0}deg);color:${color};font-size:${size};opacity:${opacity}${type === 'flyover' ? ';-webkit-text-stroke:0.5px rgba(255,255,255,0.6)' : ''}">✈</div>`,
+    html: `<div class="flight-icon-inner" style="transform:rotate(${heading || 0}deg);color:${color};font-size:${size};opacity:${opacity};-webkit-text-stroke:0.5px rgba(255,255,255,0.5)">✈</div>`,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   });
+}
+
+// Legend control: altitude → color (adsb.lol style)
+const LEGEND_ITEMS = [
+  [null, 'Ground / unknown', '#9E9E9E'],
+  [0, '0 – 10,000 ft', '#2196F3'],
+  [10000, '10,000 – 25,000 ft', '#4CAF50'],
+  [25000, '25,000 – 35,000 ft', '#FFEB3B'],
+  [35000, '35,000 – 45,000 ft', '#FF9800'],
+  [45000, '45,000+ ft', '#F44336'],
+];
+
+function FlightAltitudeLegend({ visible }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!visible) return;
+    const Control = L.Control.extend({
+      onAdd: () => {
+        const el = document.createElement('div');
+        el.className = 'flight-altitude-legend leaflet-control';
+        el.innerHTML = `
+          <div class="flight-altitude-legend-title">Altitude</div>
+          ${LEGEND_ITEMS.map(([ft, label, color]) =>
+            `<div class="flight-altitude-legend-row"><span class="flight-altitude-legend-swatch" style="background:${color}"></span><span class="flight-altitude-legend-label">${label}</span></div>`
+          ).join('')}
+        `;
+        return el;
+      },
+    });
+    const control = new Control({ position: 'bottomleft' });
+    control.addTo(map);
+    return () => { control.remove(); };
+  }, [map, visible]);
+  return null;
 }
 
 function FlightTracker({ visible, onAirportSelect, airports }) {
@@ -88,6 +139,7 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
 
   return (
     <>
+      <FlightAltitudeLegend visible={visible} />
       {/* Airport flight count badges (scheduled data) */}
       {Object.values(airportCounts).map(ap => {
         if (ap.arrivals === 0 && ap.departures === 0) return null;
@@ -117,35 +169,37 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
         );
       })}
 
-      {/* Live aircraft approach/departure lines (not for flyovers) */}
+      {/* Live aircraft approach/departure lines (not for flyovers) — line color by altitude for consistency */}
       {liveFlights.filter(f => f.type !== 'flyover').map(f => {
         const pos = getPosition(f);
         const airportLat = f.type === 'arrival' ? f.destLat : f.originLat;
         const airportLon = f.type === 'arrival' ? f.destLon : f.originLon;
         if (!pos || !airportLat || !airportLon) return null;
+        const altFt = f.altitude != null ? f.altitude * 3.281 : null;
+        const lineColor = colorByAltitudeFt(altFt);
         return (
           <Polyline
             key={`line-${f.id}`}
             positions={[[pos.lat, pos.lon], [airportLat, airportLon]]}
             pathOptions={{
-              color: f.type === 'arrival' ? '#4caf50' : '#ff9800',
+              color: lineColor,
               weight: 1.5,
-              opacity: 0.5,
+              opacity: 0.6,
               dashArray: '6, 8',
             }}
           />
         );
       })}
 
-      {/* Live aircraft markers */}
+      {/* Live aircraft markers — color by altitude (adsb.lol style) */}
       {liveFlights.map((f, i) => {
         const pos = getPosition(f);
         if (!pos) return null;
-        const icon = buildLiveIcon(f.heading, f.type);
+        const icon = buildLiveIcon(f.heading, f.altitude);
         const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
         const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
         const airportName = f.type === 'arrival' ? f.destName : f.type === 'departure' ? f.originName : null;
-        const statusColor = f.type === 'arrival' ? '#4caf50' : f.type === 'departure' ? '#ff9800' : '#999';
+        const statusColor = colorByAltitudeFt(altFt);
 
         return (
           <Marker
