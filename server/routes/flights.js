@@ -215,6 +215,8 @@ const LIVE_POLL_INTERVAL = 30 * 1000;            // 30 seconds — adsb.lol + Op
 let flightsCache = { data: null, timestamp: 0 };
 let cachedScheduledFlights = [];
 let cachedScheduledSources = [];
+// Per-airport cache: when AeroDataBox returns 429 for one airport, keep showing last good data for that airport
+let cachedScheduledByAirport = {};
 
 // --- Route lookup cache (callsign → { origin, destination } ICAO codes) ---
 // TTL: 2 hours (routes don't change mid-flight)
@@ -543,8 +545,9 @@ async function enrichFlightsWithRoutes(flights) {
 }
 
 // --- AeroDataBox (primary) ---
+// Returns { flights, status } so caller can retry on 429. flights is null on failure; status is HTTP status when failed.
 async function fetchAeroDataBox(airport) {
-  if (!RAPIDAPI_KEY) return null;
+  if (!RAPIDAPI_KEY) return { flights: null, status: 0 };
 
   const url = `https://aerodatabox.p.rapidapi.com/flights/airports/icao/${airport.icao}?withLeg=false&direction=Both&withCancelled=false&withCodeshared=false&withCargo=false&withPrivate=false`;
 
@@ -563,7 +566,7 @@ async function fetchAeroDataBox(airport) {
 
     if (!res.ok || res.status === 204) {
       console.log(`[Flights] AeroDataBox ${airport.iata}: HTTP ${res.status}`);
-      return null;
+      return { flights: null, status: res.status };
     }
     const data = await res.json();
     console.log(`[Flights] AeroDataBox ${airport.iata}: ${(data.arrivals || []).length} arrivals, ${(data.departures || []).length} departures`);
@@ -618,10 +621,10 @@ async function fetchAeroDataBox(airport) {
       }
     }
 
-    return flights;
+    return { flights, status: res.status };
   } catch (e) {
     console.error(`[Flights] AeroDataBox ${airport.iata} error:`, e.message);
-    return null;
+    return { flights: null, status: 0 };
   }
 }
 
@@ -1044,24 +1047,41 @@ function storeFlights(flights) {
 }
 
 // --- Fetch scheduled flights (AeroDataBox — rate-limited, every 15 min) ---
+// Per-airport cache: if MBJ (or KIN) returns 429, we keep showing last successful data for that airport.
+const AERODATABOX_RETRY_DELAY_MS = 3500; // wait before retry after 429
+
 async function fetchScheduledFlights() {
-  let flights = [];
   let sources = [];
 
   if (RAPIDAPI_KEY) {
     try {
       for (const airport of AERODATABOX_AIRPORTS) {
-        const result = await fetchAeroDataBox(airport);
-        if (result) flights.push(...result);
+        let result = await fetchAeroDataBox(airport);
+        // Retry once on rate limit (429) so one burst doesn't empty an airport's board
+        if (result.status === 429) {
+          console.log(`[Flights] AeroDataBox ${airport.iata}: 429, retrying in ${AERODATABOX_RETRY_DELAY_MS / 1000}s`);
+          await new Promise(r => setTimeout(r, AERODATABOX_RETRY_DELAY_MS));
+          result = await fetchAeroDataBox(airport);
+        }
+        if (result.flights && result.flights.length > 0) {
+          cachedScheduledByAirport[airport.iata] = result.flights;
+          sources.push('aerodatabox');
+        }
+        // If result.flights is null (fetch failed), keep previous cachedScheduledByAirport[airport.iata] unchanged
         if (airport !== AERODATABOX_AIRPORTS[AERODATABOX_AIRPORTS.length - 1]) {
           await new Promise(r => setTimeout(r, 1100));
         }
       }
-      if (flights.length > 0) sources.push('aerodatabox');
     } catch (e) {}
   }
 
-  // Fallback: if AeroDataBox failed, try OpenSky Jamaica-wide
+  // Merge per-airport cache into one list
+  let flights = [];
+  for (const list of Object.values(cachedScheduledByAirport)) {
+    if (Array.isArray(list)) flights.push(...list);
+  }
+
+  // Fallback: if no scheduled data at all, try OpenSky Jamaica-wide
   if (flights.length === 0) {
     const openSkyFlights = await fetchOpenSky();
     if (openSkyFlights.length > 0) {
@@ -1072,8 +1092,9 @@ async function fetchScheduledFlights() {
 
   for (const f of flights) { f.dataSource = 'scheduled'; }
   cachedScheduledFlights = flights;
-  cachedScheduledSources = sources;
-  console.log(`[Flights] Scheduled: ${flights.length} flights from ${sources.join(', ') || 'none'}`);
+  cachedScheduledSources = sources.length ? [...new Set(sources)] : [];
+  const byAirport = Object.entries(cachedScheduledByAirport).map(([iata, list]) => `${iata}:${(list || []).length}`).join(', ');
+  console.log(`[Flights] Scheduled: ${flights.length} flights (${byAirport || 'none'}) from ${cachedScheduledSources.join(', ') || 'none'}`);
 }
 
 // --- Fetch live radar: adsb.lol (per-airport 25nm + Jamaica-wide) + OpenSky fallback; polled every LIVE_POLL_INTERVAL (30s) ---

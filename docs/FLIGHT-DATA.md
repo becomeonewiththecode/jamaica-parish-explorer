@@ -13,7 +13,7 @@ Flight data comes from two external APIs, each covering different airports:
 - **Airports covered:** Norman Manley Intl (KIN) and Sangster Intl (MBJ)
 - **Data type:** Scheduled arrivals and departures — includes flight number, airline, aircraft type, origin/destination, scheduled time, and status
 - **Authentication:** RapidAPI key (`RAPIDAPI_KEY` in `.env`)
-- **Rate limits:** BASIC plan allows 1 request/second. Requests are sent sequentially with a 1.1-second delay between airports
+- **Rate limits:** BASIC plan allows 1 request/second. Requests are sent sequentially with a 1.1-second delay between airports. If the API returns **HTTP 429** (Too Many Requests) for an airport, the server retries that airport once after 3.5 seconds. Scheduled data is cached **per airport** (KIN, MBJ): if one airport’s fetch fails or returns 429 after retry, the last successful data for that airport is kept so the arrival/departure board is not shown empty.
 - **API endpoint:** `https://aerodatabox.p.rapidapi.com/flights/airports/icao/{ICAO}`
 
 ### OpenSky Network (Secondary — Live Radar)
