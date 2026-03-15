@@ -223,6 +223,23 @@
   gap: 12px;
 }
 
+.weather-widget-time-block {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.weather-widget-time-block .weather-widget-label {
+  margin-bottom: 2px;
+}
+
+.weather-widget-time {
+  display: block;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: #5a8ab5;
+}
+
 .weather-widget-loading .weather-widget-value,
 .weather-widget-error .weather-widget-value {
   font-size: 0.82rem;
@@ -582,6 +599,11 @@
 .flight-icon-inner.flight-icon-business .flight-svg,
 .flight-icon-inner.flight-icon-small .flight-svg,
 .flight-icon-inner.flight-icon-helicopter .flight-svg {
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7));
+}
+
+/* Wikimedia plane icon used as mask (colored by altitude) */
+.flight-icon-wikimedia {
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7));
 }
 

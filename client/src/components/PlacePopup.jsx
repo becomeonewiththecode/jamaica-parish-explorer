@@ -289,32 +289,17 @@ function PlacePopup({ place, onClose, anchorPos }) {
           {/* Menu link for restaurants/cafes */}
           {(place.category === 'restaurant' || place.category === 'cafe') && (
             place.menu_url ? (
-              <a
-                className="popup-link-btn popup-menu-btn"
-                href={place.menu_url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a className="popup-link-btn popup-menu-btn" href={place.menu_url} target="_blank" rel="noopener noreferrer">
                 <span>{'\u{1F4CB}'}</span>
                 View Menu
               </a>
             ) : place.website ? (
-              <a
-                className="popup-link-btn popup-menu-btn"
-                href={place.website.replace(/\/$/, '') + '/menu'}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a className="popup-link-btn popup-menu-btn" href={place.website.replace(/\/$/, '') + '/menu'} target="_blank" rel="noopener noreferrer">
                 <span>{'\u{1F4CB}'}</span>
                 View Menu
               </a>
             ) : (
-              <a
-                className="popup-link-btn popup-menu-btn"
-                href={`https://www.google.com/search?q=${encodeURIComponent(place.name + ' Jamaica menu')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a className="popup-link-btn popup-menu-btn" href={`https://www.google.com/search?q=${encodeURIComponent(place.name + ' Jamaica menu')}`} target="_blank" rel="noopener noreferrer">
                 <span>{'\u{1F4CB}'}</span>
                 Search for Menu
               </a>
@@ -354,12 +339,7 @@ function PlacePopup({ place, onClose, anchorPos }) {
               'JamaicaTravel';
             const tiktokSearchUrl = place.tiktok_url || `https://www.tiktok.com/search?q=${encodeURIComponent(place.name + ' Jamaica')}`;
             return (
-              <a
-                className="popup-tiktok-card"
-                href={tiktokSearchUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a className="popup-tiktok-card" href={tiktokSearchUrl} target="_blank" rel="noopener noreferrer">
                 <div className="tiktok-card-icon">
                   <span>♪</span>
                 </div>
@@ -373,12 +353,7 @@ function PlacePopup({ place, onClose, anchorPos }) {
           })()}
 
           {/* Google Maps driving directions (from Kingston, Jamaica) */}
-          <a
-            className="popup-directions-btn"
-            href={googleMapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a className="popup-directions-btn" href={googleMapsUrl} target="_blank" rel="noopener noreferrer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="3 11 22 2 13 21 11 13 3 11" />
             </svg>

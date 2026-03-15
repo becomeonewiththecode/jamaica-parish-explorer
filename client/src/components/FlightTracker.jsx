@@ -46,26 +46,18 @@ function normalizeTypecode(aircraft) {
   return s.slice(0, 4);
 }
 
-// SVG plane silhouettes (top-down, nose up); fill = altitude color. viewBox 0 0 24 24.
+// Wikimedia Commons Plane icon (public domain): https://commons.wikimedia.org/wiki/File:Plane_icon.svg
+// Used as CSS mask so we can tint by altitude color. Helicopter keeps custom SVG.
+const WIKIMEDIA_PLANE_ICON_URL = 'https://upload.wikimedia.org/wikipedia/commons/7/7d/Plane_icon.svg';
+
 function planeSvg(fill, type) {
-  const stroke = 'rgba(255,255,255,0.6)';
-  const strokeWidth = 0.6;
-  const s = (n) => (strokeWidth * n).toFixed(1);
-  switch (type) {
-    case 'helicopter':
-      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><circle cx="12" cy="12" r="7" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><ellipse cx="12" cy="17" rx="2.5" ry="3" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/></svg>`;
-    case 'cargo':
-      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="4" ry="8" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="1" y="10.5" width="22" height="3" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.5"/></svg>`;
-    case 'business':
-      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="1.6" ry="9" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="7" y="11" width="10" height="2" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.3"/></svg>`;
-    case 'small':
-      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="2.2" ry="6" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="5" y="11" width="14" height="2" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.3"/></svg>`;
-    case 'widebody':
-      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="3.8" ry="8" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="1" y="10.5" width="22" height="3" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.5"/></svg>`;
-    case 'narrow':
-    default:
-      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="2.5" ry="8" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="3" y="11" width="18" height="2" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.3"/></svg>`;
+  const stroke = 'rgba(255,255,255,0.45)';
+  const sw = 0.5;
+  if (type === 'helicopter') {
+    return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><circle cx="12" cy="12" r="7" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/><ellipse cx="12" cy="17" rx="2.5" ry="3" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/></svg>`;
   }
+  // Plane types: use Wikimedia plane icon as mask, fill with altitude color
+  return `<span class="flight-icon-wikimedia" style="background-color:${fill};-webkit-mask-image:url(${WIKIMEDIA_PLANE_ICON_URL});mask-image:url(${WIKIMEDIA_PLANE_ICON_URL});-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;width:100%;height:100%;display:block;"></span>`;
 }
 
 // Icon config: size, iconSize, anchor, type (for SVG shape). Color comes from altitude in buildLiveIcon.
