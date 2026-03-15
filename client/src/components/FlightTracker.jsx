@@ -46,17 +46,20 @@ function normalizeTypecode(aircraft) {
   return s.slice(0, 4);
 }
 
-// Wikimedia Commons Plane icon (public domain): https://commons.wikimedia.org/wiki/File:Plane_icon.svg
-// Used as CSS mask so we can tint by altitude color. Helicopter keeps custom SVG.
+// Plane icons per typecode category (from aircraftTypeDesignators.js).
+// Typecode from adsb.lol (a.t) or OpenSky; shape differs by category.
+// Wikimedia plane (public domain) used as mask for fixed-wing so icons render reliably.
 const WIKIMEDIA_PLANE_ICON_URL = 'https://upload.wikimedia.org/wikipedia/commons/7/7d/Plane_icon.svg';
+const stroke = 'rgba(255,255,255,0.45)';
+const sw = 0.5;
 
 function planeSvg(fill, type) {
-  const stroke = 'rgba(255,255,255,0.45)';
-  const sw = 0.5;
+  const s = stroke;
+  const strokeWidth = sw;
   if (type === 'helicopter') {
-    return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><circle cx="12" cy="12" r="7" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/><ellipse cx="12" cy="17" rx="2.5" ry="3" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/></svg>`;
+    return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><circle cx="12" cy="12" r="7" fill="${fill}" stroke="${s}" stroke-width="${strokeWidth}"/><ellipse cx="12" cy="17" rx="2.5" ry="3" fill="${fill}" stroke="${s}" stroke-width="${strokeWidth}"/></svg>`;
   }
-  // Plane types: use Wikimedia plane icon as mask, fill with altitude color
+  // Fixed-wing: use Wikimedia plane as CSS mask so icon is always visible (works in all browsers)
   return `<span class="flight-icon-wikimedia" style="background-color:${fill};-webkit-mask-image:url(${WIKIMEDIA_PLANE_ICON_URL});mask-image:url(${WIKIMEDIA_PLANE_ICON_URL});-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;width:100%;height:100%;display:block;"></span>`;
 }
 
@@ -127,6 +130,25 @@ function FlightAltitudeLegend({ visible }) {
     control.addTo(map);
     return () => { control.remove(); };
   }, [map, visible]);
+  return null;
+}
+
+function NoLiveAircraftMessage({ visible, show }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!visible || !show) return;
+    const Control = L.Control.extend({
+      onAdd: () => {
+        const el = document.createElement('div');
+        el.className = 'flight-no-aircraft-msg leaflet-control';
+        el.innerHTML = '<div class="flight-no-aircraft-inner">No live aircraft in range</div>';
+        return el;
+      },
+    });
+    const control = new Control({ position: 'bottomleft' });
+    control.addTo(map);
+    return () => { control.remove(); };
+  }, [map, visible, show]);
   return null;
 }
 
@@ -201,6 +223,7 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
   return (
     <>
       <FlightAltitudeLegend visible={visible} />
+      <NoLiveAircraftMessage visible={visible} show={liveFlights.length === 0} />
       {/* Airport flight count badges (scheduled data) */}
       {Object.values(airportCounts).map(ap => {
         if (ap.arrivals === 0 && ap.departures === 0) return null;

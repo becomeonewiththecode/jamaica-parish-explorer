@@ -204,7 +204,7 @@ Queries stored flight records from the database.
 
 When "Live Flights" is toggled on:
 - **AeroDataBox airports (KIN, MBJ):** Flight count badges appear at airport positions showing arrival/departure counts (e.g. `↓13 ↑12`)
-- **Live aircraft:** Plane icons at actual aircraft positions, rotated to match heading. **Icon:** fixed-wing aircraft use the [Wikimedia Commons Plane icon](https://commons.wikimedia.org/wiki/File:Plane_icon.svg) (public domain), tinted by altitude via CSS mask; helicopters use a custom SVG. **Color** is from altitude (see altitude legend at bottom of map).
+- **Live aircraft:** Plane icons at actual aircraft positions, rotated to match heading. **Icons** match the typecode category: helicopter, cargo, business, small, widebody, and narrow each have a distinct inline SVG shape; **color** is from altitude (see altitude legend at bottom of map).
 - Clicking a flight count badge opens the airport's detail view in the InfoSection panel
 
 **Aircraft type designators (typecode → icon):**  
@@ -213,7 +213,7 @@ Map icons use a single typecode per flight (from live data `typecode`/`aircraft`
 - **ICAO** type codes (e.g. from ADS-B: `B738`, `A320`, `GLF6`)
 - **Transport Canada Standard 421.40** — [Aircraft Type Designators for Individual Type Ratings (TCCA)](https://tc.canada.ca/en/aviation/licensing-pilots-personnel/flight-crew-licences-permits-ratings/aircraft-type-designation/standard-42140-aircraft-type-designators-individual-type-ratings-transport-canada-tcca) (effective April 1, 2026)
 
-So both ICAO (e.g. `B73C`, `GLF6`) and TCCA designators (e.g. `B73C`, `GLF6`, `EA32`, `HS25`) are recognized. Fixed-wing types share the same Wikimedia plane silhouette (scaled by category); only helicopters use a distinct shape.
+So both ICAO (e.g. `B73C`, `GLF6`) and TCCA designators (e.g. `B73C`, `GLF6`, `EA32`, `HS25`) are recognized. Each category (helicopter, cargo, business, small, widebody, narrow) has a distinct plane icon on the map; typecode is taken from live data (e.g. adsb.lol `t` field) or normalized from `aircraft` when present.
 
 ### InfoSection — Airport Detail
 

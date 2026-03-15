@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
-import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -157,6 +157,29 @@ function buildWindArrowIcon(windDirection, windSpeed) {
     </div>`,
     iconSize: [size, size],
     iconAnchor: [half, half],
+  });
+}
+
+// WMO weather codes that indicate rain (drizzle, rain, showers, thunderstorm)
+function isRaining(weatherCode) {
+  if (weatherCode == null) return false;
+  const code = Number(weatherCode);
+  return (
+    (code >= 51 && code <= 55) ||   // drizzle
+    (code >= 61 && code <= 67) ||   // rain / freezing rain
+    (code >= 80 && code <= 82) ||   // showers
+    (code >= 95 && code <= 99)      // thunderstorm
+  );
+}
+
+// Rain indicator icon for parishes where it's raining
+function buildRainIcon() {
+  const size = 56;
+  return L.divIcon({
+    className: 'rain-leaflet-icon',
+    html: `<div class="rain-icon-inner" aria-hidden="true"><span class="rain-drops">🌧</span></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
   });
 }
 
@@ -644,8 +667,40 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
             const cloudPos = [w.lat + offset, w.lon];             // north
             const windPos = [w.lat - offset, w.lon + offset];    // south-east
             const tempPos = [w.lat - offset, w.lon - offset];    // south-west
+            const rainPos = [w.lat + offset, w.lon + offset];    // north-east (when raining)
+            const raining = isRaining(w.weatherCode);
             return (
             <Fragment key={`weather-${w.slug}`}>
+              {/* Rain overlay: semi-transparent area + rain icon when parish has rain */}
+              {raining && (
+                <>
+                  <Circle
+                    center={[w.lat, w.lon]}
+                    radius={14000}
+                    pathOptions={{
+                      pane: 'weatherPane',
+                      className: 'rain-overlay-circle',
+                      fillColor: '#5c9fd4',
+                      fillOpacity: 0.22,
+                      color: 'transparent',
+                      weight: 0,
+                      interactive: false,
+                    }}
+                  />
+                  <Marker
+                    position={rainPos}
+                    icon={buildRainIcon()}
+                    zIndexOffset={502}
+                    pane="weatherPane"
+                  >
+                    <Tooltip direction="top" offset={[0, -14]} className="weather-leaflet-tooltip">
+                      <strong>{slugToName[w.slug] || w.slug}</strong>
+                      <br />
+                      <span style={{ color: '#64b5f6' }}>🌧 {w.description || 'Rain'}</span>
+                    </Tooltip>
+                  </Marker>
+                </>
+              )}
               {/* Cloud — north */}
               <Marker
                 position={cloudPos}

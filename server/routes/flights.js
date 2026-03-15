@@ -727,6 +727,7 @@ async function fetchOpenSkyForAirport(airport) {
         airline: resolveAirline(callsign),
         aircraft: '',
         aircraftReg: '',
+        typecode: '', // OpenSky states/all has no type field; client falls back to default icon
         scheduledTime: '',
         lat,
         lon,
@@ -799,6 +800,7 @@ async function fetchOpenSkyJamaicaWide() {
         airline: resolveAirline(callsign),
         aircraft: '',
         aircraftReg: '',
+        typecode: '', // OpenSky states/all has no type field; client falls back to default icon
         scheduledTime: '',
         lat,
         lon,
