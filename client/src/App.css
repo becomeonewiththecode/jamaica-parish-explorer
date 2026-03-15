@@ -34,6 +34,7 @@
 #info-section.info-visible {
   opacity: 1;
   pointer-events: auto;
+  z-index: 1101; /* above map-top-strip (1100) so drag handle receives events */
 }
 
 #info-section.info-hidden {
