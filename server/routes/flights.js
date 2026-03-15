@@ -228,6 +228,22 @@ function normalizeCallsign(callsign) {
   return (callsign || '').replace(/\s/g, '').trim() || null;
 }
 
+// ICAO (3-letter) ↔ IATA (2-letter) designators so scheduled "DL1997" matches live "DAL1997"
+const CALLSIGN_EQUIVALENTS = { DAL: 'DL', UAL: 'UA', AAL: 'AA', SWA: 'WN', JBU: 'B6', NKS: 'NK', FFT: 'F9', ASA: 'AS', GJS: 'G4', SCX: 'SY', RPA: 'RP', EDV: '9E', SKW: 'OO', ENY: 'MQ', JIA: '3L', LOBO: 'L5' };
+
+function getCallsignMatchKeys(callsign) {
+  const cs = (callsign || '').replace(/\s/g, '').trim().toUpperCase();
+  if (!cs) return [];
+  const keys = [cs];
+  const three = cs.slice(0, 3);
+  const two = cs.slice(0, 2);
+  const rest = cs.slice(3) || cs.slice(2);
+  if (CALLSIGN_EQUIVALENTS[three] && rest) keys.push(CALLSIGN_EQUIVALENTS[three] + rest);
+  const twoToThree = Object.entries(CALLSIGN_EQUIVALENTS).find(([, iata]) => iata === two);
+  if (twoToThree && rest) keys.push(twoToThree[0] + rest);
+  return [...new Set(keys)];
+}
+
 // Store route in cache under both callsign and icao24 so lookup by either key finds it
 function setRouteCache(callsign, icao24, entry) {
   const ncs = normalizeCallsign(callsign);
@@ -335,7 +351,8 @@ async function fetchRoutesFromAdsbLolRouteset(flights) {
     if (!Array.isArray(data)) return;
     for (const item of data) {
       const callsign = (item.callsign || '').toString().replace(/\s/g, '');
-      const routeStr = (item.airport_codes || item.airport_codes_icao || '').toString().trim();
+      // Prefer ICAO so reclassification (JAMAICA_ICAOS) works when destination is MKJS/MBJ
+      const routeStr = (item.airport_codes_icao || item.airport_codes || '').toString().trim();
       const match = routeStr.match(/^([A-Z0-9]{3,4})\-([A-Z0-9]{3,4})$/i);
       if (callsign && match) {
         const origin = match[1].toUpperCase();
@@ -444,34 +461,30 @@ async function enrichFlightsWithRoutes(flights) {
       f.routeDestination = route.destination; // ICAO code (e.g., "SBGL")
       if (route.source) f.routeSource = route.source; // e.g. 'adsb.lol' from routeset
 
-      // If destination is a Jamaica airport but we classified as flyover, reclassify
-      if (f.type === 'flyover' && JAMAICA_ICAOS.has(route.destination)) {
-        const destAirport = JAMAICA_AIRPORTS.find(a => a.icao === route.destination);
-        if (destAirport) {
-          f.type = 'arrival';
-          f.status = 'Approaching';
-          f.destLat = destAirport.lat;
-          f.destLon = destAirport.lon;
-          f.destName = destAirport.name;
-          f.destIata = destAirport.iata;
-          f.nearestAirport = destAirport.iata;
-          console.log(`[Flights] Reclassified ${f.callsign} from flyover → arrival at ${destAirport.name} (route: ${route.origin}→${route.destination})`);
-        }
+      // If destination is a Jamaica airport but we classified as flyover, reclassify (support both ICAO and IATA from routeset)
+      const destJamaica = JAMAICA_AIRPORTS.find(a => a.icao === route.destination || a.iata === route.destination);
+      if (f.type === 'flyover' && destJamaica) {
+        f.type = 'arrival';
+        f.status = 'Approaching';
+        f.destLat = destJamaica.lat;
+        f.destLon = destJamaica.lon;
+        f.destName = destJamaica.name;
+        f.destIata = destJamaica.iata;
+        f.nearestAirport = destJamaica.iata;
+        console.log(`[Flights] Reclassified ${f.callsign} from flyover → arrival at ${destJamaica.name} (route: ${route.origin}→${route.destination})`);
       }
 
-      // If origin is a Jamaica airport but we classified as flyover, reclassify
-      if (f.type === 'flyover' && JAMAICA_ICAOS.has(route.origin)) {
-        const origAirport = JAMAICA_AIRPORTS.find(a => a.icao === route.origin);
-        if (origAirport) {
-          f.type = 'departure';
-          f.status = 'Departing';
-          f.originLat = origAirport.lat;
-          f.originLon = origAirport.lon;
-          f.originName = origAirport.name;
-          f.originIata = origAirport.iata;
-          f.nearestAirport = origAirport.iata;
-          console.log(`[Flights] Reclassified ${f.callsign} from flyover → departure from ${origAirport.name} (route: ${route.origin}→${route.destination})`);
-        }
+      // If origin is a Jamaica airport but we classified as flyover, reclassify (support both ICAO and IATA)
+      const origJamaica = JAMAICA_AIRPORTS.find(a => a.icao === route.origin || a.iata === route.origin);
+      if (f.type === 'flyover' && origJamaica) {
+        f.type = 'departure';
+        f.status = 'Departing';
+        f.originLat = origJamaica.lat;
+        f.originLon = origJamaica.lon;
+        f.originName = origJamaica.name;
+        f.originIata = origJamaica.iata;
+        f.nearestAirport = origJamaica.iata;
+        console.log(`[Flights] Reclassified ${f.callsign} from flyover → departure from ${origJamaica.name} (route: ${route.origin}→${route.destination})`);
       }
 
       // For remaining flyovers, add full route + origin/destination airport info
@@ -493,8 +506,8 @@ async function enrichFlightsWithRoutes(flights) {
           f.destIata = dest.iata;
         }
         // Confirmed flyover if: destination exists and is NOT Jamaica, OR origin is NOT Jamaica (departed elsewhere, not arriving here)
-        const destNotJamaica = route.destination && !JAMAICA_ICAOS.has(route.destination);
-        const originNotJamaica = route.origin && !JAMAICA_ICAOS.has(route.origin);
+        const destNotJamaica = route.destination && !JAMAICA_ICAOS.has(route.destination) && !JAMAICA_IATAS.has(route.destination);
+        const originNotJamaica = route.origin && !JAMAICA_ICAOS.has(route.origin) && !JAMAICA_IATAS.has(route.origin);
         if (destNotJamaica || (originNotJamaica && !route.destination)) {
           f.confirmedFlyover = true;
         }
@@ -697,21 +710,13 @@ async function fetchOpenSkyForAirport(airport) {
       // Distance from airport (rough nm)
       const distNm = Math.hypot((lat - airport.lat) * 60, (lon - airport.lon) * 60 * Math.cos(airport.lat * Math.PI / 180));
       const altFt = altitude ? altitude * 3.281 : 0;
-
-      // Classify by vertical rate, altitude, and distance
-      let direction;
-      if (onGround) direction = 'arrival';
-      else if (verticalRate < -1 && altFt <= 20000) direction = 'arrival';
-      else if (verticalRate < -1 && altFt > 20000 && distNm <= 40) direction = 'arrival';
-      else if (verticalRate > 1 && altFt <= 15000) direction = 'departure';
-      else if (altFt <= 10000 && distNm <= 15) direction = 'arrival';
-      else direction = 'flyover';
+      const { direction, status } = classifyLiveFlight({ onGround, altFt, verticalRateMps: verticalRate, distNm });
 
       return {
         id: s[0] || callsign,
         callsign,
         flightNumber: callsign,
-        status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
+        status,
         type: direction,
         from: s[2] || '',
         fromIata: '',
@@ -779,19 +784,13 @@ async function fetchOpenSkyJamaicaWide() {
         if (d < minDist) { minDist = d; nearest = ap; }
       }
 
-      let direction;
-      if (onGround) direction = 'arrival';
-      else if (verticalRate < -1 && altFt <= 20000) direction = 'arrival';
-      else if (verticalRate < -1 && altFt > 20000 && minDist <= 40) direction = 'arrival';
-      else if (verticalRate > 1 && altFt <= 15000) direction = 'departure';
-      else if (altFt <= 10000 && minDist <= 15) direction = 'arrival';
-      else direction = 'flyover';
+      const { direction, status } = classifyLiveFlight({ onGround, altFt, verticalRateMps: verticalRate, distNm: minDist });
 
       return {
         id: s[0] || (callsign && callsign.replace(/\s/g, '')) || 'unknown',
         callsign,
         flightNumber: callsign,
-        status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
+        status,
         type: direction,
         from: '',
         fromIata: '',
@@ -877,22 +876,14 @@ async function fetchAdsbLolForAirport(airport) {
 
       // Distance from airport (rough nm: 1 deg lat ≈ 60nm)
       const distNm = Math.hypot((lat - airport.lat) * 60, (lon - airport.lon) * 60 * Math.cos(airport.lat * Math.PI / 180));
-
-      // Classify by vertical rate, altitude, and distance
-      let direction;
-      if (onGround) direction = 'arrival';
-      else if (baroRate < -200 && altitude <= 20000) direction = 'arrival';       // descending at reasonable alt
-      else if (baroRate < -200 && altitude > 20000 && distNm <= 40) direction = 'arrival'; // high but close & descending
-      else if (baroRate > 200 && altitude <= 15000) direction = 'departure';      // climbing from airport
-      else if (altitude <= 10000 && distNm <= 15) direction = 'arrival';          // low + close = landing pattern
-      else direction = 'flyover';                                                  // everything else is passing through
+      const { direction, status } = classifyLiveFlight({ onGround, altFt: altitude, baroRateFpm: baroRate, distNm });
 
       const routeInfo = routeFromAdsbLol(a);
       return {
         id: (a.hex && String(a.hex).trim()) || (callsign && callsign.replace(/\s/g, '')) || 'unknown',
         callsign,
         flightNumber: callsign,
-        status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
+        status,
         type: direction,
         from: routeInfo?.from ?? '',
         fromIata: routeInfo?.fromIata ?? '',
@@ -933,6 +924,21 @@ function distNmFromJamaicaCenter(lat, lon) {
   return Math.hypot((lat - JAMAICA_CENTER.lat) * 60, (lon - JAMAICA_CENTER.lon) * 60 * Math.cos(JAMAICA_CENTER.lat * Math.PI / 180));
 }
 
+// Single source of truth for live flight direction and status from position/altitude/vertical rate.
+// Ensures flight board and map status match. distNm = distance to assigned or nearest Jamaica airport.
+function classifyLiveFlight({ onGround, altFt, verticalRateMps, baroRateFpm, distNm }) {
+  const dist = distNm != null && Number.isFinite(distNm) ? distNm : 999;
+  const alt = Number.isFinite(altFt) ? altFt : 0;
+  const descending = (Number.isFinite(verticalRateMps) && verticalRateMps < -1) || (Number.isFinite(baroRateFpm) && baroRateFpm < -200);
+  const climbing = (Number.isFinite(verticalRateMps) && verticalRateMps > 1) || (Number.isFinite(baroRateFpm) && baroRateFpm > 200);
+
+  if (onGround) return { direction: 'arrival', status: 'On Ground' };
+  if (descending && (alt <= 20000 || (alt > 20000 && dist <= 40))) return { direction: 'arrival', status: 'Approaching' };
+  if (climbing && alt <= 15000) return { direction: 'departure', status: 'Departing' };
+  if (alt <= 10000 && dist <= 15) return { direction: 'arrival', status: 'Approaching' };
+  return { direction: 'flyover', status: 'Flyover' };
+}
+
 async function fetchAdsbLolJamaicaWide() {
   try {
     const url = `https://api.adsb.lol/v2/lat/${JAMAICA_CENTER.lat}/lon/${JAMAICA_CENTER.lon}/dist/${JAMAICA_WIDE_RADIUS_NM}`;
@@ -967,21 +973,14 @@ async function fetchAdsbLolJamaicaWide() {
         if (d < minDist) { minDist = d; nearest = ap; }
       }
 
-      // Classify: arrivals (descending / on ground), departures (climbing), else flyover — so we map arrivals within 150 nm until they land, departures from takeoff until past 150 nm
-      let direction;
-      if (onGround) direction = 'arrival';
-      else if (baroRate < -200 && altitude <= 20000) direction = 'arrival';
-      else if (baroRate < -200 && altitude > 20000 && minDist <= 40) direction = 'arrival';
-      else if (baroRate > 200 && altitude <= 15000) direction = 'departure';
-      else if (altitude <= 10000 && minDist <= 15) direction = 'arrival';
-      else direction = 'flyover';
+      const { direction, status } = classifyLiveFlight({ onGround, altFt: altitude, baroRateFpm: baroRate, distNm: minDist });
 
       const routeInfo = routeFromAdsbLol(a);
       return {
         id,
         callsign,
         flightNumber: callsign,
-        status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
+        status,
         type: direction,
         from: routeInfo?.from ?? '',
         fromIata: routeInfo?.fromIata ?? '',
@@ -1214,6 +1213,13 @@ async function fetchLiveRadar() {
   console.log(`[Flights] Live radar: ${liveFlights.length} aircraft — total ${allFlights.length} flights (source: ${source})${laeCount ? ` — LAE in list: ${laeCount}` : ''}`);
 }
 
+// When we first mark a flight Landed/Departed/On Ground, store that time so client can hide it after 45 min
+const completedAtByCallsign = new Map();
+
+// Remove landed arrivals and departed departures from cache after this long (keeps flight board from growing indefinitely)
+const COMPLETED_FLIGHT_HIDE_AFTER_MS = 45 * 60 * 1000; // 45 min
+const COMPLETED_FLIGHT_CLEANUP_INTERVAL_MS = 2 * 60 * 1000; // run cleanup every 2 min
+
 // Start background polling on server boot
 (async () => {
   await fetchScheduledFlights();  // Get scheduled flights first
@@ -1221,9 +1227,7 @@ async function fetchLiveRadar() {
 })();
 setInterval(fetchScheduledFlights, SCHEDULED_POLL_INTERVAL);  // Every 15 min
 setInterval(fetchLiveRadar, LIVE_POLL_INTERVAL);               // Every 30 sec
-
-// When we first mark a flight Landed/Departed/On Ground, store that time so client can hide it after 45 min
-const completedAtByCallsign = new Map();
+setInterval(removeCompletedFlightsFromCache, COMPLETED_FLIGHT_CLEANUP_INTERVAL_MS); // Remove Landed/Departed after 45 min
 
 // True if status from schedule or live indicates the flight is not yet completed (impending)
 function isImpendingStatus(status) {
@@ -1239,27 +1243,31 @@ function confirmFlightStatuses(flights) {
   for (const f of flights) {
     if (f.dataSource === 'live') {
       const cs = (f.callsign || '').replace(/\s/g, '');
-      if (cs) liveByCallsign.set(cs, f);
+      if (cs) {
+        for (const key of getCallsignMatchKeys(cs)) liveByCallsign.set(key, f);
+      }
     }
   }
 
   return flights.map(f => {
     const cs = (f.callsign || f.flightNumber || '').replace(/\s/g, '');
+    const matchKeys = getCallsignMatchKeys(cs);
 
-    // Live flights: add completedAt when On Ground / Landed so client can hide after 45 min; set isImpending
+    // Live flights: add completedAt when On Ground / Landed; persist under all key variants so scheduled (e.g. DL1997) sees it after aircraft drops off
     if (f.dataSource === 'live') {
       const status = (f.status || '').toLowerCase();
       const isImpending = f.status === 'Approaching' || f.status === 'Departing';
       if (status === 'on ground' || status === 'landed') {
-        if (!completedAtByCallsign.has(cs)) completedAtByCallsign.set(cs, now);
-        return { ...f, completedAt: completedAtByCallsign.get(cs), isImpending: false };
+        const completed = completedAtByCallsign.get(cs) || now;
+        for (const key of matchKeys) completedAtByCallsign.set(key, completed);
+        return { ...f, completedAt: completed, isImpending: false };
       }
       return { ...f, isImpending };
     }
 
     if (f.dataSource !== 'scheduled') return { ...f, isImpending: isImpendingStatus(f.status) };
 
-    const liveFlight = liveByCallsign.get(cs);
+    const liveFlight = matchKeys.map(k => liveByCallsign.get(k)).find(Boolean);
 
     // Parse scheduled time
     let scheduledMs = 0;
@@ -1271,8 +1279,15 @@ function confirmFlightStatuses(flights) {
 
     // Signal 1: Live radar confirms aircraft on ground at airport
     if (liveFlight && liveFlight.status === 'On Ground') {
-      if (!completedAtByCallsign.has(cs)) completedAtByCallsign.set(cs, now);
-      return { ...f, status: f.type === 'arrival' ? 'Landed' : 'Departed', confirmedBy: 'radar', completedAt: completedAtByCallsign.get(cs), isImpending: false };
+      const completed = completedAtByCallsign.get(cs) || now;
+      for (const key of matchKeys) completedAtByCallsign.set(key, completed);
+      return { ...f, status: f.type === 'arrival' ? 'Landed' : 'Departed', confirmedBy: 'radar', completedAt: completed, isImpending: false };
+    }
+
+    // Signal 1b: No current live contact but we previously saw this flight On Ground (aircraft dropped off list after landing)
+    const seenCompletedAt = matchKeys.map(k => completedAtByCallsign.get(k)).find(t => t != null);
+    if (seenCompletedAt != null) {
+      return { ...f, status: f.type === 'arrival' ? 'Landed' : 'Departed', confirmedBy: 'radar', completedAt: seenCompletedAt, isImpending: false };
     }
 
     // Signal 2: Live radar shows aircraft in flight (approaching/departing) → impending
@@ -1280,16 +1295,54 @@ function confirmFlightStatuses(flights) {
       return { ...f, status: f.type === 'arrival' ? 'EnRoute' : 'Departing', confirmedBy: 'radar', isImpending: true };
     }
 
-    // Signal 3: Past scheduled time with no radar contact → completed (use scheduled time so client hides 45 min after that)
-    if (scheduledMs && minutesPast > 45) {
-      if (!completedAtByCallsign.has(cs)) completedAtByCallsign.set(cs, scheduledMs);
-      return { ...f, status: f.type === 'arrival' ? 'Landed' : 'Departed', confirmedBy: 'time', completedAt: completedAtByCallsign.get(cs), isImpending: false };
+    // Signal 3: Past scheduled time with no radar contact → assume completed (15 min so board updates from "Expected" to "Landed" sooner)
+    const PAST_SCHEDULED_MIN = 15;
+    if (scheduledMs && minutesPast > PAST_SCHEDULED_MIN) {
+      const completed = completedAtByCallsign.get(cs) || scheduledMs;
+      for (const key of matchKeys) completedAtByCallsign.set(key, completed);
+      return { ...f, status: f.type === 'arrival' ? 'Landed' : 'Departed', confirmedBy: 'time', completedAt: completed, isImpending: false };
     }
 
     // Still scheduled / expected: impending if scheduled time in future or status says not completed
     const isImpending = scheduledInFuture || isImpendingStatus(f.status);
     return { ...f, isImpending };
   });
+}
+
+// Scheduled cleanup: remove only LIVE landed/departed flights after 45 min. Never remove scheduled (AeroDataBox)
+// flights — they often have past scheduled times and would otherwise be wiped, leaving no data on the board.
+function removeCompletedFlightsFromCache() {
+  if (!flightsCache.data || !Array.isArray(flightsCache.data.flights)) return;
+  const raw = flightsCache.data.flights;
+  const confirmed = confirmFlightStatuses(raw);
+  const now = Date.now();
+  const keepIndex = new Set();
+  for (let i = 0; i < confirmed.length; i++) {
+    const f = confirmed[i];
+    // Only consider removing live flights; scheduled stay in cache (client hides them after 45 min)
+    if (f.dataSource !== 'live') {
+      keepIndex.add(i);
+      continue;
+    }
+    const status = (f.status || '').toLowerCase();
+    const completed = (f.type === 'arrival' && (status === 'landed' || status === 'on ground')) ||
+      (f.type === 'departure' && status === 'departed');
+    if (!completed) {
+      keepIndex.add(i);
+      continue;
+    }
+    const completedAt = f.completedAt != null
+      ? (typeof f.completedAt === 'number' ? f.completedAt : new Date(f.completedAt).getTime())
+      : 0;
+    if (!completedAt || (now - completedAt) < COMPLETED_FLIGHT_HIDE_AFTER_MS) keepIndex.add(i);
+  }
+  const kept = raw.filter((_, i) => keepIndex.has(i));
+  if (kept.length === raw.length) return;
+  flightsCache = {
+    data: { ...flightsCache.data, flights: kept },
+    timestamp: now,
+  };
+  console.log(`[Flights] Cleanup: removed ${raw.length - kept.length} completed live flight(s), ${kept.length} remaining`);
 }
 
 // GET /api/flights — returns cached data with live status confirmation
