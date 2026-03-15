@@ -3,6 +3,8 @@
   position: relative;
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
 }
 
 /* FLOATING INFO PANEL */
@@ -384,10 +386,12 @@
   line-height: 1.5;
 }
 
-/* MAP — full screen */
+/* MAP — full screen, responsive height */
 #map-section {
   width: 100%;
   height: 100vh;
+  height: 100dvh; /* dynamic viewport on mobile (address bar) */
+  min-height: 320px;
   display: flex;
   flex-direction: column;
   background: linear-gradient(135deg, #0d1f3c 0%, #122a4f 50%, #0d1f3c 100%);
@@ -411,10 +415,10 @@
 
 .map-controls-grid {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) auto auto;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
   gap: 12px;
   align-items: center;
-  max-width: calc(100vw - 400px);
+  max-width: calc(100vw - 340px);
 }
 
 .map-grid-cell-1 {
@@ -2590,33 +2594,312 @@
   font-size: 0.72rem;
 }
 
-/* RESPONSIVE */
-@media (max-width: 700px) {
-  #info-section {
-    width: calc(100% - 32px);
-    max-width: 280px;
-    max-height: 50vh;
-    top: auto;
-    bottom: 16px;
-    left: 16px;
-  }
+/* RESPONSIVE — tablet, large phone, phone */
 
+/* Tablet */
+@media (max-width: 1024px) {
   .map-top-strip {
-    top: 12px;
     padding: 0 12px;
     gap: 12px;
   }
 
-  .search-bar {
-    width: 247px;
+  .map-controls-grid {
+    max-width: 100%;
+    grid-template-columns: minmax(100px, 1fr) auto auto;
+    gap: 10px;
   }
 
-  .map-header h1 { font-size: 1.2rem; }
+  .parish-select-dropdown {
+    min-width: 140px;
+    max-width: 180px;
+  }
+
+  .zoom-title {
+    font-size: 1.2rem;
+  }
+
+  .flight-toggle-btn {
+    padding: 6px 10px;
+    font-size: 0.68rem;
+  }
+
+  .search-bar {
+    width: 280px;
+  }
+
+  #map-container {
+    min-height: 280px;
+  }
+
+  .flight-altitude-legend {
+    font-size: 0.65rem !important;
+  }
+
+  .flight-altitude-legend-items {
+    gap: 8px 10px;
+  }
+
+  .flight-altitude-legend-swatch {
+    width: 10px;
+    height: 10px;
+  }
+}
+
+/* Large phone / small tablet */
+@media (max-width: 700px) {
+  #map-section {
+    min-height: 280px;
+  }
+
+  #info-section {
+    width: calc(100% - 32px);
+    max-width: 280px;
+    max-height: 50vh;
+    max-height: 50dvh;
+    top: auto;
+    bottom: 16px;
+    left: 16px;
+    padding: 12px;
+  }
+
+  .map-top-strip {
+    top: 10px;
+    padding: 10px 12px;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding-left: env(safe-area-inset-left, 12px);
+    padding-right: env(safe-area-inset-right, 12px);
+  }
+
+  .map-controls-grid {
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .parish-zoom-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .zoom-title {
+    font-size: 1rem;
+    line-height: 1.2;
+  }
+
+  .zoom-place-count {
+    width: 100%;
+    margin-left: 0;
+    font-size: 0.7rem;
+  }
+
+  .zoom-back-btn {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+  }
+
+  .zoom-level-control {
+    padding: 4px 6px;
+    gap: 2px;
+  }
+
+  .zoom-level-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+  }
+
+  .flight-toggle-btn {
+    padding: 8px 10px;
+    font-size: 0.65rem;
+  }
+
+  .search-bar {
+    width: 100%;
+    max-width: 280px;
+    min-width: 0;
+  }
+
+  .map-header h1 {
+    font-size: 1.2rem;
+  }
 
   .flight-board {
     width: calc(100% - 24px);
     right: 12px;
     bottom: 12px;
     max-height: 360px;
+  }
+
+  #map-container {
+    min-height: 240px;
+  }
+
+  .flight-altitude-legend {
+    padding: 6px 10px !important;
+    font-size: 0.62rem !important;
+  }
+
+  .flight-altitude-legend-title {
+    font-size: 0.65rem;
+  }
+
+  .flight-altitude-legend-label {
+    white-space: normal;
+    max-width: 72px;
+    line-height: 1.2;
+  }
+
+  .map-top-bar {
+    padding: 10px 12px 8px;
+  }
+
+  .zoom-filters {
+    gap: 6px;
+  }
+
+  .category-btn {
+    padding: 4px 8px;
+    font-size: 0.65rem;
+  }
+}
+
+/* Phone */
+@media (max-width: 480px) {
+  #map-section {
+    min-height: 260px;
+  }
+
+  .map-top-strip {
+    top: 8px;
+    padding: 8px 10px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .map-controls-grid {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 8px;
+  }
+
+  /* Row 1: parish/back + zoom */
+  .map-grid-cell-1 {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .map-grid-cell-2 {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  /* Row 2: toggles full width */
+  .map-grid-cell-3 {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .map-toggle-buttons {
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .parish-select-dropdown {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .zoom-title {
+    font-size: 0.95rem;
+  }
+
+  .search-bar {
+    max-width: none;
+  }
+
+  .search-input {
+    font-size: 0.8rem;
+    padding: 10px 8px;
+  }
+
+  #info-section {
+    width: calc(100% - 24px);
+    max-width: none;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    padding-left: env(safe-area-inset-left, 12px);
+    padding-right: env(safe-area-inset-right, 12px);
+  }
+
+  .flight-altitude-legend {
+    padding: 5px 8px !important;
+    font-size: 0.58rem !important;
+  }
+
+  .flight-altitude-legend-items {
+    gap: 6px 8px;
+    justify-content: center;
+  }
+
+  .flight-altitude-legend-row {
+    gap: 4px;
+  }
+
+  .flight-altitude-legend-swatch {
+    width: 8px;
+    height: 8px;
+  }
+
+  .flight-altitude-legend-label {
+    max-width: 56px;
+    font-size: 0.55rem;
+  }
+
+  .map-top-bar {
+    padding: 8px 10px 6px;
+  }
+
+  .category-btn {
+    padding: 6px 10px;
+    font-size: 0.62rem;
+    min-height: 36px;
+  }
+
+  .category-more-select {
+    min-height: 36px;
+    font-size: 0.7rem;
+  }
+}
+
+/* Touch-friendly: ensure minimum tap targets where hover is poor */
+@media (hover: none) and (pointer: coarse) {
+  .zoom-level-btn {
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .zoom-back-btn,
+  .flight-toggle-btn {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .parish-select-dropdown {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .search-input-wrap {
+    min-height: 44px;
   }
 }
