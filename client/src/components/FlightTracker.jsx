@@ -43,16 +43,30 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
 
   // Separate scheduled (count badges) and live (plane markers) flights
   const scheduledFlights = flights.filter(f => f.dataSource === 'scheduled' || (!f.dataSource && f.scheduledTime));
-  const hasValidPosition = (f) => {
-    const lat = Number(f.lat);
-    const lon = Number(f.lon);
-    return Number.isFinite(lat) && Number.isFinite(lon);
+  const getPosition = (f) => {
+    const rawLat = f.lat ?? f.latitude ?? f.position?.lat ?? (Array.isArray(f.coordinates) && f.coordinates[0] != null ? f.coordinates[0] : null);
+    const rawLon = f.lon ?? f.lng ?? f.longitude ?? f.position?.lon ?? (Array.isArray(f.coordinates) && f.coordinates[1] != null ? f.coordinates[1] : null);
+    const lat = typeof rawLat === 'number' ? rawLat : parseFloat(rawLat);
+    const lon = typeof rawLon === 'number' ? rawLon : parseFloat(rawLon);
+    return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
   };
+  const hasValidPosition = (f) => getPosition(f) != null;
   const isLive = (f) =>
     f.dataSource === 'live' ||
     (!f.dataSource && !f.scheduledTime) ||
-    (['arrival', 'departure', 'flyover'].includes(f.type) && f.lat != null && f.lon != null);
-  const liveFlights = flights.filter(f => isLive(f) && hasValidPosition(f));
+    (['arrival', 'departure', 'flyover'].includes(f.type) && (f.lat != null || f.latitude != null || f.position != null) && (f.lon != null || f.longitude != null || f.lng != null || f.position != null));
+  let liveFlights = flights.filter(f => isLive(f) && hasValidPosition(f));
+  // Include any live flyover that has position but was missed (e.g. alternate field names or type)
+  const liveIds = new Set(liveFlights.map(f => f.id || f.callsign));
+  for (const f of flights) {
+    if (f.type === 'flyover' && f.dataSource === 'live' && !liveIds.has(f.id) && !liveIds.has((f.callsign || '').trim())) {
+      const pos = getPosition(f);
+      if (pos) {
+        liveFlights = [...liveFlights, f];
+        liveIds.add(f.id || f.callsign);
+      }
+    }
+  }
 
   // Group ALL flights (scheduled + live) by airport for count badges
   const airportCounts = {};
@@ -105,13 +119,14 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
 
       {/* Live aircraft approach/departure lines (not for flyovers) */}
       {liveFlights.filter(f => f.type !== 'flyover').map(f => {
+        const pos = getPosition(f);
         const airportLat = f.type === 'arrival' ? f.destLat : f.originLat;
         const airportLon = f.type === 'arrival' ? f.destLon : f.originLon;
-        if (!airportLat || !airportLon) return null;
+        if (!pos || !airportLat || !airportLon) return null;
         return (
           <Polyline
             key={`line-${f.id}`}
-            positions={[[f.lat, f.lon], [airportLat, airportLon]]}
+            positions={[[pos.lat, pos.lon], [airportLat, airportLon]]}
             pathOptions={{
               color: f.type === 'arrival' ? '#4caf50' : '#ff9800',
               weight: 1.5,
@@ -124,9 +139,8 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
 
       {/* Live aircraft markers */}
       {liveFlights.map((f, i) => {
-        const lat = Number(f.lat);
-        const lon = Number(f.lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        const pos = getPosition(f);
+        if (!pos) return null;
         const icon = buildLiveIcon(f.heading, f.type);
         const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
         const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
@@ -135,8 +149,8 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
 
         return (
           <Marker
-            key={`plane-${f.id ?? i}-${i}`}
-            position={[lat, lon]}
+            key={`plane-${f.id ?? f.callsign ?? i}-${i}`}
+            position={[pos.lat, pos.lon]}
             icon={icon}
             zIndexOffset={f.type === 'flyover' ? 1000 : 1100}
           >

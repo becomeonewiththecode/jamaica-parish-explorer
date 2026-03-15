@@ -211,7 +211,7 @@ const JAMAICA_IATAS = new Set(JAMAICA_AIRPORTS.map(a => a.iata));
 
 // Separate poll intervals: scheduled flights (rate-limited API) vs live radar (free APIs)
 const SCHEDULED_POLL_INTERVAL = 15 * 60 * 1000; // 15 minutes for AeroDataBox
-const LIVE_POLL_INTERVAL = 30 * 1000;            // 30 seconds for adsb.lol / OpenSky
+const LIVE_POLL_INTERVAL = 30 * 1000;            // 30 seconds — adsb.lol + OpenSky polled this often for all Jamaica
 let flightsCache = { data: null, timestamp: 0 };
 let cachedScheduledFlights = [];
 let cachedScheduledSources = [];
@@ -305,18 +305,101 @@ async function lookupRoute(callsign, icao24) {
   return null;
 }
 
-// Batch route lookup for multiple flights (with rate limiting)
+// Primary route source: adsb.lol routeset API (POST /api/0/routeset). Same source as the adsb.lol website route panel.
+async function fetchRoutesFromAdsbLolRouteset(flights) {
+  const needRoute = flights.filter(f => {
+    const ncs = normalizeCallsign(f.callsign);
+    if (!ncs || (f.lat == null || f.lon == null)) return false;
+    if (routeCache.has(ncs) || routeCache.has(f.id)) return false;
+    if (f.routeSource === 'adsb.lol' && f.routeOrigin && f.routeDestination) return false;
+    return true;
+  });
+  if (needRoute.length === 0) return;
+  const batch = needRoute.slice(0, 30).map(f => ({
+    callsign: normalizeCallsign(f.callsign),
+    lat: Number(f.lat),
+    lng: Number(f.lon),
+  })).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (batch.length === 0) return;
+  try {
+    const res = await fetch('https://api.adsb.lol/api/0/routeset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'JamaicaParishExplorer/1.0' },
+      body: JSON.stringify({ planes: batch }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!Array.isArray(data)) return;
+    for (const item of data) {
+      const callsign = (item.callsign || '').toString().replace(/\s/g, '');
+      const routeStr = (item.airport_codes || item.airport_codes_icao || '').toString().trim();
+      const match = routeStr.match(/^([A-Z0-9]{3,4})\-([A-Z0-9]{3,4})$/i);
+      if (callsign && match) {
+        const origin = match[1].toUpperCase();
+        const destination = match[2].toUpperCase();
+        const route = { origin, destination, source: 'adsb.lol' };
+        const entry = { route, time: Date.now() };
+        setRouteCache(callsign, null, entry);
+        console.log(`[Flights] Route ${callsign}: ${origin} → ${destination} (adsb.lol routeset)`);
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+// Fallback route lookup when OpenSky/adsb.lol routeset miss. Uses hexdb.io route-by-callsign.
+async function lookupRouteFallback(callsign, icao24) {
+  const ncs = normalizeCallsign(callsign);
+  if (!ncs) return null;
+  const cached = routeCache.get(ncs) || routeCache.get(icao24);
+  if (cached && Date.now() - cached.time < ROUTE_CACHE_TTL) return cached.route;
+
+  try {
+    const res = await fetch(`https://hexdb.io/api/v1/route/icao/${encodeURIComponent(ncs)}`, {
+      headers: { 'User-Agent': 'JamaicaParishExplorer/1.0' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      setRouteCache(callsign, icao24, { route: null, time: Date.now() });
+      return null;
+    }
+    const data = await res.json();
+    const routeStr = (data.route || data.departure_arrival || '').toString().trim();
+    const match = routeStr.match(/^([A-Z0-9]{3,4})[\s\-–—]+([A-Z0-9]{3,4})$/i);
+    if (match) {
+      const origin = match[1].toUpperCase();
+      const destination = match[2].toUpperCase();
+      const result = { origin, destination, source: 'hexdb' };
+      setRouteCache(callsign, icao24, { route: result, time: Date.now() });
+      console.log(`[Flights] Route fallback ${ncs}: ${origin} → ${destination} (hexdb.io)`);
+      return result;
+    }
+  } catch (e) {
+    // ignore
+  }
+  setRouteCache(callsign, icao24, { route: null, time: Date.now() });
+  return null;
+}
+
+// Batch route lookup for multiple flights (with rate limiting). Try every flight that needs route so routes show consistently.
 async function enrichFlightsWithRoutes(flights) {
   const hasCachedRoute = (f) => routeCache.has(normalizeCallsign(f.callsign)) || routeCache.has(f.id);
-  const toEnrich = flights.filter(f => (f.callsign || f.id) && !hasCachedRoute(f));
+  const hasRouteFromAdsbLol = (f) => f.routeSource === 'adsb.lol' && f.routeOrigin && f.routeDestination;
+  const toEnrich = flights.filter(f => (f.callsign || f.id) && !hasCachedRoute(f) && !hasRouteFromAdsbLol(f));
 
-  // Prioritize flyovers (they need route most) then others; limit 12 per 30s cycle
-  const flyoversFirst = [...toEnrich.filter(f => f.type === 'flyover'), ...toEnrich.filter(f => f.type !== 'flyover')];
-  const batch = flyoversFirst.slice(0, 12);
+  // 1) Primary: adsb.lol routeset API (same source as https://adsb.lol route panel) — batch POST, one request per cycle
+  await fetchRoutesFromAdsbLolRouteset(flights);
 
-  for (const f of batch) {
-    await lookupRoute(f.callsign, f.id); // id = icao24 hex from adsb.lol
-    await new Promise(r => setTimeout(r, 250)); // 250ms between requests
+  // 2) OpenSky for any still missing route (rate-limited)
+  const stillNeedRoute = flights.filter(f => !hasCachedRoute(f) && !hasRouteFromAdsbLol(f));
+  const flyoversFirst = [...stillNeedRoute.filter(f => f.type === 'flyover'), ...stillNeedRoute.filter(f => f.type !== 'flyover')];
+  const openSkyCap = 40; // ~9s at 220ms each
+  for (let i = 0; i < Math.min(flyoversFirst.length, openSkyCap); i++) {
+    const f = flyoversFirst[i];
+    await lookupRoute(f.callsign, f.id);
+    await new Promise(r => setTimeout(r, 220)); // OpenSky rate limit
   }
 
   // Also try matching callsigns against cached scheduled flights (AeroDataBox)
@@ -326,8 +409,28 @@ async function enrichFlightsWithRoutes(flights) {
     if (cs) scheduledByCallsign.set(cs, sf);
   }
 
-  // Apply route data to flights (look up by normalized callsign or icao24)
+  // Fallback: try hexdb.io for flights still missing route (skip when adsb.lol already provided route).
+  const needFallback = flights.filter(f => {
+    if (hasRouteFromAdsbLol(f)) return false;
+    const ncs = normalizeCallsign(f.callsign);
+    if (!ncs) return false;
+    const cached = routeCache.get(ncs) || routeCache.get(f.id);
+    if (cached?.route) return false;
+    if (scheduledByCallsign.get(ncs)) return false;
+    return true;
+  });
+  const fallbackCap = 40; // ~11s at 280ms each
+  for (let i = 0; i < Math.min(needFallback.length, fallbackCap); i++) {
+    const f = needFallback[i];
+    await lookupRouteFallback(f.callsign, f.id);
+    await new Promise(r => setTimeout(r, 280)); // hexdb rate limit
+  }
+
+  // Apply route data to flights. Prefer adsb.lol when present (more reliable); only use OpenSky/hexdb when adsb.lol didn't provide route.
   for (const f of flights) {
+    const hasRouteFromAdsbLol = f.routeSource === 'adsb.lol' && f.routeOrigin && f.routeDestination;
+    if (hasRouteFromAdsbLol) continue; // keep adsb.lol route, do not overwrite
+
     const cached = routeCache.get(normalizeCallsign(f.callsign)) || routeCache.get(f.id);
     const route = cached?.route;
 
@@ -337,6 +440,7 @@ async function enrichFlightsWithRoutes(flights) {
     if (route) {
       f.routeOrigin = route.origin;      // ICAO code (e.g., "KJFK")
       f.routeDestination = route.destination; // ICAO code (e.g., "SBGL")
+      if (route.source) f.routeSource = route.source; // e.g. 'adsb.lol' from routeset
 
       // If destination is a Jamaica airport but we classified as flyover, reclassify
       if (f.type === 'flyover' && JAMAICA_ICAOS.has(route.destination)) {
@@ -429,9 +533,9 @@ async function enrichFlightsWithRoutes(flights) {
           }
         }
       }
-      // Even for non-flyovers, add route info from schedule
-      if (!f.routeOrigin && scheduled.fromIata) f.routeOrigin = scheduled.fromIata;
-      if (!f.routeDestination && scheduled.toIata) f.routeDestination = scheduled.toIata;
+      // Even for non-flyovers, add route info from schedule (only when we don't already have route from adsb.lol)
+      if (!hasRouteFromAdsbLol && !f.routeOrigin && scheduled.fromIata) f.routeOrigin = scheduled.fromIata;
+      if (!hasRouteFromAdsbLol && !f.routeDestination && scheduled.toIata) f.routeDestination = scheduled.toIata;
     }
   }
 
@@ -634,13 +738,93 @@ async function fetchOpenSkyForAirport(airport) {
   }
 }
 
-// Extract route (origin/destination) from adsb.lol aircraft object — API may provide from/to/from_icao/to_icao/departure/arrival/route
+// OpenSky Jamaica-wide: all aircraft in bounding box (captures flyovers like UPS359 that adsb.lol public API may not return)
+async function fetchOpenSkyJamaicaWide() {
+  const lamin = 16.5;
+  const lamax = 20.0;
+  const lomin = -80.0;
+  const lomax = -74.5;
+  try {
+    const token = await getOpenSkyToken();
+    const url = `https://opensky-network.org/api/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`;
+    const headers = { 'User-Agent': 'JamaicaParishExplorer/1.0' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    const res = await fetch(url, { signal: controller.signal, headers });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data.states || data.states.length === 0) return [];
+
+    return data.states.map(s => {
+      const lat = s[6];
+      const lon = s[5];
+      if (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      const altitude = s[7]; // meters
+      const onGround = s[8];
+      const velocity = s[9];
+      const heading = s[10];
+      const callsign = (s[1] || '').trim();
+      const verticalRate = s[11];
+      const altFt = altitude ? altitude * 3.281 : 0;
+
+      let nearest = JAMAICA_AIRPORTS[0];
+      let minDist = Infinity;
+      for (const ap of JAMAICA_AIRPORTS) {
+        const d = Math.hypot((lat - ap.lat) * 60, (lon - ap.lon) * 60 * Math.cos(ap.lat * Math.PI / 180));
+        if (d < minDist) { minDist = d; nearest = ap; }
+      }
+
+      let direction;
+      if (onGround) direction = 'arrival';
+      else if (verticalRate < -1 && altFt <= 20000) direction = 'arrival';
+      else if (verticalRate < -1 && altFt > 20000 && minDist <= 40) direction = 'arrival';
+      else if (verticalRate > 1 && altFt <= 15000) direction = 'departure';
+      else if (altFt <= 10000 && minDist <= 15) direction = 'arrival';
+      else direction = 'flyover';
+
+      return {
+        id: s[0] || (callsign && callsign.replace(/\s/g, '')) || 'unknown',
+        callsign,
+        flightNumber: callsign,
+        status: onGround ? 'On Ground' : direction === 'arrival' ? 'Approaching' : direction === 'departure' ? 'Departing' : 'Flyover',
+        type: direction,
+        from: '',
+        fromIata: '',
+        to: '',
+        toIata: '',
+        airline: resolveAirline(callsign),
+        aircraft: '',
+        aircraftReg: '',
+        scheduledTime: '',
+        lat,
+        lon,
+        altitude: altitude != null ? altitude : undefined,
+        velocity: velocity != null ? velocity : undefined,
+        heading: heading != null ? heading : 0,
+        nearestAirport: nearest.iata,
+        ...(direction === 'arrival' ? {
+          destLat: nearest.lat, destLon: nearest.lon, destName: nearest.name, destIata: nearest.iata,
+        } : direction === 'departure' ? {
+          originLat: nearest.lat, originLon: nearest.lon, originName: nearest.name, originIata: nearest.iata,
+        } : {}),
+      };
+    }).filter(f => f != null && Number.isFinite(f.lat) && Number.isFinite(f.lon));
+  } catch (e) {
+    return [];
+  }
+}
+
+// Extract route (origin/destination) from adsb.lol aircraft object — primary source when available; API/feeders may send from_icao/to_icao, from/to, route string, etc.
 function routeFromAdsbLol(a) {
-  let fromIcao = (a.from_icao ?? a.from ?? a.departure_icao ?? a.dep ?? '').toString().toUpperCase().trim() || null;
-  let toIcao = (a.to_icao ?? a.to ?? a.arrival_icao ?? a.arr ?? '').toString().toUpperCase().trim() || null;
+  const rawFrom = a.from_icao ?? a.from ?? a.departure_icao ?? a.dep ?? a.departure ?? a.origin_icao ?? a.origin ?? '';
+  const rawTo = a.to_icao ?? a.to ?? a.arrival_icao ?? a.arr ?? a.arrival ?? a.destination_icao ?? a.destination ?? '';
+  let fromIcao = String(rawFrom).toUpperCase().trim() || null;
+  let toIcao = String(rawTo).toUpperCase().trim() || null;
   if (!fromIcao && !toIcao && a.route) {
     const routeStr = String(a.route).trim();
-    const match = routeStr.match(/^([A-Z0-9]{3,4})[\s\-–—]+([A-Z0-9]{3,4})$/i);
+    const match = routeStr.match(/^([A-Z0-9]{3,4})[\s\-–—\/]+([A-Z0-9]{3,4})$/i);
     if (match) {
       fromIcao = match[1].toUpperCase();
       toIcao = match[2].toUpperCase();
@@ -723,7 +907,7 @@ async function fetchAdsbLolForAirport(airport) {
         velocity: velocity * 0.5144, // convert knots to m/s
         heading,
         nearestAirport: airport.iata,
-        ...(routeInfo ? { routeOrigin: routeInfo.routeOrigin, routeDestination: routeInfo.routeDestination, originName: routeInfo.originName, destName: routeInfo.destName, originIata: routeInfo.originIata, destIata: routeInfo.destIata } : {}),
+        ...(routeInfo ? { routeOrigin: routeInfo.routeOrigin, routeDestination: routeInfo.routeDestination, originName: routeInfo.originName, destName: routeInfo.destName, originIata: routeInfo.originIata, destIata: routeInfo.destIata, routeSource: 'adsb.lol' } : {}),
         ...(direction === 'arrival' ? {
           destLat: airport.lat, destLon: airport.lon, destName: airport.name, destIata: airport.iata,
         } : direction === 'departure' ? {
@@ -736,9 +920,9 @@ async function fetchAdsbLolForAirport(airport) {
   }
 }
 
-// --- adsb.lol Jamaica-wide (catch flyovers near island but outside 25nm of any airport) ---
+// --- adsb.lol Jamaica-wide (covers all of Jamaica + approaches) ---
 const JAMAICA_CENTER = { lat: 18.0, lon: -77.5 };
-const JAMAICA_WIDE_RADIUS_NM = 150; // covers island + approaches + FIR-style airspace (e.g. AVA042/AVA148 on approach)
+const JAMAICA_WIDE_RADIUS_NM = 165; // nm from center — island + approaches + FIR; ensures ACL1166 and similar are included
 
 function distNmFromJamaicaCenter(lat, lon) {
   if (lat == null || lon == null) return Infinity;
@@ -811,7 +995,7 @@ async function fetchAdsbLolJamaicaWide() {
         velocity: velocity * 0.5144,
         heading,
         nearestAirport: nearest.iata,
-        ...(routeInfo ? { routeOrigin: routeInfo.routeOrigin, routeDestination: routeInfo.routeDestination, originName: routeInfo.originName, destName: routeInfo.destName, originIata: routeInfo.originIata, destIata: routeInfo.destIata } : {}),
+        ...(routeInfo ? { routeOrigin: routeInfo.routeOrigin, routeDestination: routeInfo.routeDestination, originName: routeInfo.originName, destName: routeInfo.destName, originIata: routeInfo.originIata, destIata: routeInfo.destIata, routeSource: 'adsb.lol' } : {}),
         ...(direction === 'arrival' ? {
           destLat: nearest.lat, destLon: nearest.lon, destName: nearest.name, destIata: nearest.iata,
         } : direction === 'departure' ? {
@@ -890,7 +1074,7 @@ async function fetchScheduledFlights() {
   console.log(`[Flights] Scheduled: ${flights.length} flights from ${sources.join(', ') || 'none'}`);
 }
 
-// --- Fetch live radar (adsb.lol / OpenSky — free, every 30s) ---
+// --- Fetch live radar: adsb.lol (per-airport 25nm + Jamaica-wide) + OpenSky fallback; polled every LIVE_POLL_INTERVAL (30s) ---
 async function fetchLiveRadar() {
   let liveFlights = [];
 
@@ -918,14 +1102,29 @@ async function fetchLiveRadar() {
     liveFlights.push(...wideFlights);
   } catch (e) {}
 
+  // OpenSky Jamaica-wide: full bounding box so we capture all overflights (e.g. UPS359) that adsb.lol public API may not return
+  let openSkyWideCount = 0;
+  try {
+    const openSkyWide = await fetchOpenSkyJamaicaWide();
+    openSkyWideCount = openSkyWide.length;
+    liveFlights.push(...openSkyWide);
+  } catch (e) {}
+
   // Deduplicate: same aircraft (by id) — keep one; use id so Jamaica-wide flights like LAE2506 are not dropped
   const byAircraft = new Map();
+  const hasValidPos = (x) => x != null && Number.isFinite(Number(x.lat)) && Number.isFinite(Number(x.lon));
   for (const f of liveFlights) {
     const key = f.id;
     const existing = byAircraft.get(key);
     if (!existing) {
       byAircraft.set(key, f);
     } else {
+      // Prefer the flight that has valid position so map markers always render
+      if (!hasValidPos(existing) && hasValidPos(f)) {
+        byAircraft.set(key, f);
+        continue;
+      }
+      if (hasValidPos(existing) && !hasValidPos(f)) continue; // keep existing
       // Prefer per-airport (has destLat/originLat) over Jamaica-wide flyover
       const hasAssignedAirport = (x) => (x.type === 'arrival' && x.destLat != null) || (x.type === 'departure' && x.originLat != null) || (x.type === 'flyover' && (x.destLat != null || x.originLat != null));
       if (hasAssignedAirport(f) && !hasAssignedAirport(existing)) {
@@ -964,6 +1163,7 @@ async function fetchLiveRadar() {
   const allFlights = [...cachedScheduledFlights, ...liveFlights];
   const sources = [...cachedScheduledSources];
   if (liveFlights.length > 0 && !sources.includes('adsb.lol')) sources.push('adsb.lol');
+  if (openSkyWideCount > 0 && !sources.includes('opensky')) sources.push('opensky');
 
   let source = 'none';
   if (sources.length === 0 && allFlights.length === 0) source = 'none';
@@ -981,6 +1181,8 @@ async function fetchLiveRadar() {
       source,
       time: Math.floor(now / 1000),
       airports: JAMAICA_AIRPORTS.map(a => ({ icao: a.icao, iata: a.iata, name: a.name, lat: a.lat, lon: a.lon })),
+      livePollIntervalSeconds: LIVE_POLL_INTERVAL / 1000,
+      liveRadiusNm: JAMAICA_WIDE_RADIUS_NM,
     },
     timestamp: now,
   };
@@ -1070,11 +1272,26 @@ function confirmFlightStatuses(flights) {
 // GET /api/flights — returns cached data with live status confirmation
 router.get('/', (req, res) => {
   if (flightsCache.data) {
-    const confirmed = confirmFlightStatuses(flightsCache.data.flights);
+    const flights = flightsCache.data.flights.map(f => {
+      if (f.dataSource === 'live' && (f.type === 'flyover' || f.type === 'arrival' || f.type === 'departure')) {
+        const lat = Number(f.lat);
+        const lon = Number(f.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) return { ...f, lat, lon };
+      }
+      return f;
+    });
+    const confirmed = confirmFlightStatuses(flights);
     return res.json({ ...flightsCache.data, flights: confirmed });
   }
   // First fetch hasn't completed yet
-  res.json({ flights: [], source: 'loading', time: Math.floor(Date.now() / 1000), airports: JAMAICA_AIRPORTS.map(a => ({ icao: a.icao, iata: a.iata, name: a.name, lat: a.lat, lon: a.lon })) });
+  res.json({
+    flights: [],
+    source: 'loading',
+    time: Math.floor(Date.now() / 1000),
+    airports: JAMAICA_AIRPORTS.map(a => ({ icao: a.icao, iata: a.iata, name: a.name, lat: a.lat, lon: a.lon })),
+    livePollIntervalSeconds: LIVE_POLL_INTERVAL / 1000,
+    liveRadiusNm: JAMAICA_WIDE_RADIUS_NM,
+  });
 });
 
 // GET /api/flights/history — query stored flight records
