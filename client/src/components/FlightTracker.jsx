@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Marker, Tooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { fetchFlights } from '../api/parishes';
+import { getIconCategory } from '../data/aircraftTypeDesignators';
 
 const POLL_INTERVAL = 30000; // 30 seconds (matches server live radar poll)
 
@@ -21,17 +22,83 @@ function colorByAltitudeFt(altFt) {
   return ALTITUDE_BANDS_FT[ALTITUDE_BANDS_FT.length - 1][2];
 }
 
-// Build a rotated plane icon for live aircraft (color by altitude)
-function buildLiveIcon(heading, altitudeM) {
+// Normalize aircraft string to ICAO-like typecode (e.g. "B738" or "Boeing 737-800" → "B73")
+function normalizeTypecode(aircraft) {
+  if (!aircraft || typeof aircraft !== 'string') return '';
+  const s = aircraft.trim().toUpperCase();
+  if (!s) return '';
+  // Already ICAO-style (3–4 alphanumeric, often starts with letter)
+  if (/^[A-Z][0-9A-Z]{2,4}$/.test(s)) return s;
+  // Full name: "Boeing 737-800" → B73, "Airbus A320" → A32, "Embraer E190" → E19
+  if (s.includes('BOEING')) return s.match(/7[0-9]{2}/)?.[0] ? 'B' + s.match(/7[0-9]{2}/)[0].slice(0, 2) : 'B73';
+  if (s.includes('AIRBUS')) return s.match(/A?3[0-9]{2}/)?.[0] ? 'A' + (s.match(/3[0-9]{2}/)[0].slice(0, 2) || '32') : 'A32';
+  if (s.includes('EMBRAER')) return s.match(/E[0-9]{2}/)?.[0] ? s.match(/E[0-9]{2}/)[0].slice(0, 3) : 'E19';
+  if (s.includes('BOMBARDIER') || s.includes('CRJ')) return 'CRJ';
+  if (s.includes('HELICOPTER') || s.startsWith('H')) return 'H';
+  if (s.includes('ATR')) return s.match(/[0-9]{2}-?[0-9]{2}/)?.[0]?.replace(/-/, '')?.slice(0, 3) || 'AT7';
+  if (s.includes('DASH') || s.includes('DH8') || s.includes('Q400')) return 'DH8';
+  if (s.includes('GULFSTREAM') || s.includes('GULF STREAM')) return s.match(/G[0-9]{2,3}/i)?.[0]?.toUpperCase() || 'G65';
+  if (s.includes('CITATION')) return s.match(/C[0-9]{2,3}/i)?.[0]?.toUpperCase() || 'C25';
+  if (s.includes('CHALLENGER') || s.includes('GLOBAL')) return s.match(/(CL[0-9]{2}|GLEX|GLBL)/i)?.[0]?.toUpperCase() || 'CL60';
+  if (s.includes('FALCON')) return s.match(/F[0-9]?[0-9]{2}/i)?.[0]?.toUpperCase() || 'F900';
+  if (s.includes('LEGACY') || s.includes('PHENOM')) return s.match(/E[0-9]{2,3}/i)?.[0]?.toUpperCase() || 'E55';
+  if (s.includes('HAWKER')) return 'H25';
+  return s.slice(0, 4);
+}
+
+// SVG plane silhouettes (top-down, nose up); fill = altitude color. viewBox 0 0 24 24.
+function planeSvg(fill, type) {
+  const stroke = 'rgba(255,255,255,0.6)';
+  const strokeWidth = 0.6;
+  const s = (n) => (strokeWidth * n).toFixed(1);
+  switch (type) {
+    case 'helicopter':
+      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><circle cx="12" cy="12" r="7" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><ellipse cx="12" cy="17" rx="2.5" ry="3" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/></svg>`;
+    case 'cargo':
+      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="4" ry="8" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="1" y="10.5" width="22" height="3" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.5"/></svg>`;
+    case 'business':
+      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="1.6" ry="9" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="7" y="11" width="10" height="2" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.3"/></svg>`;
+    case 'small':
+      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="2.2" ry="6" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="5" y="11" width="14" height="2" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.3"/></svg>`;
+    case 'widebody':
+      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="3.8" ry="8" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="1" y="10.5" width="22" height="3" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.5"/></svg>`;
+    case 'narrow':
+    default:
+      return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="flight-svg"><ellipse cx="12" cy="12" rx="2.5" ry="8" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}"/><rect x="3" y="11" width="18" height="2" fill="${fill}" stroke="${stroke}" stroke-width="${s(1)}" rx="0.3"/></svg>`;
+  }
+}
+
+// Icon config: size, iconSize, anchor, type (for SVG shape). Color comes from altitude in buildLiveIcon.
+const ICON = {
+  helicopter: { size: 20, iconSize: [24, 24], anchor: 12, type: 'helicopter' },
+  cargo:      { size: 28, iconSize: [32, 32], anchor: 16, type: 'cargo' },
+  business:   { size: 22, iconSize: [26, 26], anchor: 13, type: 'business' },
+  small:      { size: 18, iconSize: [22, 22], anchor: 11, type: 'small' },
+  widebody:   { size: 28, iconSize: [32, 32], anchor: 16, type: 'widebody' },
+  narrow:     { size: 22, iconSize: [26, 26], anchor: 13, type: 'narrow' },
+};
+
+// Icon lookup uses aircraftTypeDesignators.js (ICAO + TCCA Standard 421.40)
+const DEFAULT_ICON = ICON.narrow;
+
+function getIconStyleForTypecode(typecode) {
+  const category = getIconCategory(typecode);
+  return ICON[category] || DEFAULT_ICON;
+}
+
+// Build a rotated plane icon for live aircraft: shape from typecode, color from altitude (legend)
+function buildLiveIcon(heading, altitudeM, typecode) {
   const altFt = altitudeM != null ? altitudeM * 3.281 : null;
   const color = colorByAltitudeFt(altFt);
-  const opacity = '1';
-  const size = '22px';
+  const style = getIconStyleForTypecode(typecode);
+  const { iconSize, anchor, type } = style;
+  const typeClass = type ? ` flight-icon-${type}` : '';
+  const svg = planeSvg(color, type || 'narrow');
   return L.divIcon({
     className: 'flight-leaflet-icon',
-    html: `<div class="flight-icon-inner" style="transform:rotate(${heading || 0}deg);color:${color};font-size:${size};opacity:${opacity};-webkit-text-stroke:0.5px rgba(255,255,255,0.5)">✈</div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
+    html: `<div class="flight-icon-inner${typeClass}" style="transform:rotate(${heading || 0}deg);width:${iconSize[0]}px;height:${iconSize[1]}px;display:flex;align-items:center;justify-content:center" data-type="${type || 'narrow'}">${svg}</div>`,
+    iconSize,
+    iconAnchor: [anchor, anchor],
   });
 }
 
@@ -195,7 +262,8 @@ function FlightTracker({ visible, onAirportSelect, airports }) {
       {liveFlights.map((f, i) => {
         const pos = getPosition(f);
         if (!pos) return null;
-        const icon = buildLiveIcon(f.heading, f.altitude);
+        const typecode = (f.typecode || normalizeTypecode(f.aircraft) || '').trim().toUpperCase().slice(0, 4);
+        const icon = buildLiveIcon(f.heading, f.altitude, typecode);
         const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
         const speedKts = f.velocity ? Math.round(f.velocity * 1.944) : null;
         const airportName = f.type === 'arrival' ? f.destName : f.type === 'departure' ? f.originName : null;

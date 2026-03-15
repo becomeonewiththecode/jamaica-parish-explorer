@@ -172,8 +172,16 @@ Queries stored flight records from the database.
 
 When "Live Flights" is toggled on:
 - **AeroDataBox airports (KIN, MBJ):** Flight count badges appear at airport positions showing arrival/departure counts (e.g. `↓13 ↑12`)
-- **OpenSky live aircraft:** Plane icons at actual aircraft positions, rotated to match heading
+- **OpenSky live aircraft:** Plane icons at actual aircraft positions, rotated to match heading; **icon shape** is chosen from the aircraft typecode, **color** from altitude (see altitude legend).
 - Clicking a flight count badge opens the airport's detail view in the InfoSection panel
+
+**Aircraft type designators (typecode → icon):**  
+Map icons use a single typecode per flight (from live data `typecode`/`aircraft` or normalized from model names). The mapping from typecode to icon category (helicopter, cargo, business, small, widebody, narrow) is defined in `client/src/data/aircraftTypeDesignators.js` and aligns with:
+
+- **ICAO** type codes (e.g. from ADS-B: `B738`, `A320`, `GLF6`)
+- **Transport Canada Standard 421.40** — [Aircraft Type Designators for Individual Type Ratings (TCCA)](https://tc.canada.ca/en/aviation/licensing-pilots-personnel/flight-crew-licences-permits-ratings/aircraft-type-designation/standard-42140-aircraft-type-designators-individual-type-ratings-transport-canada-tcca) (effective April 1, 2026)
+
+So both ICAO (e.g. `B73C`, `GLF6`) and TCCA designators (e.g. `B73C`, `GLF6`, `EA32`, `HS25`) are recognized and drive the correct plane silhouette and size on the map.
 
 ### InfoSection — Airport Detail
 
@@ -197,6 +205,7 @@ Parishes containing airports (Kingston, St. James, St. Mary) include an **Airpor
 | `server/routes/flights.js` | API routes, data fetching, polling, OAuth, DB storage |
 | `server/db/schema.sql` | Database schema including `flights` table |
 | `server/.env` | API credentials (gitignored) |
+| `client/src/data/aircraftTypeDesignators.js` | Typecode → icon category (ICAO + TCCA Standard 421.40) |
 | `client/src/components/FlightTracker.jsx` | Map markers for flight counts and live aircraft |
 | `client/src/components/AirportDetail.jsx` | Airport info panel with flight board |
 | `client/src/components/InfoSection.jsx` | Side panel that hosts AirportDetail |
