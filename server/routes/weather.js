@@ -19,8 +19,12 @@ const PARISH_COORDINATES = {
   'portland': [18.18, -76.45],      // Port Antonio
 };
 
+// Alternate spellings → canonical slug (for parish route only; island uses PARISH_COORDINATES keys)
+const PARISH_SLUG_ALIASES = { 'trelawney': 'trelawny' };
+
 const OPEN_METEO_BASE = 'https://api.open-meteo.com/v1/forecast';
-const CACHE_MS = 10 * 60 * 1000; // 10 minutes
+const CACHE_MS = 10 * 60 * 1000; // 10 minutes (single-request cache)
+const ISLAND_CACHE_MS = 20 * 60 * 1000; // 20 minutes — island data refreshed every 20 min
 let cache = { key: null, data: null, ts: 0 };
 let islandCache = { ts: 0, data: null };
 
@@ -98,7 +102,8 @@ router.get('/', async (req, res) => {
 
 // GET /api/weather/parish/:slug
 router.get('/parish/:slug', async (req, res) => {
-  const slug = (req.params.slug || '').toLowerCase().trim();
+  let slug = (req.params.slug || '').toLowerCase().trim();
+  slug = PARISH_SLUG_ALIASES[slug] || slug;
   const coords = PARISH_COORDINATES[slug];
   if (!coords) {
     return res.status(404).json({ error: 'Unknown parish' });
@@ -117,22 +122,130 @@ router.get('/parish/:slug', async (req, res) => {
   res.json(out);
 });
 
-// GET /api/weather/island — weather for all parishes (for map layer at zoom 9–12)
-router.get('/island', async (req, res) => {
-  if (islandCache.data && Date.now() - islandCache.ts < CACHE_MS) {
-    return res.json(islandCache.data);
-  }
+// Fetch island weather for all parishes; returns full list (failed parishes have error: true so every parish has a marker)
+async function fetchIslandWeather() {
   const entries = Object.entries(PARISH_COORDINATES);
   const results = await Promise.all(
     entries.map(async ([slug, [lat, lon]]) => {
-      const raw = await fetchOpenMeteo(lat, lon);
-      const out = normalizeResponse(raw);
-      return out ? { slug, lat, lon, ...out } : { slug, lat, lon, error: true };
+      let raw = await fetchOpenMeteo(lat, lon);
+      let out = raw ? normalizeResponse(raw) : null;
+      if (!out) {
+        raw = await fetchOpenMeteo(lat, lon);
+        out = raw ? normalizeResponse(raw) : null;
+      }
+      return out
+        ? { slug, lat, lon, ...out }
+        : { slug, lat, lon, error: true, description: 'Unavailable' };
     })
   );
-  const list = results.filter(r => !r.error);
+  return results; // include all parishes so client can show every parish (rain/sun/wind or unavailable)
+}
+
+// GET /api/weather/island — weather for all parishes (for map layer at zoom 9–12)
+router.get('/island', async (req, res) => {
+  if (islandCache.data && Date.now() - islandCache.ts < ISLAND_CACHE_MS) {
+    return res.json(islandCache.data);
+  }
+  const list = await fetchIslandWeather();
   islandCache = { ts: Date.now(), data: list };
   res.json(list);
 });
+
+// --- Wave / marine (Open-Meteo Marine API) ---
+const MARINE_API = 'https://marine-api.open-meteo.com/v1/marine';
+const WAVE_CACHE_MS = 30 * 60 * 1000; // 30 minutes
+let waveCache = { ts: 0, data: null };
+
+// Coastal points around Jamaica for wave data (name, lat, lon)
+// Manchester has no coastline (inland parish); other south-coast parishes listed below
+const COASTAL_POINTS = [
+  { id: 'negril', name: 'Negril', lat: 18.28, lon: -78.35 },
+  { id: 'montego-bay', name: 'Montego Bay', lat: 18.47, lon: -77.92 },
+  { id: 'falmouth', name: 'Falmouth (Trelawny)', lat: 18.52, lon: -77.65 }, // offshore so icon is over water
+  { id: 'ocho-rios', name: 'Ocho Rios', lat: 18.41, lon: -77.10 },
+  { id: 'port-antonio', name: 'Port Antonio', lat: 18.18, lon: -76.45 },
+  { id: 'port-maria', name: 'Port Maria', lat: 18.37, lon: -76.89 },
+  { id: 'morant-bay', name: 'Morant Bay', lat: 17.88, lon: -76.41 },
+  { id: 'kingston', name: 'Kingston Harbour', lat: 17.97, lon: -76.79 },
+  { id: 'old-harbour', name: 'Old Harbour (St. Catherine)', lat: 17.94, lon: -77.11 },
+  { id: 'rocky-point', name: 'Rocky Point (Clarendon)', lat: 17.77, lon: -77.27 },
+  { id: 'black-river', name: 'Black River (St. Elizabeth)', lat: 18.03, lon: -77.85 },
+  { id: 'treasure-beach', name: 'Treasure Beach (St. Elizabeth)', lat: 17.89, lon: -77.76 },
+  { id: 'savanna-la-mar', name: 'Savanna-la-Mar', lat: 18.22, lon: -78.13 },
+];
+
+async function fetchMarinePoint({ id, name, lat, lon }) {
+  const url = new URL(MARINE_API);
+  url.searchParams.set('latitude', lat);
+  url.searchParams.set('longitude', lon);
+  url.searchParams.set('current', 'wave_height,wave_direction,wave_period');
+  url.searchParams.set('timezone', 'America/Jamaica');
+  url.searchParams.set('cell_selection', 'sea');
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch(url.toString(), { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const c = data.current;
+      if (c == null) continue;
+      return {
+        id,
+        name,
+        lat: data.latitude ?? lat,
+        lon: data.longitude ?? lon,
+        waveHeight: c.wave_height,
+        waveDirection: c.wave_direction,
+        wavePeriod: c.wave_period,
+      };
+    } catch (err) {
+      clearTimeout(timeout);
+      if (attempt === 1) console.error('Marine fetch error:', err.message);
+    }
+  }
+  return { id, name, lat, lon, error: true };
+}
+
+// GET /api/weather/waves — wave conditions at coastal points (for map layer)
+async function fetchWavesData() {
+  const results = await Promise.all(COASTAL_POINTS.map(fetchMarinePoint));
+  return results.filter(r => !r.error);
+}
+
+router.get('/waves', async (req, res) => {
+  if (waveCache.data && Date.now() - waveCache.ts < WAVE_CACHE_MS) {
+    return res.json(waveCache.data);
+  }
+  const list = await fetchWavesData();
+  waveCache = { ts: Date.now(), data: list };
+  res.json(list);
+});
+
+// Refresh weather and wave caches every 20 minutes so every parish has up-to-date rain/sun/wind and wave data
+const REFRESH_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
+
+async function refreshWeatherAndWaves() {
+  try {
+    const list = await fetchIslandWeather();
+    islandCache = { ts: Date.now(), data: list };
+    console.log('[Weather] Island weather refreshed:', list.filter(r => !r.error).length, 'parishes OK');
+  } catch (e) {
+    console.error('[Weather] Island refresh failed:', e.message);
+  }
+  try {
+    const waves = await fetchWavesData();
+    waveCache = { ts: Date.now(), data: waves };
+    console.log('[Weather] Wave data refreshed:', waves.length, 'points');
+  } catch (e) {
+    console.error('[Weather] Wave refresh failed:', e.message);
+  }
+}
+
+// Run on load and every hour
+refreshWeatherAndWaves();
+setInterval(refreshWeatherAndWaves, REFRESH_INTERVAL_MS);
 
 module.exports = router;

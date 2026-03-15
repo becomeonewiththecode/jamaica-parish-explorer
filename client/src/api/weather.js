@@ -18,3 +18,9 @@ export async function fetchWeatherIsland() {
   if (!res.ok) throw new Error('Failed to fetch island weather');
   return res.json();
 }
+
+export async function fetchWavesIsland() {
+  const res = await fetch(`${API}/weather/waves`);
+  if (!res.ok) return [];
+  return res.json();
+}

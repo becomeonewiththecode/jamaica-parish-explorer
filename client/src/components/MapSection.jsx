@@ -13,7 +13,7 @@ L.Icon.Default.mergeOptions({
 
 import union from '@turf/union';
 import { fetchAirports, fetchAllPlaces } from '../api/parishes';
-import { fetchWeatherIsland } from '../api/weather';
+import { fetchWeatherIsland, fetchWavesIsland } from '../api/weather';
 import { mapAirport } from '../data/airports';
 import PlacePopup from './PlacePopup';
 import AirportPopup from './AirportPopup';
@@ -26,6 +26,9 @@ const ALWAYS_ON_MIN_ZOOM = 10; // Show when zoom >= this level
 // Weather view: when on, show only airports + weather (temp, wind, cloud) at zoom 9–10, no place icons
 const WEATHER_ZOOM_MIN = 9;
 const WEATHER_ZOOM_MAX = 10;
+// Wave layer: same zoom range as weather so they can be viewed together
+const WAVE_ZOOM_MIN = 9;
+const WAVE_ZOOM_MAX = 11;
 
 const nameToSlug = {
   "Hanover": "hanover", "Westmoreland": "westmoreland",
@@ -139,6 +142,15 @@ function buildWeatherIcon(temp) {
   });
 }
 
+function buildWeatherUnavailableIcon() {
+  return L.divIcon({
+    className: 'weather-leaflet-icon weather-unavailable-icon',
+    html: '<div class="weather-icon-inner weather-icon-inner-unavailable"><span class="weather-temp">—°</span></div>',
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+}
+
 // Wind arrow: direction = meteorological (from), arrow points where wind blows. Size 48 at zoom 9.
 function buildWindArrowIcon(windDirection, windSpeed) {
   const deg = Number(windDirection) || 0;
@@ -178,6 +190,30 @@ function buildRainIcon() {
   return L.divIcon({
     className: 'rain-leaflet-icon',
     html: `<div class="rain-icon-inner" aria-hidden="true"><span class="rain-drops">🌧</span></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+// Wave pattern icon: SVG wave symbol, rotated to direction waves move
+const WAVE_SVG = (fill, stroke) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="wave-svg" aria-hidden="true">
+  <path fill="none" stroke="${stroke}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M0 10 Q 6 4, 12 10 Q 18 16, 24 10" />
+  <path fill="none" stroke="${fill}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M0 14 Q 6 20, 12 14 Q 18 8, 24 14" />
+</svg>`;
+
+function buildWaveIcon(waveHeightM, waveDirectionDeg) {
+  const h = waveHeightM != null && Number.isFinite(waveHeightM) ? waveHeightM.toFixed(1) : '—';
+  // API: direction FROM which waves come; icon shows direction TO which they move
+  const rotation = (Number(waveDirectionDeg) || 0) + 180;
+  const size = 48;
+  const fill = '#64b5f6';
+  const stroke = '#42a5f5';
+  return L.divIcon({
+    className: 'wave-leaflet-icon',
+    html: `<div class="wave-icon-inner" style="transform:rotate(${rotation}deg)">
+      <span class="wave-svg-wrap">${WAVE_SVG(fill, stroke)}</span>
+      <span class="wave-height">${h}m</span>
+    </div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -229,6 +265,10 @@ function FlyToBounds({ bounds, activeSlug }) {
     if (!map.getPane('weatherPane')) {
       const wp = map.createPane('weatherPane');
       wp.style.zIndex = 450; // above parishes, below default marker pane (600)
+    }
+    if (!map.getPane('wavePane')) {
+      const wp = map.createPane('wavePane');
+      wp.style.zIndex = 455; // above weather so wave arrows are visible when both on
     }
   }, [map]);
 
@@ -300,6 +340,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
   const [showFlights, setShowFlights] = useState(true);
   const [showWeatherView, setShowWeatherView] = useState(false); // when on: zoom 9–10 only airports + weather, no places
   const [islandWeather, setIslandWeather] = useState([]);
+  const [showWavesView, setShowWavesView] = useState(false);
+  const [islandWaves, setIslandWaves] = useState([]);
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
@@ -412,6 +454,16 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
       .then(setIslandWeather)
       .catch(() => setIslandWeather([]));
   }, [showWeatherView, zoomRounded]);
+
+  // When waves view is on, prefetch wave data for zoom 8–11
+  const showWavesLayer = showWavesView && zoomRounded >= WAVE_ZOOM_MIN && zoomRounded <= WAVE_ZOOM_MAX;
+  useEffect(() => {
+    if (!showWavesView) return;
+    if (zoomRounded < 8 || zoomRounded > 11) return;
+    fetchWavesIsland()
+      .then(setIslandWaves)
+      .catch(() => setIslandWaves([]));
+  }, [showWavesView, zoomRounded]);
   // Hide place icons when weather view is on (only airports + weather at 9–10)
   const hidePlaceIcons = showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX;
 
@@ -560,6 +612,13 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
           >
             ☀ Weather <span className="toggle-value">{showWeatherView ? 'ON' : 'OFF'}</span>
           </button>
+          <button
+            className={`flight-toggle-btn waves-view-btn${showWavesView ? ' flight-toggle-active' : ''}`}
+            onClick={() => setShowWavesView(prev => !prev)}
+            title={showWavesView ? 'Hide wave conditions' : 'Show wave height & direction (zoom 9–11)'}
+          >
+            🌊 Waves <span className="toggle-value">{showWavesView ? 'ON' : 'OFF'}</span>
+          </button>
         </div>
         </div>
         {children}
@@ -661,14 +720,16 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
             />
           )}
 
-          {/* Weather at zoom 9: cloud north, wind SE, temp SW — each in its own area */}
+          {/* Weather at zoom 9: cloud north, wind SE, temp centre, rain NE — offsets chosen so no overlap */}
           {showWeatherLayer && islandWeather.map((w) => {
-            const offset = 0.065; // degrees — keeps all three icons well separated
+            const offset = 0.09; // degrees — keeps temp, cloud, wind, rain well separated (no overlap)
             const cloudPos = [w.lat + offset, w.lon];             // north
             const windPos = [w.lat - offset, w.lon + offset];    // south-east
-            const tempPos = [w.lat - offset, w.lon - offset];    // south-west
-            const rainPos = [w.lat + offset, w.lon + offset];    // north-east (when raining)
-            const raining = isRaining(w.weatherCode);
+            const tempPos = [w.lat, w.lon];                      // parish centre (over land)
+            const rainPos = [w.lat + offset * 0.85, w.lon + offset]; // north-east but offset from cloud
+            const unavailable = !!w.error;
+            const raining = !unavailable && isRaining(w.weatherCode);
+            const parishName = slugToName[w.slug] || w.slug;
             return (
             <Fragment key={`weather-${w.slug}`}>
               {/* Rain overlay: semi-transparent area + rain icon when parish has rain */}
@@ -694,45 +755,95 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
                     pane="weatherPane"
                   >
                     <Tooltip direction="top" offset={[0, -14]} className="weather-leaflet-tooltip">
-                      <strong>{slugToName[w.slug] || w.slug}</strong>
+                      <strong>{parishName}</strong>
                       <br />
                       <span style={{ color: '#64b5f6' }}>🌧 {w.description || 'Rain'}</span>
                     </Tooltip>
                   </Marker>
                 </>
               )}
-              {/* Cloud — north */}
-              <Marker
-                position={cloudPos}
-                icon={buildCloudIcon(w.cloudCover ?? 0, w.windDirection ?? 0)}
-                zIndexOffset={500}
-                pane="weatherPane"
-              />
+              {/* Cloud — north (skip when unavailable to avoid empty icons) */}
+              {!unavailable && (
+                <Marker
+                  position={cloudPos}
+                  icon={buildCloudIcon(w.cloudCover ?? 0, w.windDirection ?? 0)}
+                  zIndexOffset={500}
+                  pane="weatherPane"
+                />
+              )}
               {/* Wind — south-east */}
-              <Marker
-                position={windPos}
-                icon={buildWindArrowIcon(w.windDirection ?? 0, w.windSpeed ?? 0)}
-                zIndexOffset={501}
-                pane="weatherPane"
-              />
-              {/* Temperature — south-west */}
+              {!unavailable && (
+                <Marker
+                  position={windPos}
+                  icon={buildWindArrowIcon(w.windDirection ?? 0, w.windSpeed ?? 0)}
+                  zIndexOffset={501}
+                  pane="weatherPane"
+                />
+              )}
+              {/* Temperature — at parish centre so icon is over land (or unavailable marker) */}
               <Marker
                 position={tempPos}
-                icon={buildWeatherIcon(w.temperature)}
+                icon={unavailable ? buildWeatherUnavailableIcon() : buildWeatherIcon(w.temperature)}
                 zIndexOffset={600}
                 pane="weatherPane"
               >
                 <Tooltip direction="top" offset={[0, -18]} className="weather-leaflet-tooltip">
-                  <strong>{slugToName[w.slug] || w.slug}</strong>
+                  <strong>{parishName}</strong>
                   <br />
-                  {w.temperature != null ? `${Math.round(w.temperature)}°C` : '—'} · {w.description || '—'}
-                  <br />
-                  <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>
-                    Humidity {w.humidity}% · Wind {w.windSpeed} km/h
-                  </span>
+                  {unavailable ? (
+                    <span style={{ color: '#90a4ae' }}>Weather unavailable · Next refresh within 20 min</span>
+                  ) : (
+                    <>
+                      {w.temperature != null ? `${Math.round(w.temperature)}°C` : '—'} · {w.description || '—'}
+                      <br />
+                      <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>
+                        Humidity {w.humidity}% · Wind {w.windSpeed} km/h
+                      </span>
+                    </>
+                  )}
                 </Tooltip>
               </Marker>
             </Fragment>
+            );
+          })}
+
+          {/* Wave conditions at coastal points (zoom 9–11); nudge away from parish centre if both layers on to avoid overlap with temp icon */}
+          {showWavesLayer && islandWaves.map((w) => {
+            const OVERLAP_THRESHOLD = 0.04; // deg — if wave this close to a parish centre, nudge
+            const NUDGE_SCALE = 0.6;         // move wave 60% further from that centre
+            let wLat = w.lat, wLon = w.lon;
+            if (showWeatherLayer && islandWeather.length > 0) {
+              for (const p of islandWeather) {
+                const dLat = w.lat - p.lat, dLon = w.lon - p.lon;
+                const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+                if (dist > 0 && dist < OVERLAP_THRESHOLD) {
+                  wLat = p.lat + dLat * (1 + NUDGE_SCALE);
+                  wLon = p.lon + dLon * (1 + NUDGE_SCALE);
+                  break;
+                }
+              }
+            }
+            return (
+            <Marker
+              key={`wave-${w.id}`}
+              position={[wLat, wLon]}
+              icon={buildWaveIcon(w.waveHeight, w.waveDirection)}
+              zIndexOffset={510}
+              pane="wavePane"
+            >
+              <Tooltip direction="top" offset={[0, -12]} className="weather-leaflet-tooltip">
+                <strong>{w.name}</strong>
+                <br />
+                <span style={{ color: '#64b5f6' }}>
+                  Wave height {w.waveHeight != null ? `${Number(w.waveHeight).toFixed(1)} m` : '—'}
+                  {w.wavePeriod != null ? ` · Period ${Number(w.wavePeriod).toFixed(0)} s` : ''}
+                </span>
+                <br />
+                <span style={{ fontSize: '0.7rem', color: '#90a4ae' }}>
+                  Arrow = direction waves are moving
+                </span>
+              </Tooltip>
+            </Marker>
             );
           })}
 
