@@ -85,6 +85,17 @@ npm start
 
 The dev server runs at **http://localhost:5173** with API requests proxied to the Express server on port 3001.
 
+### Environment configuration
+
+- Backend runtime config lives in `server/.env` (read by Express at startup), e.g.:
+  - `PORT`, `HOST`
+  - `RAPIDAPI_KEY`, `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`
+  - `AISSTREAM_API_KEY` (AISStream vessel layer)
+- Frontend build-time config lives in `client/.env` (read by Vite at build; only `VITE_*` keys are exposed to the browser), e.g.:
+  - `VITE_THUNDERFOREST_API_KEY`
+
+`AISSTREAM_API_KEY` is **server-only** and should not be placed in `client/.env`.
+
 ### Optional: Map base layers (Transport, Landscape, Neighbourhood)
 
 The map includes toggles for **Transport**, **Landscape**, and **Neighbourhood** base layers (one active at a time). They use [Thunderforest](https://www.thunderforest.com/) tiles and require a free API key. To enable them, create `client/.env` with:
