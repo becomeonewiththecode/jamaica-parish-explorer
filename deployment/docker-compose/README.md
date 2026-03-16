@@ -1,4 +1,4 @@
-## Option 3: Single-server deployment with Docker Compose
+## Docker Compose: Single-server deployment
 
 This option runs the full Jamaica Parish Explorer stack in a single Docker container on one server using `docker-compose`.
 
@@ -11,7 +11,7 @@ This option runs the full Jamaica Parish Explorer stack in a single Docker conta
 ### Usage
 
 ```bash
-cd deployment/option3-docker-compose
+cd deployment/docker-compose
 
 # 1. Create your environment file
 cp .env.example .env

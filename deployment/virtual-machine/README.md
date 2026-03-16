@@ -1,4 +1,4 @@
-## Option 4: Manual deployment on a VM
+## Virtual Machine: Manual deployment on a VM
 
 This option runs the app directly on a Linux VM (e.g. Ubuntu) using Node.js and a `systemd` service.
 
@@ -37,11 +37,11 @@ This option runs the app directly on a Linux VM (e.g. Ubuntu) using Node.js and 
 3. Run:
 
 ```bash
-chmod +x deployment/option4-vm/setup-server.sh
-chmod +x deployment/option4-vm/deploy.sh
+chmod +x deployment/virtual-machine/setup-server.sh
+chmod +x deployment/virtual-machine/deploy.sh
 
-deployment/option4-vm/setup-server.sh
-deployment/option4-vm/deploy.sh
+deployment/virtual-machine/setup-server.sh
+deployment/virtual-machine/deploy.sh
 ```
 
 4. Check service status:

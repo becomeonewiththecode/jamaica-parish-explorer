@@ -1,4 +1,4 @@
-## Option 6: Kubernetes deployment
+## Kubernetes deployment
 
 This option runs the app on a Kubernetes cluster using a Deployment, Service, and Ingress.
 
@@ -14,7 +14,7 @@ This option runs the app on a Kubernetes cluster using a Deployment, Service, an
 1. **Build and push the image** (adjust registry and image name as needed):
 
 ```bash
-cd deployment/option6-kubernetes
+cd deployment/kubernetes
 docker build -t ghcr.io/your-username/jamaica-parish-explorer:latest ../..
 docker push ghcr.io/your-username/jamaica-parish-explorer:latest
 ```
