@@ -22,6 +22,7 @@ const categoryStyles = {
   airport: { color: '#00bcd4', label: 'Airport', icon: '✈' },
   car_rental: { color: '#e65100', label: 'Car Rental', icon: '\u{1F697}' },
   stadium: { color: '#1b5e20', label: 'Stadiums', icon: '\u{1F3DF}' },
+  port: { color: '#00acc1', label: 'Ports', icon: '\u2693' },
 };
 
 const ZOOM_WIDTH = 800;
@@ -82,18 +83,27 @@ function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, 
     return projectForFeature(feature);
   }, [feature]);
 
+  const PORT_PARISH_SLUGS = new Set(['st-james', 'trelawny', 'st-ann', 'portland', 'kingston']);
+
   const { markers, availableCategories } = useMemo(() => {
     if (!project || !places || !places.length) {
-      return { markers: [], availableCategories: [] };
+      const baseCats = [];
+      if (parishSlug && PORT_PARISH_SLUGS.has(parishSlug)) {
+        baseCats.push({ category: 'port', count: 1 });
+      }
+      return { markers: [], availableCategories: baseCats };
     }
 
     const catCounts = {};
     for (const p of places) {
       catCounts[p.category] = (catCounts[p.category] || 0) + 1;
     }
-    const availableCategories = Object.entries(catCounts)
+    const baseCats = Object.entries(catCounts)
       .sort((a, b) => b[1] - a[1])
       .map(([cat, count]) => ({ category: cat, count }));
+    if (parishSlug && PORT_PARISH_SLUGS.has(parishSlug) && !baseCats.some(c => c.category === 'port')) {
+      baseCats.push({ category: 'port', count: 1 });
+    }
 
     const filtered = activeCategories.size === 0
       ? places
@@ -173,7 +183,8 @@ function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, 
               All ({places.length})
             </button>
             {availableCategories.map(({ category, count }) => {
-              const style = categoryStyles[category] || { color: '#fff', label: category };
+              const style = { ...(categoryStyles[category] || { color: '#fff', label: category, icon: '' }) };
+              if (category === 'port') style.icon = '\u2693';
               const isActive = activeCategories.has(category);
               return (
                 <button
@@ -182,7 +193,7 @@ function ParishZoomView({ feature, parishName, parishSlug, parishColor, places, 
                   style={{ '--cat-color': style.color }}
                   onClick={() => toggleCategory(category)}
                 >
-                  <span className="cat-dot" />
+                  <span className="cat-dot">{style.icon}</span>
                   {style.label} ({count})
                 </button>
               );

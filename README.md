@@ -13,6 +13,12 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Place popups** with photos, descriptions, website links, menu links (for restaurants), and Google Maps driving directions
 - **Community notes** — users can leave notes on any parish
 - **Category filtering** — filter visible map markers by type when viewing a parish
+- **Live flights** — scheduled arrivals/departures (AeroDataBox) and live radar (OpenSky, adsb.lol) for Jamaica airports; plane icons on the map with altitude-based coloring
+- **Airport detail** — full airport info and flight board, or flight-only view (when Live Flights is on) with Jamaica time and weather at the airport
+- **Weather and waves** — island-wide parish weather with centred glyph clusters (temperature, wind, cloud, rain, sun) for all 14 parishes at zoom 9–11, refreshed every 20 minutes when data changes, plus coastal wave data
+- **Vessel traffic** — live AIS-based vessel layer around Jamaica (AISStream.io) with ship icons, optional cruise-only filter, and ability to overlay flights, weather, and waves
+- **Map base layers** — optional Thunderforest layers: **Transport** (roads, railways, transit), **Landscape** (terrain, nature, topography), **Neighbourhood** (streets, clear labels); one at a time in map controls (requires `VITE_THUNDERFOREST_API_KEY`)
+- **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
 
 ## Tech Stack
 
@@ -79,6 +85,16 @@ npm start
 
 The dev server runs at **http://localhost:5173** with API requests proxied to the Express server on port 3001.
 
+### Optional: Map base layers (Transport, Landscape, Neighbourhood)
+
+The map includes toggles for **Transport**, **Landscape**, and **Neighbourhood** base layers (one active at a time). They use [Thunderforest](https://www.thunderforest.com/) tiles and require a free API key. To enable them, create `client/.env` with:
+
+```bash
+VITE_THUNDERFOREST_API_KEY=your_api_key_here
+```
+
+Get a key at [thunderforest.com](https://www.thunderforest.com/); the free tier is sufficient for development.
+
 ## Project Structure
 
 ```
@@ -87,7 +103,10 @@ project_jamaica/
     public/
       jamaica-parishes.geojson  # Parish boundary data
     src/
-      api/parishes.js           # API client functions
+      api/
+        parishes.js             # Parish, places, notes, flights, airports
+        weather.js              # Weather and waves
+        fetchWithRetry.js       # Fetch wrapper with retry on failure
       components/
         MapSection.jsx          # Full Jamaica map + zoom dispatch
         ParishZoomView.jsx      # Zoomed parish view with place markers
@@ -112,6 +131,11 @@ project_jamaica/
       parishes.js               # GET /api/parishes, /api/parishes/:slug
       places.js                 # Place search, categories, website-image
       notes.js                  # CRUD for community notes
+      flights.js                # Flights API (scheduled + live radar)
+      weather.js                # Weather and marine wave data
+      airports.js               # Airport metadata and details
+      vessels.js                # Live vessel traffic (AISStream.io)
+      port-cruises.js           # Scraped cruise schedules per port (CruiseDig / CruiseMapper)
 ```
 
 ## API Endpoints
@@ -128,6 +152,20 @@ project_jamaica/
 | GET | `/api/places/categories` | List categories with counts |
 | GET | `/api/places/all` | All places (lightweight) |
 | GET | `/api/places/website-image?url=` | Extract og:image from a URL |
+| GET | `/api/flights` | Cached flight data (scheduled + live radar) |
+| GET | `/api/airports` | List Jamaica airports |
+| GET | `/api/weather?lat=&lon=` | Weather at a point |
+| GET | `/api/weather/parish/:slug` | Weather for a parish |
+| GET | `/api/weather/island` | Island-wide weather (14 parishes) |
+| GET | `/api/weather/waves` | Coastal wave data |
+| GET | `/api/vessels` | Live vessel snapshot near Jamaica (AISStream.io; optional `?type=cruise`) |
+| GET | `/api/ports/:id/cruises` | Upcoming cruise calls for a port (CruiseDig/CruiseMapper, persisted in SQLite and refreshed when older than ~6h) |
+
+## Data Documentation
+
+- **Flights:** see `docs/FLIGHT-DATA.md`
+- **Weather and Waves:** see `docs/WEATHER-AND-WAVE-DATA.md`
+- **Vessels (AISStream):** see `docs/VESSEL-DATA-AND-USAGE.md`
 
 ## Database Schema
 
@@ -135,6 +173,8 @@ project_jamaica/
 - **features** — notable features per parish (e.g. "Blue Mountains", "Port Royal")
 - **places** — POIs with name, category, lat/lon, address, phone, website, cuisine, image_url, description
 - **notes** — community notes per parish with author and timestamp
+- **cruise_ports** — logical cruise ports (e.g. Montego Bay, Ocho Rios, Falmouth) with code, name, city, lat/lon, and source URL
+- **cruise_calls** — scheduled and observed cruise ship calls per port (ship name, operator, MMSI when known, source, ETA text/UTC, status, first/last seen, timestamps)
 
 ## License
 

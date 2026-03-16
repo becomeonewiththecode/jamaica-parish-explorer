@@ -1,13 +1,44 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchFlights } from '../api/parishes';
+import { fetchWeather } from '../api/weather';
 
-function AirportDetail({ airport, onClose, onFlightSelect }) {
+// Jamaica time (America/Jamaica = EST, UTC-5), updates every second
+function useJamaicaTime() {
+  const format = () => new Date().toLocaleTimeString('en-US', { timeZone: 'America/Jamaica', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const [time, setTime] = useState(format);
+  useEffect(() => {
+    const id = setInterval(() => setTime(format()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return time;
+}
+
+// Parse scheduledTime (API can be "2025-03-15 08:45:00" or "08:45") → ms, or null
+function parseScheduledTime(scheduledTime) {
+  if (!scheduledTime || typeof scheduledTime !== 'string') return null;
+  const s = scheduledTime.trim().replace(' ', 'T');
+  let d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.getTime();
+  // Time-only (e.g. "08:45"): use today's date in local time
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) {
+    const [hh, mm, ss] = s.split(':').map(Number);
+    const today = new Date();
+    d = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hh || 0, mm || 0, ss || 0);
+    return Number.isNaN(d.getTime()) ? null : d.getTime();
+  }
+  return null;
+}
+
+function AirportDetail({ airport, flightOnly, onClose, onFlightSelect }) {
   const [imgError, setImgError] = useState(false);
   const [flightData, setFlightData] = useState(null);
+  const [weather, setWeather] = useState(null);
+  const [weatherError, setWeatherError] = useState(false);
   const [activeTab, setActiveTab] = useState('arrivals');
   const [showDirections, setShowDirections] = useState(false);
   const [originInput, setOriginInput] = useState('');
   const originRef = useRef(null);
+  const jamaicaTime = useJamaicaTime();
 
   useEffect(() => {
     let cancelled = false;
@@ -22,6 +53,16 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [airport]);
 
+  // Weather at airport when flight-only view (for flight data window)
+  useEffect(() => {
+    if (!flightOnly || !airport?.lat || !airport?.lon) return;
+    let cancelled = false;
+    fetchWeather(airport.lat, airport.lon)
+      .then(data => { if (!cancelled) { setWeather(data); setWeatherError(false); } })
+      .catch(() => { if (!cancelled) setWeatherError(true); });
+    return () => { cancelled = true; };
+  }, [flightOnly, airport?.lat, airport?.lon]);
+
   if (!airport) return null;
 
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${airport.lat},${airport.lon}&travelmode=driving`;
@@ -35,28 +76,29 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
   const isScheduled = (f) => f.dataSource === 'scheduled' || (!f.dataSource && f.scheduledTime);
   const isLive = (f) => f.dataSource === 'live' || (!f.dataSource && !f.scheduledTime);
 
-  // Hide confirmed completed flights (Landed/Departed) that are old
+  // Hide completed flights (Landed/Departed/On Ground) after 45 min — applies to all airports (this component is used for every airport)
   const isStillRelevant = (f) => {
     const status = (f.status || '').toLowerCase();
-    if (status === 'landed' || status === 'departed') {
-      // Keep on board for 15 min after confirmation so user sees confirmation
-      if (!f.scheduledTime) return false;
-      try {
-        const scheduled = new Date(f.scheduledTime.replace(' ', 'T'));
-        const now = new Date();
-        return (now - scheduled) < 60 * 60 * 1000; // keep for up to 1 hour past scheduled
-      } catch (e) { return false; }
-    }
-    return true;
+    const completed = status === 'landed' || status === 'departed' || status === 'on ground';
+    if (!completed) return true;
+
+    // Use completedAt (server-set when first confirmed) or scheduledTime
+    const timeMs = f.completedAt
+      ? (typeof f.completedAt === 'number' ? f.completedAt : new Date(f.completedAt).getTime())
+      : parseScheduledTime(f.scheduledTime);
+    if (!timeMs) return isLive(f); // no time: hide scheduled, keep live until server sends completedAt
+    const now = Date.now();
+    const windowMs = 45 * 60 * 1000; // hide 45 min after arrival/departure
+    return (now - timeMs) < windowMs;
   };
 
   // Scheduled flights (AeroDataBox) — hide old completed flights
   const scheduledArrivals = airportFlights.filter(f => f.type === 'arrival' && isScheduled(f) && isStillRelevant(f));
   const scheduledDepartures = airportFlights.filter(f => f.type === 'departure' && isScheduled(f) && isStillRelevant(f));
 
-  // Live flights (adsb.lol / OpenSky)
-  const liveArrivals = airportFlights.filter(f => f.type === 'arrival' && isLive(f));
-  const liveDepartures = airportFlights.filter(f => f.type === 'departure' && isLive(f));
+  // Live flights (adsb.lol / OpenSky) — also hide when Landed/Departed/On Ground past window
+  const liveArrivals = airportFlights.filter(f => f.type === 'arrival' && isLive(f) && isStillRelevant(f));
+  const liveDepartures = airportFlights.filter(f => f.type === 'departure' && isLive(f) && isStillRelevant(f));
 
   // Flyovers near this airport
   const flyovers = airportFlights.filter(f => f.type === 'flyover');
@@ -67,6 +109,34 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
 
   return (
     <div className="airport-detail">
+      {flightOnly ? (
+        <>
+          <div className="airport-detail-flight-only-header">
+            <h2 className="airport-detail-title">{airport.name}</h2>
+            {(airport.code || airport.icao) && (
+              <span className="airport-badge airport-badge-code">{[airport.code, airport.icao].filter(Boolean).join(' / ')}</span>
+            )}
+          </div>
+          <div className="airport-detail-flight-only-weather">
+            <div className="airport-detail-flight-only-time" title="Jamaica time (EST, UTC−5)">
+              <span className="airport-detail-flight-only-time-label">Time</span>
+              <span className="airport-detail-flight-only-time-value">{jamaicaTime}</span>
+            </div>
+            {weatherError ? (
+              <span className="airport-detail-flight-only-weather-value">Weather unavailable</span>
+            ) : weather ? (
+              <div className="airport-detail-flight-only-weather-row">
+                <span className="airport-detail-flight-only-weather-temp">{Math.round(weather.temperature)}°C</span>
+                <span className="airport-detail-flight-only-weather-desc">{weather.description}</span>
+                <span className="airport-detail-flight-only-weather-meta">Wind {weather.windSpeed} km/h</span>
+              </div>
+            ) : (
+              <span className="airport-detail-flight-only-weather-value">Loading weather…</span>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
       {/* Airport image */}
       <div className="airport-detail-image-area">
         {!imgError ? (
@@ -201,6 +271,8 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
           </ul>
         </div>
       )}
+        </>
+      )}
 
       {/* Flight board — always shown */}
       <div className="airport-detail-flights">
@@ -308,22 +380,26 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
             const altFt = f.altitude ? Math.round(f.altitude * 3.281) : null;
             const trackId = (f.flightNumber || f.callsign || '').replace(/\s/g, '');
             const hasPosition = f.lat && f.lon;
-            // Route info: show origin → destination if available
-            const routeStr = (f.routeOrigin || f.fromIata) && (f.routeDestination || f.toIata)
-              ? `${f.routeOrigin || f.fromIata} → ${f.routeDestination || f.toIata}`
-              : (f.routeDestination || f.toIata) ? `→ ${f.routeDestination || f.toIata}` : '';
+            // Route: origin airport → destination airport (name + code), or "Route unknown"
+            const originAirport = (f.originName || f.from) && (f.originIata || f.fromIata)
+              ? `${f.originName || f.from} (${f.originIata || f.fromIata})`
+              : (f.routeOrigin || f.fromIata || f.from) || '';
+            const destAirport = (f.destName || f.to) && (f.destIata || f.toIata)
+              ? `${f.destName || f.to} (${f.destIata || f.toIata})`
+              : (f.routeDestination || f.toIata || f.to) || '';
+            const routeStr = originAirport && destAirport ? `${originAirport} → ${destAirport}` : originAirport || destAirport || null;
             return (
               <div key={`fo-${i}`} className="airport-flight-row airport-flight-row-flyover">
                 <span className="airport-flight-number">{f.flightNumber || f.callsign || '---'}</span>
                 <span className="airport-flight-airline">{f.airline || ''}</span>
                 <span className="airport-flight-route">
                   {routeStr ? (
-                    <span className="airport-flight-route-path">{routeStr}</span>
+                    <span className="airport-flight-route-path" title={`Route: ${routeStr}`}>{routeStr}</span>
                   ) : (
-                    <>{f.aircraft || ''}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}</>
+                    <span className="airport-flight-route-unknown" title="Origin/destination could not be resolved (e.g. cargo or OpenSky has no route)">Route unknown</span>
                   )}
-                  {routeStr && f.aircraft && (
-                    <span className="airport-flight-aircraft-small"> {f.aircraft}</span>
+                  {f.aircraft && (
+                    <span className="airport-flight-aircraft-small">{routeStr ? ' · ' : ' '}{f.aircraft}{f.aircraftReg ? ` (${f.aircraftReg})` : ''}</span>
                   )}
                 </span>
                 <span className="airport-flight-time">{altFt ? `${altFt.toLocaleString()}ft` : '---'}</span>

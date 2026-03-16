@@ -7,6 +7,9 @@ const noteRoutes = require('./routes/notes');
 const placeRoutes = require('./routes/places');
 const airportRoutes = require('./routes/airports');
 const flightRoutes = require('./routes/flights');
+const weatherRoutes = require('./routes/weather');
+const vesselRoutes = require('./routes/vessels');
+const portCruiseRoutes = require('./routes/port-cruises');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -28,6 +31,9 @@ app.use('/api/parishes', placeRoutes);
 app.use('/api/places', placeRoutes);
 app.use('/api/airports', airportRoutes);
 app.use('/api/flights', flightRoutes);
+app.use('/api/weather', weatherRoutes);
+app.use('/api/vessels', vesselRoutes);
+app.use('/api/ports', portCruiseRoutes);
 
 // Production: serve React build
 if (process.env.NODE_ENV === 'production') {
@@ -37,6 +43,7 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () => {
+  console.log(`Server running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (external: 0.0.0.0)`);
 });

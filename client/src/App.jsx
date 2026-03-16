@@ -8,6 +8,7 @@ import './App.css';
 function App() {
   const [selectedSlug, setSelectedSlug] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
+  const [showFlights, setShowFlights] = useState(true);
   const [highlightedPlace, setHighlightedPlace] = useState(null);
   const [activeCategories, setActiveCategories] = useState(new Set());
   const [focusPlace, setFocusPlace] = useState(null);
@@ -62,6 +63,8 @@ function App() {
         activeSlug={selectedSlug}
         onSelect={handleParishSelect}
         onAirportSelect={handleAirportSelect}
+        showFlights={showFlights}
+        onFlightsChange={setShowFlights}
         parishPlaces={places}
         highlightedPlace={highlightedPlace}
         onClearHighlight={() => setHighlightedPlace(null)}
@@ -69,7 +72,9 @@ function App() {
         onCategoriesChange={setActiveCategories}
         focusPlace={focusPlace}
         focusKey={focusKey}
-      />
+      >
+        <SearchBar onSelectPlace={handleSearchSelect} />
+      </MapSection>
       <InfoSection
         parish={parish}
         notes={notes}
@@ -77,6 +82,7 @@ function App() {
         addNote={addNote}
         selectedSlug={selectedSlug}
         selectedAirport={selectedAirport}
+        showFlights={showFlights}
         onClose={() => { setSelectedSlug(null); setSelectedAirport(null); }}
         onSelectParish={handleParishSelect}
         onAirportSelect={handleAirportSelect}
@@ -87,7 +93,6 @@ function App() {
         onPlaceSelect={handleInfoPlaceSelect}
         onFlightSelect={handleFlightSelect}
       />
-      <SearchBar onSelectPlace={handleSearchSelect} />
     </div>
   );
 }
