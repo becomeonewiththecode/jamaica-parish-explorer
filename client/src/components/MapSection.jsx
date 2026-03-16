@@ -50,6 +50,27 @@ const slugToName = Object.fromEntries(Object.entries(nameToSlug).map(([n, s]) =>
 const NORTH_COAST_PARISH_SLUGS = new Set(['st-james', 'trelawny', 'st-ann', 'st-mary', 'portland']); // nudge south (inland)
 const SOUTH_COAST_PARISH_SLUGS = new Set(['westmoreland', 'st-elizabeth', 'clarendon', 'st-catherine']); // nudge north (inland)
 
+// Map each marine wave point id to the parish slug whose shoreline it represents
+const WAVE_POINT_TO_PARISH = {
+  'negril': 'westmoreland',
+  'savanna-la-mar': 'westmoreland',
+  // Lucea (Hanover) reuses Negril marine conditions so Hanover has a visible shoreline wave icon
+  'lucea': 'hanover',
+  // Alligator Pond wave point belongs to Manchester's short south coast
+  'alligator-pond-manchester': 'manchester',
+  'montego-bay': 'st-james',
+  'falmouth': 'trelawny',
+  'ocho-rios': 'st-ann',
+  'port-maria': 'st-mary',
+  'port-antonio': 'portland',
+  'morant-bay': 'st-thomas',
+  'kingston': 'kingston',
+  'old-harbour': 'st-catherine',
+  'rocky-point': 'clarendon',
+  'black-river': 'st-elizabeth',
+  'treasure-beach': 'st-elizabeth',
+};
+
 const parishColors = {
   "hanover": "#2e7d32", "westmoreland": "#388e3c",
   "st-james": "#43a047", "trelawny": "#4caf50",
@@ -549,6 +570,12 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
       sun: [baseLat + offset, baseLon - offset],         // north‑west
     };
   }, [parishCentersBySlug]);
+
+  // Place wave glyphs at their actual marine coordinates so each glyph lines up with
+  // the true coastal sample location within its parish.
+  const getWaveGlyphPosition = useCallback((wave) => {
+    return [wave.lat, wave.lon];
+  }, []);
 
   // Filter places by category
   const filteredPlaces = useMemo(() => {
@@ -1086,43 +1113,30 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             );
           })}
 
-          {/* Wave conditions at coastal points (zoom 9–11); hidden when Transport is on */}
+          {/* Wave conditions at coastal points (zoom 9–11); each glyph kept close to the shoreline point for its parish area */}
           {!thunderforestHidesItems && showWavesLayer && islandWaves.map((w) => {
-            const OVERLAP_THRESHOLD = 0.04; // deg — if wave this close to a parish centre, nudge
-            const NUDGE_SCALE = 0.6;         // move wave 60% further from that centre
-            let wLat = w.lat, wLon = w.lon;
-            if (showWeatherLayer && islandWeather.length > 0) {
-              for (const p of islandWeather) {
-                const dLat = w.lat - p.lat, dLon = w.lon - p.lon;
-                const dist = Math.sqrt(dLat * dLat + dLon * dLon);
-                if (dist > 0 && dist < OVERLAP_THRESHOLD) {
-                  wLat = p.lat + dLat * (1 + NUDGE_SCALE);
-                  wLon = p.lon + dLon * (1 + NUDGE_SCALE);
-                  break;
-                }
-              }
-            }
+            const [wLat, wLon] = getWaveGlyphPosition(w);
             return (
-            <Marker
-              key={`wave-${w.id}`}
-              position={[wLat, wLon]}
-              icon={buildWaveIcon(w.waveHeight, w.waveDirection)}
-              zIndexOffset={510}
-              pane="wavePane"
-            >
-              <Tooltip direction="top" offset={[0, -12]} className="weather-leaflet-tooltip">
-                <strong>{w.name}</strong>
-                <br />
-                <span style={{ color: '#64b5f6' }}>
-                  Wave height {w.waveHeight != null ? `${Number(w.waveHeight).toFixed(1)} m` : '—'}
-                  {w.wavePeriod != null ? ` · Period ${Number(w.wavePeriod).toFixed(0)} s` : ''}
-                </span>
-                <br />
-                <span style={{ fontSize: '0.7rem', color: '#90a4ae' }}>
-                  Arrow = direction waves are moving
-                </span>
-              </Tooltip>
-            </Marker>
+              <Marker
+                key={`wave-${w.id}`}
+                position={[wLat, wLon]}
+                icon={buildWaveIcon(w.waveHeight, w.waveDirection)}
+                zIndexOffset={510}
+                pane="wavePane"
+              >
+                <Tooltip direction="top" offset={[0, -12]} className="weather-leaflet-tooltip">
+                  <strong>{w.name}</strong>
+                  <br />
+                  <span style={{ color: '#64b5f6' }}>
+                    Wave height {w.waveHeight != null ? `${Number(w.waveHeight).toFixed(1)} m` : '—'}
+                    {w.wavePeriod != null ? ` · Period ${Number(w.wavePeriod).toFixed(0)} s` : ''}
+                  </span>
+                  <br />
+                  <span style={{ fontSize: '0.7rem', color: '#90a4ae' }}>
+                    Arrow = direction waves are moving
+                  </span>
+                </Tooltip>
+              </Marker>
             );
           })}
 

@@ -63,23 +63,25 @@ An alternate spelling `trelawney` is accepted and mapped to `trelawny` for the p
 
 ### Coastal points (waves)
 
-Wave data is fetched for 13 named coastal points. Positions are chosen so icons appear over water where possible. Manchester is the only parish with no coastline and has no wave point.
+Wave data is fetched for 15 named coastal points. Positions are chosen so icons appear just offshore where possible, covering every parish with a sea frontage. **Manchester’s short south-facing coastline is represented by Alligator Pond.**
 
-| Point              | Parish / area        | Approx. coordinates |
-|--------------------|----------------------|----------------------|
-| Negril             | Westmoreland         | 18.28, -78.35        |
-| Montego Bay        | St. James            | 18.47, -77.92        |
-| Falmouth (Trelawny)| Trelawny (offshore)  | 18.52, -77.65        |
-| Ocho Rios          | St. Ann              | 18.41, -77.10        |
-| Port Antonio       | Portland             | 18.18, -76.45        |
-| Port Maria         | St. Mary             | 18.37, -76.89        |
-| Morant Bay         | St. Thomas           | 17.88, -76.41        |
-| Kingston Harbour   | Kingston / St. Andrew| 17.97, -76.79        |
-| Old Harbour        | St. Catherine        | 17.94, -77.11        |
-| Rocky Point        | Clarendon            | 17.77, -77.27        |
-| Black River        | St. Elizabeth        | 18.03, -77.85        |
-| Treasure Beach     | St. Elizabeth        | 17.89, -77.76        |
-| Savanna-la-Mar     | Westmoreland         | 18.22, -78.13        |
+| Point                       | Parish / area        | Approx. coordinates |
+|-----------------------------|----------------------|----------------------|
+| Lucea                       | Hanover              | 18.48, -78.20        |
+| Negril                      | Westmoreland         | 18.28, -78.35        |
+| Savanna-la-Mar              | Westmoreland         | 18.22, -78.13        |
+| Montego Bay                 | St. James            | 18.47, -77.92        |
+| Falmouth (Trelawny)         | Trelawny (offshore)  | 18.52, -77.65        |
+| Ocho Rios                   | St. Ann              | 18.41, -77.10        |
+| Port Antonio                | Portland             | 18.18, -76.45        |
+| Port Maria                  | St. Mary             | 18.37, -76.89        |
+| Morant Bay                  | St. Thomas           | 17.88, -76.41        |
+| Kingston Harbour            | Kingston / St. Andrew| 17.97, -76.79        |
+| Old Harbour                 | St. Catherine        | 17.94, -77.11        |
+| Rocky Point                 | Clarendon            | 17.77, -77.27        |
+| Alligator Pond (Manchester) | Manchester           | 17.88, -77.56        |
+| Black River                 | St. Elizabeth        | 18.03, -77.85        |
+| Treasure Beach              | St. Elizabeth        | 17.89, -77.76        |
 
 ### Refresh schedule
 
@@ -147,7 +149,8 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 
 - **When:** Waves view is ON and map zoom is between 9 and 11 (inclusive).
 - **Data:** `GET /api/weather/waves`. The client fetches when the layer is active and **refetches every 20 minutes** while the layer stays on (see **Client refresh** above).
-- **Per coastal point:** A wave icon (SVG wave symbol) is placed at the point’s lat/lon (from the API response when available, else the predefined coastal point). If both Weather and Waves layers are on, wave markers very close to a parish centre are nudged away so they do not overlap the temperature icon. The icon is rotated to show the direction waves are moving; the label shows significant wave height in metres (e.g. `1.2m`). Tooltip includes name, wave height, period, and a note that the arrow is direction of wave movement.
+- **Per coastal point:** A wave icon (SVG wave symbol) is placed **directly at the marine API coordinate** for that coastal sample point, so each glyph lines up with the actual wave measurement location in its parish (e.g. Lucea for Hanover, Alligator Pond for Manchester).
+- The icon is rotated to show the direction waves are moving; the label shows significant wave height in metres (e.g. `1.2m`). Tooltip includes name, wave height, period, and a note that the arrow is direction of wave movement.
 
 ### Sidebar — Parish weather widget
 

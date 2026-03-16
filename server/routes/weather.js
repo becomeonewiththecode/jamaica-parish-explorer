@@ -157,8 +157,9 @@ const WAVE_CACHE_MS = 30 * 60 * 1000; // 30 minutes
 let waveCache = { ts: 0, data: null };
 
 // Coastal points around Jamaica for wave data (name, lat, lon)
-// Manchester has no coastline (inland parish); other south-coast parishes listed below
+// Manchester has a short south-facing coastline; Alligator Pond represents its marine point.
 const COASTAL_POINTS = [
+  { id: 'lucea', name: 'Lucea (Hanover)', lat: 18.48, lon: -78.20 },
   { id: 'negril', name: 'Negril', lat: 18.28, lon: -78.35 },
   { id: 'montego-bay', name: 'Montego Bay', lat: 18.47, lon: -77.92 },
   { id: 'falmouth', name: 'Falmouth (Trelawny)', lat: 18.52, lon: -77.65 }, // offshore so icon is over water
@@ -169,6 +170,7 @@ const COASTAL_POINTS = [
   { id: 'kingston', name: 'Kingston Harbour', lat: 17.97, lon: -76.79 },
   { id: 'old-harbour', name: 'Old Harbour (St. Catherine)', lat: 17.94, lon: -77.11 },
   { id: 'rocky-point', name: 'Rocky Point (Clarendon)', lat: 17.77, lon: -77.27 },
+  { id: 'alligator-pond-manchester', name: 'Alligator Pond (Manchester)', lat: 17.88, lon: -77.56 },
   { id: 'black-river', name: 'Black River (St. Elizabeth)', lat: 18.03, lon: -77.85 },
   { id: 'treasure-beach', name: 'Treasure Beach (St. Elizabeth)', lat: 17.89, lon: -77.76 },
   { id: 'savanna-la-mar', name: 'Savanna-la-Mar', lat: 18.22, lon: -78.13 },
