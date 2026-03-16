@@ -512,6 +512,44 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
     return layer.getBounds();
   }, [activeSlug, geojson]);
 
+  // Pre-compute visual centres for each parish from GeoJSON so weather icons sit in the middle of each parish shape
+  const parishCentersBySlug = useMemo(() => {
+    if (!geojson || !geojson.features) return {};
+    const centers = {};
+    for (const feature of geojson.features) {
+      const name = feature.properties?.shapeName;
+      const slug = nameToSlug[name];
+      if (!slug) continue;
+      const layer = L.geoJSON(feature);
+      const bounds = layer.getBounds();
+      const center = bounds.getCenter();
+      centers[slug] = { lat: center.lat, lon: center.lng };
+    }
+    return centers;
+  }, [geojson]);
+
+  // Compute canonical positions for all parish weather glyphs (temp, sun, cloud, wind, rain) so they are
+  // consistently centred per parish and can be updated whenever islandWeather changes.
+  const getParishWeatherGlyphPositions = useCallback((slug) => {
+    const centre = parishCentersBySlug[slug];
+    let baseLat = centre?.lat;
+    let baseLon = centre?.lon;
+    if (baseLat == null || baseLon == null) return null;
+
+    // Small inland nudge for coastal parishes so the glyph cluster stays over land.
+    if (NORTH_COAST_PARISH_SLUGS.has(slug)) baseLat -= 0.04;
+    else if (SOUTH_COAST_PARISH_SLUGS.has(slug)) baseLat += 0.04;
+
+    const offset = 0.06;
+    return {
+      temp: [baseLat, baseLon],                          // centre
+      cloud: [baseLat + offset, baseLon],                // north
+      wind: [baseLat - offset, baseLon + offset],        // south‑east
+      rain: [baseLat + offset * 0.85, baseLon + offset], // north‑east
+      sun: [baseLat + offset, baseLon - offset],         // north‑west
+    };
+  }, [parishCentersBySlug]);
+
   // Filter places by category
   const filteredPlaces = useMemo(() => {
     if (!parishPlaces || !parishPlaces.length) return [];
@@ -946,112 +984,105 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             />
           )}
 
-          {/* Weather at zoom 9: cloud north, wind SE, temp centre, rain NE, sun NW — offsets so no overlap; hidden when Transport is on */}
+          {/* Weather at zoom 9–11: all parish glyphs (temp, sun, cloud, wind, rain) are laid out from a single centred anchor; hidden when Transport is on */}
           {!thunderforestHidesItems && showWeatherLayer && islandWeather.map((w) => {
-            const offset = 0.06;
-            // Nudge inland so weather icons stay over land and don't sit under wave icons
-            let baseLat = w.lat;
-            if (NORTH_COAST_PARISH_SLUGS.has(w.slug)) baseLat -= 0.04; // north coast: shift south (inland)
-            else if (SOUTH_COAST_PARISH_SLUGS.has(w.slug)) baseLat += 0.04; // south coast (e.g. Westmoreland): shift north (inland)
-            const baseLon = w.lon;
-            const cloudPos = [baseLat + offset, baseLon];             // north
-            const windPos = [baseLat - offset, baseLon + offset];    // south-east
-            const tempPos = [baseLat, baseLon];                      // parish centre (over land)
-            const rainPos = [baseLat + offset * 0.85, baseLon + offset]; // north-east, offset from cloud
-            const sunPos = [baseLat + offset, baseLon - offset];     // north-west (clear sky only)
+            const positions = getParishWeatherGlyphPositions(w.slug);
+            if (!positions) return null;
+            const { temp: tempPos, cloud: cloudPos, wind: windPos, rain: rainPos, sun: sunPos } = positions;
             const unavailable = !!w.error;
             const raining = !unavailable && isRaining(w.weatherCode);
             const clearSky = !unavailable && isClearSky(w.weatherCode);
             const parishName = slugToName[w.slug] || w.slug;
+
             return (
-            <Fragment key={`weather-${w.slug}`}>
-              {/* Sun icon when clear / mainly clear */}
-              {clearSky && (
-                <Marker
-                  position={sunPos}
-                  icon={buildSunIcon()}
-                  zIndexOffset={503}
-                  pane="weatherPane"
-                >
-                  <Tooltip direction="top" offset={[0, -14]} className="weather-leaflet-tooltip">
-                    <strong>{parishName}</strong>
-                    <br />
-                    <span style={{ color: '#ffb74d' }}>☀ {w.description || 'Clear'}</span>
-                  </Tooltip>
-                </Marker>
-              )}
-              {/* Rain overlay: semi-transparent area + rain icon when parish has rain */}
-              {raining && (
-                <>
-                  <Circle
-                    center={[w.lat, w.lon]}
-                    radius={14000}
-                    pathOptions={{
-                      pane: 'weatherPane',
-                      className: 'rain-overlay-circle',
-                      fillColor: '#5c9fd4',
-                      fillOpacity: 0.22,
-                      color: 'transparent',
-                      weight: 0,
-                      interactive: false,
-                    }}
-                  />
+              <Fragment key={`weather-${w.slug}`}>
+                {/* Sun icon when clear / mainly clear */}
+                {clearSky && (
                   <Marker
-                    position={rainPos}
-                    icon={buildRainIcon()}
-                    zIndexOffset={502}
+                    position={sunPos}
+                    icon={buildSunIcon()}
+                    zIndexOffset={503}
                     pane="weatherPane"
                   >
                     <Tooltip direction="top" offset={[0, -14]} className="weather-leaflet-tooltip">
                       <strong>{parishName}</strong>
                       <br />
-                      <span style={{ color: '#64b5f6' }}>🌧 {w.description || 'Rain'}</span>
+                      <span style={{ color: '#ffb74d' }}>☀ {w.description || 'Clear'}</span>
                     </Tooltip>
                   </Marker>
-                </>
-              )}
-              {/* Cloud — north (skip when unavailable to avoid empty icons) */}
-              {!unavailable && (
+                )}
+                {/* Rain overlay + icon when parish has rain */}
+                {raining && (
+                  <>
+                    <Circle
+                      center={[w.lat, w.lon]}
+                      radius={14000}
+                      pathOptions={{
+                        pane: 'weatherPane',
+                        className: 'rain-overlay-circle',
+                        fillColor: '#5c9fd4',
+                        fillOpacity: 0.22,
+                        color: 'transparent',
+                        weight: 0,
+                        interactive: false,
+                      }}
+                    />
+                    <Marker
+                      position={rainPos}
+                      icon={buildRainIcon()}
+                      zIndexOffset={502}
+                      pane="weatherPane"
+                    >
+                      <Tooltip direction="top" offset={[0, -14]} className="weather-leaflet-tooltip">
+                        <strong>{parishName}</strong>
+                        <br />
+                        <span style={{ color: '#64b5f6' }}>🌧 {w.description || 'Rain'}</span>
+                      </Tooltip>
+                    </Marker>
+                  </>
+                )}
+                {/* Cloud — north (skip when unavailable) */}
+                {!unavailable && (
+                  <Marker
+                    position={cloudPos}
+                    icon={buildCloudIcon(w.cloudCover ?? 0, w.windDirection ?? 0)}
+                    zIndexOffset={500}
+                    pane="weatherPane"
+                  />
+                )}
+                {/* Wind — south‑east */}
+                {!unavailable && (
+                  <Marker
+                    position={windPos}
+                    icon={buildWindArrowIcon(w.windDirection ?? 0, w.windSpeed ?? 0)}
+                    zIndexOffset={501}
+                    pane="weatherPane"
+                  />
+                )}
+                {/* Temperature — at parish centre */}
                 <Marker
-                  position={cloudPos}
-                  icon={buildCloudIcon(w.cloudCover ?? 0, w.windDirection ?? 0)}
-                  zIndexOffset={500}
+                  position={tempPos}
+                  icon={unavailable ? buildWeatherUnavailableIcon() : buildWeatherIcon(w.temperature)}
+                  zIndexOffset={600}
                   pane="weatherPane"
-                />
-              )}
-              {/* Wind — south-east */}
-              {!unavailable && (
-                <Marker
-                  position={windPos}
-                  icon={buildWindArrowIcon(w.windDirection ?? 0, w.windSpeed ?? 0)}
-                  zIndexOffset={501}
-                  pane="weatherPane"
-                />
-              )}
-              {/* Temperature — at parish centre so icon is over land (or unavailable marker) */}
-              <Marker
-                position={tempPos}
-                icon={unavailable ? buildWeatherUnavailableIcon() : buildWeatherIcon(w.temperature)}
-                zIndexOffset={600}
-                pane="weatherPane"
-              >
-                <Tooltip direction="top" offset={[0, -18]} className="weather-leaflet-tooltip">
-                  <strong>{parishName}</strong>
-                  <br />
-                  {unavailable ? (
-                    <span style={{ color: '#90a4ae' }}>Weather unavailable · Next refresh within 20 min</span>
-                  ) : (
-                    <>
-                      {w.temperature != null ? `${Math.round(w.temperature)}°C` : '—'} · {w.description || '—'}
-                      <br />
-                      <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>
-                        Humidity {w.humidity}% · Wind {w.windSpeed} km/h
-                      </span>
-                    </>
-                  )}
-                </Tooltip>
-              </Marker>
-            </Fragment>
+                >
+                  <Tooltip direction="top" offset={[0, -18]} className="weather-leaflet-tooltip">
+                    <strong>{parishName}</strong>
+                    <br />
+                    {unavailable ? (
+                      <span style={{ color: '#90a4ae' }}>Weather unavailable · Next refresh within 20 min</span>
+                    ) : (
+                      <>
+                        {w.temperature != null ? `${Math.round(w.temperature)}°C` : '—'} · {w.description || '—'}
+                        <br />
+                        <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>
+                          Humidity {w.humidity}% · Wind {w.windSpeed} km/h
+                        </span>
+                      </>
+                    )}
+                  </Tooltip>
+                </Marker>
+              </Fragment>
             );
           })}
 

@@ -15,7 +15,7 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Category filtering** — filter visible map markers by type when viewing a parish
 - **Live flights** — scheduled arrivals/departures (AeroDataBox) and live radar (OpenSky, adsb.lol) for Jamaica airports; plane icons on the map with altitude-based coloring
 - **Airport detail** — full airport info and flight board, or flight-only view (when Live Flights is on) with Jamaica time and weather at the airport
-- **Weather and waves** — parish weather (temp, wind, cloud, rain, sun) and coastal wave data on the map (zoom 9–10)
+- **Weather and waves** — island-wide parish weather with centred glyph clusters (temperature, wind, cloud, rain, sun) for all 14 parishes at zoom 9–11, refreshed every 20 minutes when data changes, plus coastal wave data
 - **Vessel traffic** — live AIS-based vessel layer around Jamaica (AISStream.io) with ship icons, optional cruise-only filter, and ability to overlay flights, weather, and waves
 - **Map base layers** — optional Thunderforest layers: **Transport** (roads, railways, transit), **Landscape** (terrain, nature, topography), **Neighbourhood** (streets, clear labels); one at a time in map controls (requires `VITE_THUNDERFOREST_API_KEY`)
 - **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
