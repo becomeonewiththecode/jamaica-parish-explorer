@@ -464,6 +464,26 @@
   gap: 8px;
 }
 
+.vessel-leaflet-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vessel-leaflet-icon .vessel-icon-inner {
+  width: 28px;
+  height: 28px;
+  border-radius: 16px;
+  background: rgba(11, 27, 52, 0.95);
+  border: 1px solid #4fc3f7;
+  color: #e1f5fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 0 8px rgba(79, 195, 247, 0.6);
+}
+
 .map-top-cell.search-cell {
   display: flex;
   justify-content: stretch;

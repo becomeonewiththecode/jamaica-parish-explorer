@@ -16,6 +16,7 @@ import buffer from '@turf/buffer';
 import { fetchAirports, fetchAllPlaces } from '../api/parishes';
 import { fetchWeatherIsland, fetchWavesIsland } from '../api/weather';
 import { mapAirport } from '../data/airports';
+import { fetchVessels } from '../api/vessels';
 import PlacePopup from './PlacePopup';
 import AirportPopup from './AirportPopup';
 import FlightTracker from './FlightTracker';
@@ -141,6 +142,13 @@ function buildWeatherIcon(temp) {
     iconSize: [36, 36],
     iconAnchor: [18, 18],
   });
+
+const vesselIcon = L.divIcon({
+  className: 'vessel-leaflet-icon',
+  html: '<div class="vessel-icon-inner">🛳</div>',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+});
 }
 
 function buildWeatherUnavailableIcon() {
@@ -362,6 +370,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [islandWeather, setIslandWeather] = useState([]);
   const [showWavesView, setShowWavesView] = useState(false);
   const [islandWaves, setIslandWaves] = useState([]);
+  const [showVessels, setShowVessels] = useState(false);
+  const [vessels, setVessels] = useState([]);
   // Base map layer: one of standard OSM, or Thunderforest Transport / Landscape / Neighbourhood
   const [baseLayer, setBaseLayer] = useState('standard');
   const setActiveCategories = onCategoriesChange;
@@ -499,8 +509,38 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const hasThunderforestKey = !!import.meta.env.VITE_THUNDERFOREST_API_KEY;
   // When any Thunderforest base layer is on, hide all items (clean map-only view)
   const thunderforestHidesItems = hasThunderforestKey && baseLayer !== 'standard';
-  // Hide place icons when weather view is on (only airports + weather at 9–10) or when Thunderforest layer is on
-  const hidePlaceIcons = (showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX) || thunderforestHidesItems;
+  // When vessels layer is on, hide place icons and parish filters so ships stand out,
+  // but still allow flights, weather, and waves to be viewed together with vessels.
+  const vesselsHideItems = showVessels;
+  // Hide place icons when weather view is on (only airports + weather at 9–10) or when a global-hiding layer is on
+  const hidePlaceIcons =
+    (showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX) ||
+    thunderforestHidesItems ||
+    vesselsHideItems;
+
+  // Poll vessels when the layer is visible (and Thunderforest layers are not hiding items)
+  useEffect(() => {
+    let timer;
+    const active = showVessels && !thunderforestHidesItems;
+    if (!active) {
+      setVessels([]);
+      return;
+    }
+    const load = () => {
+      fetchVessels('all')
+        .then(data => {
+          if (!data || !Array.isArray(data.vessels)) {
+            setVessels([]);
+          } else {
+            setVessels(data.vessels);
+          }
+        })
+        .catch(() => setVessels([]));
+    };
+    load();
+    timer = setInterval(load, 60000); // refresh every 60s while visible
+    return () => { if (timer) clearInterval(timer); };
+  }, [showVessels, thunderforestHidesItems]);
 
   // Available categories for filter bar
   const availableCategories = useMemo(() => {
@@ -655,6 +695,13 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             >
               🌊 Waves <span className="toggle-value">{showWavesView ? 'ON' : 'OFF'}</span>
             </button>
+            <button
+              className={`flight-toggle-btn vessel-toggle-btn${showVessels ? ' flight-toggle-active' : ''}`}
+              onClick={() => setShowVessels(prev => !prev)}
+              title={showVessels ? 'Hide vessel traffic' : 'Show vessels and cruise ships around Jamaica'}
+            >
+              🛳 Vessels <span className="toggle-value">{showVessels ? 'ON' : 'OFF'}</span>
+            </button>
             {hasThunderforestKey ? (
               <select
                 className="base-layer-select parish-select-dropdown"
@@ -682,8 +729,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
       </div>
 
       <section id="map-section">
-      {/* Category filters when parish is selected — only render when needed to avoid blue bar at top */}
-      {!hidePlaceIcons && activeSlug && availableCategories.length > 0 && (
+      {/* Category filters when parish is selected — hidden when global-hiding layers are on */}
+      {!hidePlaceIcons && !vesselsHideItems && activeSlug && availableCategories.length > 0 && (
       <div className="map-top-bar">
         {(() => {
           const prominent = ['hotel', 'guest_house', 'resort', 'beach', 'car_rental', 'nightlife'];
@@ -958,8 +1005,26 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             </Marker>
           ))}
 
-          {/* Always-on category markers — hidden when Weather View is on at zoom 9–10 */}
-          {!hidePlaceIcons && visibleAlwaysOn.map(p => {
+          {/* Vessel markers — hidden when Thunderforest layers are on */}
+          {!thunderforestHidesItems && showVessels && vessels.map(v => (
+            <Marker
+              key={v.mmsi}
+              position={[v.lat, v.lon]}
+              icon={vesselIcon}
+              rotationAngle={v.heading || v.cog || 0}
+              rotationOrigin="center"
+            >
+              <Tooltip direction="top" offset={[0, -14]} className="place-leaflet-tooltip">
+                <strong>{v.name || `MMSI ${v.mmsi}`}</strong><br />
+                <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>
+                  {v.shipType || 'Vessel'} · {v.sog != null ? `${v.sog.toFixed(1)} kn` : '—'}
+                </span>
+              </Tooltip>
+            </Marker>
+          ))}
+
+          {/* Always-on category markers — hidden when Weather View is on at zoom 9–10 or Vessels is on */}
+          {!hidePlaceIcons && !vesselsHideItems && visibleAlwaysOn.map(p => {
             const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
             const icon = categoryIcons[p.category] || defaultPlaceIcon;
             return (
@@ -979,8 +1044,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             );
           })}
 
-          {/* Place markers when a parish is selected — hidden when Weather View is on at zoom 9–10 */}
-          {!hidePlaceIcons && activeSlug && filteredPlaces.map(p => {
+          {/* Place markers when a parish is selected — hidden when Weather View is on at zoom 9–10 or Vessels is on */}
+          {!hidePlaceIcons && !vesselsHideItems && activeSlug && filteredPlaces.map(p => {
             const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
             const isHighlighted = highlightedPlace && highlightedPlace.id === p.id;
             const isFocused = focusPlace && focusPlace.id === p.id;
@@ -1006,8 +1071,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             );
           })}
 
-          {/* Highlighted place from search — hidden when Weather View is on at zoom 9–10 */}
-          {!hidePlaceIcons && highlightedPlace && activeSlug && (
+          {/* Highlighted place from search — hidden when Weather View is on at zoom 9–10 or Vessels is on */}
+          {!hidePlaceIcons && !vesselsHideItems && highlightedPlace && activeSlug && (
             <Marker
               position={[highlightedPlace.lat, highlightedPlace.lon]}
               icon={starIcon}
@@ -1029,8 +1094,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
         </MapContainer>
       </div>
 
-      {/* Category legend when parish selected — hidden in Weather View */}
-      {!hidePlaceIcons && activeSlug && availableCategories.length > 0 && (
+      {/* Category legend when parish selected — hidden in Weather View and Vessels view */}
+      {!hidePlaceIcons && !vesselsHideItems && activeSlug && availableCategories.length > 0 && (
         <div className="zoom-legend">
           {availableCategories.map(({ category, count }) => {
             const style = categoryStyles[category] || { color: '#fff', label: category };
