@@ -1,32 +1,7 @@
-import { useEffect, useState } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
-import { fetchPortCruises } from '../api/portCruises';
 
-function PortPopup({ port, onClose, anchorPos, nearbyVessels = [] }) {
+function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] }) {
   const { pos, onMouseDown } = useDraggable();
-  const [cruises, setCruises] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!port?.id) return;
-    setLoading(true);
-    setError('');
-    fetchPortCruises(port.id)
-      .then((data) => {
-        if (cancelled) return;
-        setCruises(Array.isArray(data.cruises) ? data.cruises : []);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setError('Could not load cruise schedule.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [port?.id]);
 
   if (!port) return null;
 
@@ -101,12 +76,10 @@ function PortPopup({ port, onClose, anchorPos, nearbyVessels = [] }) {
 
         <div className="airport-history">
           <h3 className="airport-history-title">Upcoming cruise calls</h3>
-          {loading && <div className="airport-history-empty">Loading schedule…</div>}
-          {!loading && error && <div className="airport-history-empty">{error}</div>}
-          {!loading && !error && cruises.length === 0 && (
+          {cruises.length === 0 && (
             <div className="airport-history-empty">No upcoming cruise calls found in the current schedule window.</div>
           )}
-          {!loading && !error && cruises.length > 0 && (
+          {cruises.length > 0 && (
             <ul className="airport-history-list">
               {cruises.slice(0, 6).map((c, idx) => (
                 <li key={idx}>

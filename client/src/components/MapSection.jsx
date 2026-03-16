@@ -46,6 +46,10 @@ const nameToSlug = {
 };
 const slugToName = Object.fromEntries(Object.entries(nameToSlug).map(([n, s]) => [s, n]));
 
+// Parishes where weather icons need a small inland shift so they stay over land and don't sit under wave icons
+const NORTH_COAST_PARISH_SLUGS = new Set(['st-james', 'trelawny', 'st-ann', 'st-mary', 'portland']); // nudge south (inland)
+const SOUTH_COAST_PARISH_SLUGS = new Set(['westmoreland', 'st-elizabeth', 'clarendon', 'st-catherine']); // nudge north (inland)
+
 const parishColors = {
   "hanover": "#2e7d32", "westmoreland": "#388e3c",
   "st-james": "#43a047", "trelawny": "#4caf50",
@@ -314,11 +318,11 @@ function FlyToBounds({ bounds, activeSlug }) {
     }
     if (!map.getPane('weatherPane')) {
       const wp = map.createPane('weatherPane');
-      wp.style.zIndex = 450; // above parishes, below default marker pane (600)
+      wp.style.zIndex = 460; // above parishes and waves so temp/weather always visible when overlapping wave icons
     }
     if (!map.getPane('wavePane')) {
       const wp = map.createPane('wavePane');
-      wp.style.zIndex = 455; // above weather so wave arrows are visible when both on
+      wp.style.zIndex = 455; // below weather so parish temp is not hidden under wave icon
     }
   }, [map]);
 
@@ -397,7 +401,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [vessels, setVessels] = useState([]);
   // Base map layer: one of standard OSM, or Thunderforest Transport / Landscape / Neighbourhood
   const [baseLayer, setBaseLayer] = useState('standard');
-  const [portCruiseCounts, setPortCruiseCounts] = useState({});
+  const [portCruisesById, setPortCruisesById] = useState({});
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
@@ -583,16 +587,16 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
           PORTS.map(async (p) => {
             try {
               const data = await fetchPortCruises(p.id);
-              const count = Array.isArray(data.cruises) ? data.cruises.length : 0;
-              return [p.id, count];
+              const list = Array.isArray(data.cruises) ? data.cruises : [];
+              return [p.id, list];
             } catch {
-              return [p.id, 0];
+              return [p.id, []];
             }
           }),
         );
-        if (!cancelled) setPortCruiseCounts(Object.fromEntries(entries));
+        if (!cancelled) setPortCruisesById(Object.fromEntries(entries));
       } catch {
-        if (!cancelled) setPortCruiseCounts({});
+        if (!cancelled) setPortCruisesById({});
       }
     })();
     return () => { cancelled = true; };
@@ -903,12 +907,17 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
 
           {/* Weather at zoom 9: cloud north, wind SE, temp centre, rain NE, sun NW — offsets so no overlap; hidden when Transport is on */}
           {!thunderforestHidesItems && showWeatherLayer && islandWeather.map((w) => {
-            const offset = 0.09; // degrees — keeps temp, cloud, wind, rain, sun well separated
-            const cloudPos = [w.lat + offset, w.lon];             // north
-            const windPos = [w.lat - offset, w.lon + offset];    // south-east
-            const tempPos = [w.lat, w.lon];                      // parish centre (over land)
-            const rainPos = [w.lat + offset * 0.85, w.lon + offset]; // north-east, offset from cloud
-            const sunPos = [w.lat + offset, w.lon - offset];     // north-west (clear sky only)
+            const offset = 0.06;
+            // Nudge inland so weather icons stay over land and don't sit under wave icons
+            let baseLat = w.lat;
+            if (NORTH_COAST_PARISH_SLUGS.has(w.slug)) baseLat -= 0.04; // north coast: shift south (inland)
+            else if (SOUTH_COAST_PARISH_SLUGS.has(w.slug)) baseLat += 0.04; // south coast (e.g. Westmoreland): shift north (inland)
+            const baseLon = w.lon;
+            const cloudPos = [baseLat + offset, baseLon];             // north
+            const windPos = [baseLat - offset, baseLon + offset];    // south-east
+            const tempPos = [baseLat, baseLon];                      // parish centre (over land)
+            const rainPos = [baseLat + offset * 0.85, baseLon + offset]; // north-east, offset from cloud
+            const sunPos = [baseLat + offset, baseLon - offset];     // north-west (clear sky only)
             const unavailable = !!w.error;
             const raining = !unavailable && isRaining(w.weatherCode);
             const clearSky = !unavailable && isClearSky(w.weatherCode);
@@ -1080,7 +1089,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
 
           {/* Port status badges: expected vs in-port counts, similar to airport arrival/departure badges */}
           {!thunderforestHidesItems && showVessels && PORTS.map(p => {
-            const expected = portCruiseCounts[p.id] ?? 0;
+            const cruisesForPort = portCruisesById[p.id] || [];
+            const expected = cruisesForPort.length;
             const inPort = vessels.filter(v => {
               const dLat = v.lat - p.lat;
               const dLon = v.lon - p.lon;
@@ -1223,6 +1233,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
       {selectedPort && (
         <PortPopup
           port={selectedPort}
+          cruises={portCruisesById[selectedPort.id] || []}
           nearbyVessels={vessels.filter(v => {
             const dLat = v.lat - selectedPort.lat;
             const dLon = v.lon - selectedPort.lon;
