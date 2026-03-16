@@ -2393,6 +2393,18 @@
   margin-bottom: 14px;
 }
 
+.airport-detail-flight-only-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.airport-detail-flight-only-header .airport-detail-title {
+  margin: 0;
+}
+
 .airport-detail-grid {
   display: flex;
   flex-direction: column;

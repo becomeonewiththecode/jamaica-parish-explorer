@@ -350,12 +350,13 @@ function ZoomTracker({ onZoomChange }) {
   return null;
 }
 
-function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey, children }) {
+function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFlightsProp, onFlightsChange, parishPlaces, highlightedPlace, onClearHighlight, activeCategories, onCategoriesChange, focusPlace, focusKey, children }) {
   const [geojson, setGeojson] = useState(null);
   const [airports, setAirports] = useState([]);
   const [alwaysOnPlaces, setAlwaysOnPlaces] = useState([]);
   const [currentZoom, setCurrentZoom] = useState(11);
-  const [showFlights, setShowFlights] = useState(true);
+  const showFlights = showFlightsProp !== undefined ? showFlightsProp : true;
+  const setShowFlights = onFlightsChange || (() => {});
   const [showWeatherView, setShowWeatherView] = useState(false); // when on: zoom 9–10 only airports + weather, no places
   const [islandWeather, setIslandWeather] = useState([]);
   const [showWavesView, setShowWavesView] = useState(false);
@@ -628,7 +629,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
         <div className="map-toggle-buttons map-grid-cell-3">
           <button
             className={`flight-toggle-btn${showFlights ? ' flight-toggle-active' : ''}`}
-            onClick={() => setShowFlights(prev => !prev)}
+            onClick={() => setShowFlights(!showFlights)}
             title={showFlights ? 'Hide live flights' : 'Show live flights'}
           >
             ✈ Live Flights <span className="toggle-value">{showFlights ? 'ON' : 'OFF'}</span>

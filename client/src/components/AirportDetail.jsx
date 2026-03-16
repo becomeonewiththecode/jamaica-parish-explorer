@@ -17,7 +17,7 @@ function parseScheduledTime(scheduledTime) {
   return null;
 }
 
-function AirportDetail({ airport, onClose, onFlightSelect }) {
+function AirportDetail({ airport, flightOnly, onClose, onFlightSelect }) {
   const [imgError, setImgError] = useState(false);
   const [flightData, setFlightData] = useState(null);
   const [activeTab, setActiveTab] = useState('arrivals');
@@ -84,6 +84,15 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
 
   return (
     <div className="airport-detail">
+      {flightOnly ? (
+        <div className="airport-detail-flight-only-header">
+          <h2 className="airport-detail-title">{airport.name}</h2>
+          {(airport.code || airport.icao) && (
+            <span className="airport-badge airport-badge-code">{[airport.code, airport.icao].filter(Boolean).join(' / ')}</span>
+          )}
+        </div>
+      ) : (
+        <>
       {/* Airport image */}
       <div className="airport-detail-image-area">
         {!imgError ? (
@@ -217,6 +226,8 @@ function AirportDetail({ airport, onClose, onFlightSelect }) {
             ))}
           </ul>
         </div>
+      )}
+        </>
       )}
 
       {/* Flight board — always shown */}
