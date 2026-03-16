@@ -16,6 +16,7 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Live flights** — scheduled arrivals/departures (AeroDataBox) and live radar (OpenSky, adsb.lol) for Jamaica airports; plane icons on the map with altitude-based coloring
 - **Airport detail** — full airport info and flight board, or flight-only view (when Live Flights is on) with Jamaica time and weather at the airport
 - **Weather and waves** — parish weather (temp, wind, cloud, rain, sun) and coastal wave data on the map (zoom 9–10)
+- **Map base layers** — optional Thunderforest layers: **Transport** (roads, railways, transit), **Landscape** (terrain, nature, topography), **Neighbourhood** (streets, clear labels); one at a time in map controls (requires `VITE_THUNDERFOREST_API_KEY`)
 - **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
 
 ## Tech Stack
@@ -82,6 +83,16 @@ npm start
 ```
 
 The dev server runs at **http://localhost:5173** with API requests proxied to the Express server on port 3001.
+
+### Optional: Map base layers (Transport, Landscape, Neighbourhood)
+
+The map includes toggles for **Transport**, **Landscape**, and **Neighbourhood** base layers (one active at a time). They use [Thunderforest](https://www.thunderforest.com/) tiles and require a free API key. To enable them, create `client/.env` with:
+
+```bash
+VITE_THUNDERFOREST_API_KEY=your_api_key_here
+```
+
+Get a key at [thunderforest.com](https://www.thunderforest.com/); the free tier is sufficient for development.
 
 ## Project Structure
 

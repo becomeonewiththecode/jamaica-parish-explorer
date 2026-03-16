@@ -12,6 +12,7 @@ L.Icon.Default.mergeOptions({
 });
 
 import union from '@turf/union';
+import buffer from '@turf/buffer';
 import { fetchAirports, fetchAllPlaces } from '../api/parishes';
 import { fetchWeatherIsland, fetchWavesIsland } from '../api/weather';
 import { mapAirport } from '../data/airports';
@@ -361,6 +362,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [islandWeather, setIslandWeather] = useState([]);
   const [showWavesView, setShowWavesView] = useState(false);
   const [islandWaves, setIslandWaves] = useState([]);
+  // Base map layer: one of standard OSM, or Thunderforest Transport / Landscape / Neighbourhood
+  const [baseLayer, setBaseLayer] = useState('standard');
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
@@ -493,8 +496,11 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
     const interval = setInterval(refresh, WEATHER_POLL_MS);
     return () => clearInterval(interval);
   }, [showWavesView, zoomRounded]);
-  // Hide place icons when weather view is on (only airports + weather at 9–10)
-  const hidePlaceIcons = showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX;
+  const hasThunderforestKey = !!import.meta.env.VITE_THUNDERFOREST_API_KEY;
+  // When any Thunderforest base layer is on, hide all items (clean map-only view)
+  const thunderforestHidesItems = hasThunderforestKey && baseLayer !== 'standard';
+  // Hide place icons when weather view is on (only airports + weather at 9–10) or when Thunderforest layer is on
+  const hidePlaceIcons = (showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX) || thunderforestHidesItems;
 
   // Available categories for filter bar
   const availableCategories = useMemo(() => {
@@ -554,21 +560,22 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   // Force GeoJSON re-render when activeSlug changes
   const geoJsonKey = useMemo(() => `geojson-${activeSlug || 'none'}`, [activeSlug]);
 
-  // Mask: cover everything outside Jamaica so only the island is visible (no other countries)
+  // Mask: cover everything outside Jamaica so only the island is visible (no other countries).
+  // Hole is buffered slightly outward (~2 km) so the blue never overlaps the tile layer at the coast.
   const jamaicaMask = useMemo(() => {
     if (!geojson || !geojson.features || geojson.features.length < 2) return null;
     try {
       const jamaica = union(geojson);
       if (!jamaica || !jamaica.geometry) return null;
-      const coords = jamaica.geometry.coordinates;
-      // Polygon: [exterior, ...holes]; MultiPolygon: [ [ [exterior, ...], ... ], ... ]
-      const jamaicaRing = jamaica.geometry.type === 'Polygon'
+      const buffered = buffer(jamaica, 2.5, { units: 'kilometers' });
+      if (!buffered || !buffered.geometry) return null;
+      const coords = buffered.geometry.coordinates;
+      const exteriorRing = buffered.geometry.type === 'Polygon'
         ? coords[0]
-        : coords[0][0]; // first polygon's exterior ring
-      if (!jamaicaRing || jamaicaRing.length < 3) return null;
+        : coords[0][0];
+      if (!exteriorRing || exteriorRing.length < 3) return null;
       // GeoJSON hole must be clockwise; exterior is counter-clockwise. Reverse for hole.
-      const hole = [...jamaicaRing].reverse();
-      // Very large rectangle so at zoom 9 (and any pan) the whole view is covered — exterior counter-clockwise
+      const hole = [...exteriorRing].reverse();
       const outer = [[-95, 14], [-95, 22], [-72, 22], [-72, 14], [-95, 14]];
       return {
         type: 'Feature',
@@ -583,74 +590,95 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   return (
     <>
       <div className="map-top-strip">
-        <div className="map-controls-grid">
-        {/* Column 1: Parish select (no parish) or Back + title (parish selected) */}
-        {activeSlug ? (
-          <div className="parish-zoom-header map-grid-cell-1">
-            <button className="zoom-back-btn" onClick={() => onSelect(null)}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-              Back to Jamaica
-            </button>
-            <h2 className="zoom-title">
-              {geojson ? (geojson.features.find(f => nameToSlug[f.properties.shapeName] === activeSlug)?.properties.shapeName || activeSlug) : activeSlug}
-            </h2>
-            <span className="zoom-place-count">{parishPlaces ? parishPlaces.length : 0} places</span>
+        <div className="map-top-grid">
+          {/* Cell 1: Parish select or Back + title */}
+          {activeSlug ? (
+            <div className="map-top-cell parish-cell parish-zoom-header">
+              <button className="zoom-back-btn" onClick={() => onSelect(null)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+                Back to Jamaica
+              </button>
+              <h2 className="zoom-title">
+                {geojson ? (geojson.features.find(f => nameToSlug[f.properties.shapeName] === activeSlug)?.properties.shapeName || activeSlug) : activeSlug}
+              </h2>
+              <span className="zoom-place-count">{parishPlaces ? parishPlaces.length : 0} places</span>
+            </div>
+          ) : (
+            <div className="map-top-cell parish-cell">
+              {geojson && (
+                <select
+                  className="parish-select-dropdown"
+                  value=""
+                  onChange={(e) => { if (e.target.value) onSelect(e.target.value); }}
+                >
+                  <option value="">Select a Parish...</option>
+                  {Object.entries(nameToSlug)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([name, slug]) => (
+                      <option key={slug} value={slug}>{name}</option>
+                    ))}
+                </select>
+              )}
+            </div>
+          )}
+
+          {/* Cell 2: Zoom */}
+          <div className="map-top-cell zoom-cell zoom-level-control">
+            <span className="zoom-level-label">Zoom</span>
+            <span className="zoom-level-value">{currentZoom}</span>
+            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
+            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
           </div>
-        ) : (
-          <div className="map-grid-cell-1">
-            {geojson && (
+
+          {/* Cell 3: Flight, Weather, Waves, Map layer */}
+          <div className="map-top-cell toggles-cell">
+            <button
+              className={`flight-toggle-btn${showFlights ? ' flight-toggle-active' : ''}`}
+              onClick={() => setShowFlights(!showFlights)}
+              title={showFlights ? 'Hide live flights' : 'Show live flights'}
+            >
+              ✈ Live Flights <span className="toggle-value">{showFlights ? 'ON' : 'OFF'}</span>
+            </button>
+            <button
+              className={`flight-toggle-btn weather-view-btn${showWeatherView ? ' flight-toggle-active' : ''}`}
+              onClick={() => setShowWeatherView(prev => !prev)}
+              title={showWeatherView ? 'Hide island weather' : 'Show island weather (zoom 9–10, no places)'}
+            >
+              ☀ Weather <span className="toggle-value">{showWeatherView ? 'ON' : 'OFF'}</span>
+            </button>
+            <button
+              className={`flight-toggle-btn waves-view-btn${showWavesView ? ' flight-toggle-active' : ''}`}
+              onClick={() => setShowWavesView(prev => !prev)}
+              title={showWavesView ? 'Hide wave conditions' : 'Show wave height & direction (zoom 9–11)'}
+            >
+              🌊 Waves <span className="toggle-value">{showWavesView ? 'ON' : 'OFF'}</span>
+            </button>
+            {hasThunderforestKey ? (
               <select
-                className="parish-select-dropdown"
-                value=""
-                onChange={(e) => { if (e.target.value) onSelect(e.target.value); }}
+                className="base-layer-select parish-select-dropdown"
+                value={baseLayer}
+                onChange={(e) => setBaseLayer(e.target.value)}
+                title="Map base layer: choose Standard to turn layers off, or pick Transport / Landscape / Neighbourhood to turn that layer on"
               >
-                <option value="">Select a Parish...</option>
-                {Object.entries(nameToSlug)
-                  .sort(([a], [b]) => a.localeCompare(b))
-                  .map(([name, slug]) => (
-                    <option key={slug} value={slug}>{name}</option>
-                  ))}
+                <option value="standard">Standard map (layers off)</option>
+                <option value="transport">🚌 Transport (on)</option>
+                <option value="landscape">🏔 Landscape (on)</option>
+                <option value="neighbourhood">🏘 Neighbourhood (on)</option>
               </select>
+            ) : (
+              <span className="base-layer-placeholder" title="Set VITE_THUNDERFOREST_API_KEY in client/.env for Transport, Landscape, Neighbourhood layers">
+                Map layer (API key needed)
+              </span>
             )}
           </div>
-        )}
 
-        {/* Column 2: Zoom */}
-        <div className="zoom-level-control map-grid-cell-2">
-          <span className="zoom-level-label">Zoom</span>
-          <span className="zoom-level-value">{currentZoom}</span>
-          <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
-          <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
+          {/* Cell 4: Search bar */}
+          <div className="map-top-cell search-cell">
+            {children}
+          </div>
         </div>
-
-        {/* Column 3: Flight + Weather toggles */}
-        <div className="map-toggle-buttons map-grid-cell-3">
-          <button
-            className={`flight-toggle-btn${showFlights ? ' flight-toggle-active' : ''}`}
-            onClick={() => setShowFlights(!showFlights)}
-            title={showFlights ? 'Hide live flights' : 'Show live flights'}
-          >
-            ✈ Live Flights <span className="toggle-value">{showFlights ? 'ON' : 'OFF'}</span>
-          </button>
-          <button
-            className={`flight-toggle-btn weather-view-btn${showWeatherView ? ' flight-toggle-active' : ''}`}
-            onClick={() => setShowWeatherView(prev => !prev)}
-            title={showWeatherView ? 'Hide island weather' : 'Show island weather (zoom 9–10, no places)'}
-          >
-            ☀ Weather <span className="toggle-value">{showWeatherView ? 'ON' : 'OFF'}</span>
-          </button>
-          <button
-            className={`flight-toggle-btn waves-view-btn${showWavesView ? ' flight-toggle-active' : ''}`}
-            onClick={() => setShowWavesView(prev => !prev)}
-            title={showWavesView ? 'Hide wave conditions' : 'Show wave height & direction (zoom 9–11)'}
-          >
-            🌊 Waves <span className="toggle-value">{showWavesView ? 'ON' : 'OFF'}</span>
-          </button>
-        </div>
-        </div>
-        {children}
       </div>
 
       <section id="map-section">
@@ -724,10 +752,31 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
           style={{ width: '100%', height: '100%' }}
           zoomControl={false}
         >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+          {hasThunderforestKey && baseLayer === 'transport' ? (
+            <TileLayer
+              key="base-transport"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles &copy; <a href="https://www.thunderforest.com">Thunderforest</a>'
+              url={`https://api.thunderforest.com/transport/{z}/{x}/{y}.png?apikey=${import.meta.env.VITE_THUNDERFOREST_API_KEY}`}
+            />
+          ) : hasThunderforestKey && baseLayer === 'landscape' ? (
+            <TileLayer
+              key="base-landscape"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles &copy; <a href="https://www.thunderforest.com">Thunderforest</a>'
+              url={`https://api.thunderforest.com/landscape/{z}/{x}/{y}.png?apikey=${import.meta.env.VITE_THUNDERFOREST_API_KEY}`}
+            />
+          ) : hasThunderforestKey && baseLayer === 'neighbourhood' ? (
+            <TileLayer
+              key="base-neighbourhood"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles &copy; <a href="https://www.thunderforest.com">Thunderforest</a>'
+              url={`https://api.thunderforest.com/neighbourhood/{z}/{x}/{y}.png?apikey=${import.meta.env.VITE_THUNDERFOREST_API_KEY}`}
+            />
+          ) : (
+            <TileLayer
+              key="base-osm"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+          )}
 
           {/* Mask: only Jamaica visible; everything else covered (added imperatively so pane is set) */}
           <JamaicaMaskLayer maskData={jamaicaMask} />
@@ -738,8 +787,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
           <FlyToBounds bounds={activeBounds} activeSlug={activeSlug} />
           <FlyToPlace place={focusPlace} />
 
-          {/* Parish boundaries */}
-          {geojson && (
+          {/* Parish boundaries — hidden when Transport layer is on */}
+          {geojson && !thunderforestHidesItems && (
             <GeoJSON
               key={geoJsonKey}
               ref={geoJsonRef}
@@ -749,8 +798,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             />
           )}
 
-          {/* Weather at zoom 9: cloud north, wind SE, temp centre, rain NE, sun NW — offsets so no overlap */}
-          {showWeatherLayer && islandWeather.map((w) => {
+          {/* Weather at zoom 9: cloud north, wind SE, temp centre, rain NE, sun NW — offsets so no overlap; hidden when Transport is on */}
+          {!thunderforestHidesItems && showWeatherLayer && islandWeather.map((w) => {
             const offset = 0.09; // degrees — keeps temp, cloud, wind, rain, sun well separated
             const cloudPos = [w.lat + offset, w.lon];             // north
             const windPos = [w.lat - offset, w.lon + offset];    // south-east
@@ -853,8 +902,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             );
           })}
 
-          {/* Wave conditions at coastal points (zoom 9–11); nudge away from parish centre if both layers on to avoid overlap with temp icon */}
-          {showWavesLayer && islandWaves.map((w) => {
+          {/* Wave conditions at coastal points (zoom 9–11); hidden when Transport is on */}
+          {!thunderforestHidesItems && showWavesLayer && islandWaves.map((w) => {
             const OVERLAP_THRESHOLD = 0.04; // deg — if wave this close to a parish centre, nudge
             const NUDGE_SCALE = 0.6;         // move wave 60% further from that centre
             let wLat = w.lat, wLon = w.lon;
@@ -893,8 +942,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             );
           })}
 
-          {/* Airport markers */}
-          {airports.map(ap => (
+          {/* Airport markers — hidden when Transport layer is on */}
+          {!thunderforestHidesItems && airports.map(ap => (
             <Marker
               key={ap.code}
               position={[ap.lat, ap.lon]}
@@ -975,8 +1024,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             </Marker>
           )}
 
-          {/* Live flight tracking */}
-          <FlightTracker visible={showFlights} onAirportSelect={onAirportSelect} airports={airports} />
+          {/* Live flight tracking — hidden when Transport layer is on */}
+          <FlightTracker visible={showFlights && !thunderforestHidesItems} onAirportSelect={onAirportSelect} airports={airports} />
         </MapContainer>
       </div>
 
