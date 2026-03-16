@@ -184,6 +184,24 @@ function isRaining(weatherCode) {
   );
 }
 
+// WMO weather codes for clear / mainly clear sky (sunshine)
+function isClearSky(weatherCode) {
+  if (weatherCode == null) return false;
+  const code = Number(weatherCode);
+  return code === 0 || code === 1; // 0 = Clear, 1 = Mainly clear
+}
+
+// Sun icon for clear / mainly clear sky
+function buildSunIcon() {
+  const size = 52;
+  return L.divIcon({
+    className: 'sun-leaflet-icon',
+    html: `<div class="sun-icon-inner" aria-hidden="true"><span class="sun-emoji">☀</span></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
 // Rain indicator icon for parishes where it's raining
 function buildRainIcon() {
   const size = 56;
@@ -446,23 +464,33 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
   // Weather layer: when Weather View is on, show at zoom 9–10 only
   const zoomRounded = Math.round(currentZoom);
   const showWeatherLayer = showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX;
-  // When weather view is on, prefetch island weather for zoom 8–10
+  const WEATHER_POLL_MS = 20 * 60 * 1000; // 20 minutes — refresh map weather when allowed
+
+  // When weather view is on, fetch island weather and refresh every 20 min so map stays up to date
   useEffect(() => {
-    if (!showWeatherView) return;
-    if (zoomRounded < 8 || zoomRounded > 10) return;
-    fetchWeatherIsland()
-      .then(setIslandWeather)
-      .catch(() => setIslandWeather([]));
+    if (!showWeatherView || zoomRounded < 8 || zoomRounded > 10) return;
+    const refresh = () => {
+      fetchWeatherIsland()
+        .then(setIslandWeather)
+        .catch(() => setIslandWeather([]));
+    };
+    refresh();
+    const interval = setInterval(refresh, WEATHER_POLL_MS);
+    return () => clearInterval(interval);
   }, [showWeatherView, zoomRounded]);
 
-  // When waves view is on, prefetch wave data for zoom 8–11
+  // When waves view is on, fetch wave data and refresh every 20 min so map stays up to date
   const showWavesLayer = showWavesView && zoomRounded >= WAVE_ZOOM_MIN && zoomRounded <= WAVE_ZOOM_MAX;
   useEffect(() => {
-    if (!showWavesView) return;
-    if (zoomRounded < 8 || zoomRounded > 11) return;
-    fetchWavesIsland()
-      .then(setIslandWaves)
-      .catch(() => setIslandWaves([]));
+    if (!showWavesView || zoomRounded < 8 || zoomRounded > 11) return;
+    const refresh = () => {
+      fetchWavesIsland()
+        .then(setIslandWaves)
+        .catch(() => setIslandWaves([]));
+    };
+    refresh();
+    const interval = setInterval(refresh, WEATHER_POLL_MS);
+    return () => clearInterval(interval);
   }, [showWavesView, zoomRounded]);
   // Hide place icons when weather view is on (only airports + weather at 9–10)
   const hidePlaceIcons = showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX;
@@ -720,18 +748,35 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, parishPlaces, highl
             />
           )}
 
-          {/* Weather at zoom 9: cloud north, wind SE, temp centre, rain NE — offsets chosen so no overlap */}
+          {/* Weather at zoom 9: cloud north, wind SE, temp centre, rain NE, sun NW — offsets so no overlap */}
           {showWeatherLayer && islandWeather.map((w) => {
-            const offset = 0.09; // degrees — keeps temp, cloud, wind, rain well separated (no overlap)
+            const offset = 0.09; // degrees — keeps temp, cloud, wind, rain, sun well separated
             const cloudPos = [w.lat + offset, w.lon];             // north
             const windPos = [w.lat - offset, w.lon + offset];    // south-east
             const tempPos = [w.lat, w.lon];                      // parish centre (over land)
-            const rainPos = [w.lat + offset * 0.85, w.lon + offset]; // north-east but offset from cloud
+            const rainPos = [w.lat + offset * 0.85, w.lon + offset]; // north-east, offset from cloud
+            const sunPos = [w.lat + offset, w.lon - offset];     // north-west (clear sky only)
             const unavailable = !!w.error;
             const raining = !unavailable && isRaining(w.weatherCode);
+            const clearSky = !unavailable && isClearSky(w.weatherCode);
             const parishName = slugToName[w.slug] || w.slug;
             return (
             <Fragment key={`weather-${w.slug}`}>
+              {/* Sun icon when clear / mainly clear */}
+              {clearSky && (
+                <Marker
+                  position={sunPos}
+                  icon={buildSunIcon()}
+                  zIndexOffset={503}
+                  pane="weatherPane"
+                >
+                  <Tooltip direction="top" offset={[0, -14]} className="weather-leaflet-tooltip">
+                    <strong>{parishName}</strong>
+                    <br />
+                    <span style={{ color: '#ffb74d' }}>☀ {w.description || 'Clear'}</span>
+                  </Tooltip>
+                </Marker>
+              )}
               {/* Rain overlay: semi-transparent area + rain icon when parish has rain */}
               {raining && (
                 <>

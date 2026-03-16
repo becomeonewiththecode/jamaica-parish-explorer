@@ -12,7 +12,7 @@ This document describes how weather and wave (marine) data are collected, cached
 - **Endpoint:** `https://api.open-meteo.com/v1/forecast`
 - **Data requested:** Current conditions only: `temperature_2m`, `relative_humidity_2m`, `weather_code`, `wind_speed_10m`, `wind_direction_10m`, `cloud_cover`
 - **Timezone:** `America/Jamaica`
-- **Use:** One request per parish (14 parishes), using fixed parish capital/representative coordinates (see **Parish coordinates** below).
+- **Use:** One request per parish (14 parishes), using fixed parish capital/representative coordinates (see **Parish coordinates** below). The `weather_code` (WMO) drives display: e.g. 0 = Clear, 1 = Mainly clear (sun icon), 2–3 = Partly cloudy / Overcast (cloud), 51–99 = rain/showers/thunderstorm (rain icon).
 
 ### Open-Meteo Marine API (Wave height, direction, period)
 
@@ -88,6 +88,15 @@ Wave data is fetched for 13 named coastal points. Positions are chosen so icons 
 
 ## How the Data Is Used
 
+### Client refresh (map stays up to date)
+
+When the Weather or Waves layer is **on** and zoom is in range, the client **polls every 20 minutes** so the map shows fresh data without the user toggling or zooming:
+
+- **Weather layer:** If Weather view is ON and zoom is 8–10, the client calls `fetchWeatherIsland()` immediately and then every **20 minutes** (`WEATHER_POLL_MS`). The interval is cleared when the layer is turned off or zoom leaves range.
+- **Waves layer:** If Waves view is ON and zoom is 8–11, the client calls `fetchWavesIsland()` immediately and then every **20 minutes**. Same cleanup when the layer is off or zoom is out of range.
+
+This aligns with the server’s 20-minute cache refresh so the map typically shows data at most 20 minutes old when the layers are visible.
+
 ### API routes (`server/routes/weather.js`)
 
 | Route | Purpose | Cache / behaviour |
@@ -110,12 +119,14 @@ Wave data is fetched for 13 named coastal points. Positions are chosen so icons 
 ### Map — Weather layer (toggle: “☀ Weather”)
 
 - **When:** Weather view is ON and map zoom is between 9 and 10 (inclusive).
-- **Data:** `GET /api/weather/island` (client calls `fetchWeatherIsland()` when the layer is active).
+- **Data:** `GET /api/weather/island`. The client fetches when the layer is active and **refetches every 20 minutes** while the layer stays on (see **Client refresh** above).
+- **Icon positions** (offsets from parish centre so icons do not overlap): temperature at **parish centre** (over land); cloud **north**; wind **south-east**; rain **north-east** (slightly offset from cloud); sun **north-west** (clear sky only). Wave markers are nudged away from parish centre when both Weather and Waves layers are on.
 - **Per parish (14 total):**
   - **If data is OK:**  
-    - **Cloud** icon (north of parish centre): opacity from cloud cover; drift from wind direction.  
+    - **Temperature** at parish centre (always on land): current temp in °C; tooltip includes description, humidity, wind.  
+    - **Cloud** icon (north): opacity from cloud cover; drift from wind direction.  
     - **Wind** arrow (south-east): direction and speed.  
-    - **Temperature** (south-west): current temp in °C; tooltip includes description, humidity, wind.  
+    - **Sun:** If the weather code is 0 (Clear) or 1 (Mainly clear), a sun icon is shown (north-west); tooltip shows parish name and “Clear” or “Mainly clear”.  
     - **Rain:** If the weather code indicates rain (drizzle, rain, showers, thunderstorm), a rain overlay circle and a rain icon (north-east) are shown; tooltip shows parish name and description (e.g. “Moderate rain”).
   - **If data is unavailable (`error: true`):**  
     A single “—°” marker (grey style) at the temperature position with tooltip: “Weather unavailable · Next refresh within 20 min”. This ensures every parish (including e.g. St. Thomas, St. Elizabeth) always has at least one weather-related marker.
@@ -123,8 +134,8 @@ Wave data is fetched for 13 named coastal points. Positions are chosen so icons 
 ### Map — Wave layer (toggle: “🌊 Waves”)
 
 - **When:** Waves view is ON and map zoom is between 9 and 11 (inclusive).
-- **Data:** `GET /api/weather/waves` (client calls `fetchWavesIsland()`).
-- **Per coastal point:** A wave icon (SVG wave symbol) is placed at the point’s lat/lon (from the API response when available, else the predefined coastal point). The icon is rotated to show the direction waves are moving; the label shows significant wave height in metres (e.g. `1.2m`). Tooltip includes name, wave height, period, and a note that the arrow is direction of wave movement.
+- **Data:** `GET /api/weather/waves`. The client fetches when the layer is active and **refetches every 20 minutes** while the layer stays on (see **Client refresh** above).
+- **Per coastal point:** A wave icon (SVG wave symbol) is placed at the point’s lat/lon (from the API response when available, else the predefined coastal point). If both Weather and Waves layers are on, wave markers very close to a parish centre are nudged away so they do not overlap the temperature icon. The icon is rotated to show the direction waves are moving; the label shows significant wave height in metres (e.g. `1.2m`). Tooltip includes name, wave height, period, and a note that the arrow is direction of wave movement.
 
 ### Sidebar — Parish weather widget
 
@@ -140,7 +151,7 @@ Wave data is fetched for 13 named coastal points. Positions are chosen so icons 
 |------|---------|
 | `server/routes/weather.js` | Weather and wave API routes; parish/coastal definitions; 20-minute refresh; fetch and cache logic |
 | `client/src/api/weather.js` | `fetchWeather()`, `fetchWeatherForParish()`, `fetchWeatherIsland()`, `fetchWavesIsland()` |
-| `client/src/components/MapSection.jsx` | Weather and wave map layers; weather/wave icon builders; rain overlay; unavailable marker |
+| `client/src/components/MapSection.jsx` | Weather and wave map layers; 20-min client poll when layers on; icon builders (temp, cloud, wind, sun, rain, wave); rain overlay; unavailable marker; overlap avoidance (temp over land, wave nudge) |
 | `client/src/components/WeatherWidget.jsx` | Sidebar parish weather widget |
 | `docs/WEATHER-AND-WAVE-DATA.md` | This document |
 
@@ -150,4 +161,4 @@ Wave data is fetched for 13 named coastal points. Positions are chosen so icons 
 
 - **Collection:** Weather from Open-Meteo (14 parishes, retry once per parish). Waves from Open-Meteo Marine (13 coastal points, up to two attempts per point). Island weather and wave caches are refreshed every **20 minutes** in the background and on first request when stale.
 - **Use:** Island and wave data are cached and served by `GET /api/weather/island` and `GET /api/weather/waves`; parish widget uses `GET /api/weather/parish/:slug`. Every parish is always included in the island response (with `error: true` if fetch failed).
-- **Display:** Map shows weather (cloud, wind, temp, rain when applicable) and optionally waves (height, direction) per parish/coastal point; sidebar shows current weather for the selected parish. Unavailable parishes still get a “—°” marker and “Weather unavailable · Next refresh within 20 min” on the map.
+- **Display:** Map shows weather (temperature at parish centre, cloud, wind, sun when clear/mainly clear, rain when applicable) and optionally waves (height, direction) per parish/coastal point; icons are positioned so they do not overlap. The client polls island weather and wave data every 20 minutes while the respective layers are visible so the map stays up to date. Sidebar shows current weather for the selected parish. Unavailable parishes still get a “—°” marker and “Weather unavailable · Next refresh within 20 min” on the map.
