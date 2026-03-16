@@ -16,6 +16,7 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Live flights** — scheduled arrivals/departures (AeroDataBox) and live radar (OpenSky, adsb.lol) for Jamaica airports; plane icons on the map with altitude-based coloring
 - **Airport detail** — full airport info and flight board, or flight-only view (when Live Flights is on) with Jamaica time and weather at the airport
 - **Weather and waves** — parish weather (temp, wind, cloud, rain, sun) and coastal wave data on the map (zoom 9–10)
+- **Vessel traffic** — live AIS-based vessel layer around Jamaica (AISStream.io) with ship icons, optional cruise-only filter, and ability to overlay flights, weather, and waves
 - **Map base layers** — optional Thunderforest layers: **Transport** (roads, railways, transit), **Landscape** (terrain, nature, topography), **Neighbourhood** (streets, clear labels); one at a time in map controls (requires `VITE_THUNDERFOREST_API_KEY`)
 - **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
 
@@ -130,6 +131,10 @@ project_jamaica/
       parishes.js               # GET /api/parishes, /api/parishes/:slug
       places.js                 # Place search, categories, website-image
       notes.js                  # CRUD for community notes
+      flights.js                # Flights API (scheduled + live radar)
+      weather.js                # Weather and marine wave data
+      airports.js               # Airport metadata and details
+      vessels.js                # Live vessel traffic (AISStream.io)
 ```
 
 ## API Endpoints
@@ -152,6 +157,12 @@ project_jamaica/
 | GET | `/api/weather/parish/:slug` | Weather for a parish |
 | GET | `/api/weather/island` | Island-wide weather (14 parishes) |
 | GET | `/api/weather/waves` | Coastal wave data |
+| GET | `/api/vessels` | Live vessel snapshot near Jamaica (AISStream.io; optional `?type=cruise`) |
+
+## Data Documentation
+
+- **Weather and Waves:** see `docs/WEATHER-AND-WAVE-DATA.md`
+- **Vessels (AISStream):** see `docs/VESSEL-DATA-AND-USAGE.md`
 
 ## Database Schema
 
