@@ -161,6 +161,7 @@ project_jamaica/
 
 ## Data Documentation
 
+- **Flights:** see `docs/FLIGHT-DATA.md`
 - **Weather and Waves:** see `docs/WEATHER-AND-WAVE-DATA.md`
 - **Vessels (AISStream):** see `docs/VESSEL-DATA-AND-USAGE.md`
 
