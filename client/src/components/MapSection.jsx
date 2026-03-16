@@ -260,6 +260,18 @@ function isClearSky(weatherCode) {
   return code === 0 || code === 1; // 0 = Clear, 1 = Mainly clear
 }
 
+// Decide how dense / strong clouds should appear for a parish, based on the
+// forecast code and whether a sun glyph will be shown.
+function getCloudMode(weatherCode) {
+  if (weatherCode == null) return 'normal';
+  const code = Number(weatherCode);
+  if (isRaining(code)) return 'rain';
+  if (isClearSky(code)) return 'light';
+  // Overcast / foggy-style codes – emphasise heavy cloud cover
+  if (code === 2 || code === 3 || code === 45 || code === 48) return 'overcast';
+  return 'normal';
+}
+
 // Sun icon for clear / mainly clear sky
 function buildSunIcon() {
   const size = 52;
@@ -307,14 +319,28 @@ function buildWaveIcon(waveHeightM, waveDirectionDeg) {
 }
 
 // Cloud: opacity from cloud cover (min 0.5 so always visible at zoom 9), drift direction from wind.
-function buildCloudIcon(cloudCover, windDirection) {
-  const cover = Math.min(100, Math.max(0, Number(cloudCover) || 0));
+// Mode controls how \"strong\" the cloud looks visually:
+// - 'light': subtle cloud for mainly clear
+// - 'overcast': larger, denser cloud for overcast / fog
+// - 'rain': very dense cloud used together with rain glyphs
+function buildCloudIcon(cloudCover, windDirection, mode = 'normal') {
+  let cover = Math.min(100, Math.max(0, Number(cloudCover) || 0));
+  let size = 64;
+  if (mode === 'light') {
+    cover = Math.min(60, cover || 40);
+    size = 56;
+  } else if (mode === 'overcast') {
+    cover = Math.max(cover, 90);
+    size = 72;
+  } else if (mode === 'rain') {
+    cover = Math.max(cover, 96);
+    size = 76;
+  }
   const opacity = Math.max(0.5, cover / 100); // always visible
   const deg = (Number(windDirection) || 0) + 180;
   const rad = (deg * Math.PI) / 180;
   const moveX = (24 * Math.sin(rad)).toFixed(1);
   const moveY = (-24 * Math.cos(rad)).toFixed(1);
-  const size = 64;
   return L.divIcon({
     className: 'cloud-leaflet-icon',
     html: `<div class="cloud-wrap" style="--cloud-opacity:${opacity};--move-x:${moveX}px;--move-y:${moveY}px;--cloud-size:${size}px">
@@ -1019,6 +1045,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             const unavailable = !!w.error;
             const raining = !unavailable && isRaining(w.weatherCode);
             const clearSky = !unavailable && isClearSky(w.weatherCode);
+            const cloudMode = !unavailable ? getCloudMode(w.weatherCode) : 'normal';
             const parishName = slugToName[w.slug] || w.slug;
 
             return (
@@ -1072,7 +1099,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
                 {!unavailable && (
                   <Marker
                     position={cloudPos}
-                    icon={buildCloudIcon(w.cloudCover ?? 0, w.windDirection ?? 0)}
+                    icon={buildCloudIcon(w.cloudCover ?? 0, w.windDirection ?? 0, cloudMode)}
                     zIndexOffset={500}
                     pane="weatherPane"
                   />

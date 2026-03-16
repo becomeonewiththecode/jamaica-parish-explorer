@@ -134,11 +134,15 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 
 - **When:** Weather view is ON and map zoom is between 9 and 10 (inclusive).
 - **Data:** `GET /api/weather/island`. The client fetches when the layer is active and **refetches every 20 minutes** while the layer stays on (see **Client refresh** above).
-- **Icon positions** (offsets from parish centre so icons do not overlap): temperature at **parish centre** (over land); cloud **north**; wind **south-east**; rain **north-east** (slightly offset from cloud); sun **north-west** (clear sky only). Wave markers are nudged away from parish centre when both Weather and Waves layers are on.
+- **Icon positions** (offsets from parish centre so icons do not overlap): temperature at **parish centre** (over land); cloud **north**; wind **south-east**; rain **north-east** (slightly offset from cloud); sun **north-west** (clear sky only). Wave markers are rendered at their coastal marine coordinates when the Waves layer is on.
 - **Per parish (14 total):**
   - **If data is OK:**  
     - **Temperature** at parish centre (always on land): current temp in °C; tooltip includes description, humidity, wind.  
-    - **Cloud** icon (north): opacity from cloud cover; drift from wind direction.  
+    - **Cloud** icon (north): size and opacity derived from both cloud cover and the WMO weather code:
+      - For **clear / mainly clear** (codes 0–1), clouds are small and light (subtle background).
+      - For **overcast / fog-type** codes (2–3, 45, 48), clouds are larger and denser to indicate heavy cloud cover.
+      - For **rain codes**, clouds are rendered very dense to reinforce “rain clouds” alongside the rain glyphs.
+      The cloud glyph still drifts according to wind direction.
     - **Wind** arrow (south-east): direction and speed.  
     - **Sun:** If the weather code is 0 (Clear) or 1 (Mainly clear), a sun icon is shown (north-west); tooltip shows parish name and “Clear” or “Mainly clear”.  
     - **Rain:** If the weather code indicates rain (drizzle, rain, showers, thunderstorm), a rain overlay circle and a rain icon (north-east) are shown; tooltip shows parish name and description (e.g. “Moderate rain”).
