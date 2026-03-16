@@ -1,9 +1,29 @@
 import { useDraggable } from '../hooks/useDraggable';
 
+// Parse ETA text like "17 Mar 2026 - 09:30" into a Date
+function parseCruiseEtaToDate(etaLocalText) {
+  if (!etaLocalText || typeof etaLocalText !== 'string') return null;
+  const cleaned = etaLocalText.replace('–', '-').trim();
+  const parts = cleaned.split('-').map((s) => s.trim());
+  if (!parts[0]) return null;
+  const candidate = parts[1] ? `${parts[0]} ${parts[1]}` : parts[0];
+  const d = new Date(candidate);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] }) {
   const { pos, onMouseDown } = useDraggable();
 
   if (!port) return null;
+
+  const now = new Date();
+  const upcomingCruises = (cruises || [])
+    .map((c) => ({
+      ...c,
+      _eta: parseCruiseEtaToDate(c.etaLocalText || c.eta_localText || c.eta_local_text),
+    }))
+    .filter((c) => c._eta && c._eta >= now)
+    .sort((a, b) => a._eta - b._eta);
 
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${port.lat},${port.lon}&travelmode=driving`;
 
@@ -40,7 +60,7 @@ function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] 
             {port.city}
           </span>
           <span className="airport-badge airport-badge-type">
-            <span>🛬</span> Expected {cruises.length}
+            <span>🛬</span> Expected {upcomingCruises.length}
           </span>
           <span className="airport-badge airport-badge-type">
             <span>🛥</span> In port {nearbyVessels.length}
@@ -76,23 +96,22 @@ function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] 
 
         <div className="airport-history">
           <h3 className="airport-history-title">Upcoming cruise calls</h3>
-          {cruises.length === 0 && (
+          {upcomingCruises.length === 0 && (
             <div className="airport-history-empty">No upcoming cruise calls found in the current schedule window.</div>
           )}
-          {cruises.length > 0 && (
+          {upcomingCruises.length > 0 && (
             <ul className="airport-history-list">
-              {cruises.slice(0, 6).map((c, idx) => (
+              {upcomingCruises.slice(0, 6).map((c, idx) => (
                 <li key={idx}>
                   <strong>{c.shipName}</strong>
                   {c.operator && <> · <span>{c.operator}</span></>}
                   {c.etaLocalText && <> · <span>{c.etaLocalText}</span></>}
-                  {c.source && <> · <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>{c.source}</span></>}
                 </li>
               ))}
             </ul>
           )}
           <div className="airport-history-empty" style={{ marginTop: '4px', fontSize: '0.7rem' }}>
-            Schedules are scraped from public cruise calendars (CruiseDig / CruiseMapper) and may be approximate.
+            Schedules are gathered from a cruise calendar and are approximate.
           </div>
         </div>
 

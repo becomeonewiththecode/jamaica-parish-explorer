@@ -28,9 +28,9 @@ import FlightTracker from './FlightTracker';
 const ALWAYS_ON_CATEGORIES = ['hotel', 'resort', 'guest_house', 'restaurant', 'beach'];
 const ALWAYS_ON_MIN_ZOOM = 10; // Show when zoom >= this level
 
-// Weather view: when on, show only airports + weather (temp, wind, cloud) at zoom 9–10, no place icons
+// Weather view: when on, show only airports + weather (temp, wind, cloud) at zoom 9–11, no place icons
 const WEATHER_ZOOM_MIN = 9;
-const WEATHER_ZOOM_MAX = 10;
+const WEATHER_ZOOM_MAX = 11;
 // Wave layer: same zoom range as weather so they can be viewed together
 const WAVE_ZOOM_MIN = 9;
 const WAVE_ZOOM_MAX = 11;
@@ -164,6 +164,17 @@ const portIcon = L.divIcon({
   iconSize: [30, 30],
   iconAnchor: [15, 15],
 });
+
+// Parse ETA text like "17 Mar 2026 - 09:30" (CruiseDig / CruiseMapper) into a Date
+function parseCruiseEtaToDate(etaLocalText) {
+  if (!etaLocalText || typeof etaLocalText !== 'string') return null;
+  const cleaned = etaLocalText.replace('–', '-').trim();
+  const parts = cleaned.split('-').map((s) => s.trim());
+  if (!parts[0]) return null;
+  const candidate = parts[1] ? `${parts[0]} ${parts[1]}` : parts[0];
+  const d = new Date(candidate);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 function buildPortStatusIcon(expectedCount, inPortCount) {
   return L.divIcon({
@@ -393,7 +404,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [currentZoom, setCurrentZoom] = useState(11);
   const showFlights = showFlightsProp !== undefined ? showFlightsProp : true;
   const setShowFlights = onFlightsChange || (() => {});
-  const [showWeatherView, setShowWeatherView] = useState(false); // when on: zoom 9–10 only airports + weather, no places
+  const [showWeatherView, setShowWeatherView] = useState(false); // when on: zoom 9–11 only airports + weather, no places
   const [islandWeather, setIslandWeather] = useState([]);
   const [showWavesView, setShowWavesView] = useState(false);
   const [islandWaves, setIslandWaves] = useState([]);
@@ -446,6 +457,20 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const handlePortClick = useCallback((port) => {
     setPopupPos(getPopupPosition(port.lat, port.lon));
     setSelectedPort(port);
+
+    // Ensure we have up-to-date cruise data for this port when the popup opens.
+    // Even if the initial bulk fetch returned empty (or ran before backend fixes),
+    // this per-port fetch will populate `portCruisesById[port.id]` so the popup
+    // shows the correct upcoming calls.
+    (async () => {
+      try {
+        const data = await fetchPortCruises(port.id);
+        const list = Array.isArray(data?.cruises) ? data.cruises : [];
+        setPortCruisesById(prev => ({ ...prev, [port.id]: list }));
+      } catch {
+        // leave existing data as-is on error
+      }
+    })();
   }, [getPopupPosition]);
 
   const handleAirportClick = useCallback((airport) => {
@@ -510,14 +535,14 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
     setCurrentZoom(zoom);
   }, []);
 
-  // Weather layer: when Weather View is on, show at zoom 9–10 only
+  // Weather layer: when Weather View is on, show at zoom 9–11 only
   const zoomRounded = Math.round(currentZoom);
   const showWeatherLayer = showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX;
   const WEATHER_POLL_MS = 20 * 60 * 1000; // 20 minutes — refresh map weather when allowed
 
   // When weather view is on, fetch island weather and refresh every 20 min so map stays up to date
   useEffect(() => {
-    if (!showWeatherView || zoomRounded < 8 || zoomRounded > 10) return;
+    if (!showWeatherView || zoomRounded < 8 || zoomRounded > 11) return;
     const refresh = () => {
       fetchWeatherIsland()
         .then(setIslandWeather)
@@ -547,7 +572,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   // When vessels layer is on, hide place icons and parish filters so ships stand out,
   // but still allow flights, weather, and waves to be viewed together with vessels.
   const vesselsHideItems = showVessels;
-  // Hide place icons when weather view is on (only airports + weather at 9–10) or when a global-hiding layer is on
+  // Hide place icons when weather view is on (only airports + weather at 9–11) or when a global-hiding layer is on
   const hidePlaceIcons =
     (showWeatherView && zoomRounded >= WEATHER_ZOOM_MIN && zoomRounded <= WEATHER_ZOOM_MAX) ||
     thunderforestHidesItems ||
@@ -744,7 +769,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             <button
               className={`flight-toggle-btn weather-view-btn${showWeatherView ? ' flight-toggle-active' : ''}`}
               onClick={() => setShowWeatherView(prev => !prev)}
-              title={showWeatherView ? 'Hide island weather' : 'Show island weather (zoom 9–10, no places)'}
+              title={showWeatherView ? 'Hide island weather' : 'Show island weather (zoom 9–11, no places)'}
             >
               ☀ Weather <span className="toggle-value">{showWeatherView ? 'ON' : 'OFF'}</span>
             </button>
@@ -1087,10 +1112,15 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             </Marker>
           ))}
 
-          {/* Port status badges: expected vs in-port counts, similar to airport arrival/departure badges */}
+          {/* Port status badges: expected vs in-port counts (upcoming only) */}
           {!thunderforestHidesItems && showVessels && PORTS.map(p => {
             const cruisesForPort = portCruisesById[p.id] || [];
-            const expected = cruisesForPort.length;
+            const now = new Date();
+            const upcoming = cruisesForPort.filter(c => {
+              const eta = parseCruiseEtaToDate(c.etaLocalText || c.eta_localText || c.eta_local_text);
+              return eta && eta >= now;
+            });
+            const expected = upcoming.length;
             const inPort = vessels.filter(v => {
               const dLat = v.lat - p.lat;
               const dLon = v.lon - p.lon;
@@ -1133,7 +1163,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             </Marker>
           ))}
 
-          {/* Always-on category markers — hidden when Weather View is on at zoom 9–10 or Vessels is on */}
+          {/* Always-on category markers — hidden when Weather View is on at zoom 9–11 or Vessels is on */}
           {!hidePlaceIcons && !vesselsHideItems && visibleAlwaysOn.map(p => {
             const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
             const icon = categoryIcons[p.category] || defaultPlaceIcon;
@@ -1154,7 +1184,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             );
           })}
 
-          {/* Place markers when a parish is selected — hidden when Weather View is on at zoom 9–10 or Vessels is on */}
+          {/* Place markers when a parish is selected — hidden when Weather View is on at zoom 9–11 or Vessels is on */}
           {!hidePlaceIcons && !vesselsHideItems && activeSlug && filteredPlaces.map(p => {
             const style = categoryStyles[p.category] || { color: '#fff', label: p.category, icon: '📍' };
             const isHighlighted = highlightedPlace && highlightedPlace.id === p.id;
@@ -1181,7 +1211,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             );
           })}
 
-          {/* Highlighted place from search — hidden when Weather View is on at zoom 9–10 or Vessels is on */}
+          {/* Highlighted place from search — hidden when Weather View is on at zoom 9–11 or Vessels is on */}
           {!hidePlaceIcons && !vesselsHideItems && highlightedPlace && activeSlug && (
             <Marker
               position={[highlightedPlace.lat, highlightedPlace.lon]}
