@@ -13,6 +13,10 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Place popups** with photos, descriptions, website links, menu links (for restaurants), and Google Maps driving directions
 - **Community notes** — users can leave notes on any parish
 - **Category filtering** — filter visible map markers by type when viewing a parish
+- **Live flights** — scheduled arrivals/departures (AeroDataBox) and live radar (OpenSky, adsb.lol) for Jamaica airports; plane icons on the map with altitude-based coloring
+- **Airport detail** — full airport info and flight board, or flight-only view (when Live Flights is on) with Jamaica time and weather at the airport
+- **Weather and waves** — parish weather (temp, wind, cloud, rain, sun) and coastal wave data on the map (zoom 9–10)
+- **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
 
 ## Tech Stack
 
@@ -87,7 +91,10 @@ project_jamaica/
     public/
       jamaica-parishes.geojson  # Parish boundary data
     src/
-      api/parishes.js           # API client functions
+      api/
+        parishes.js             # Parish, places, notes, flights, airports
+        weather.js              # Weather and waves
+        fetchWithRetry.js       # Fetch wrapper with retry on failure
       components/
         MapSection.jsx          # Full Jamaica map + zoom dispatch
         ParishZoomView.jsx      # Zoomed parish view with place markers
@@ -128,6 +135,12 @@ project_jamaica/
 | GET | `/api/places/categories` | List categories with counts |
 | GET | `/api/places/all` | All places (lightweight) |
 | GET | `/api/places/website-image?url=` | Extract og:image from a URL |
+| GET | `/api/flights` | Cached flight data (scheduled + live radar) |
+| GET | `/api/airports` | List Jamaica airports |
+| GET | `/api/weather?lat=&lon=` | Weather at a point |
+| GET | `/api/weather/parish/:slug` | Weather for a parish |
+| GET | `/api/weather/island` | Island-wide weather (14 parishes) |
+| GET | `/api/weather/waves` | Coastal wave data |
 
 ## Database Schema
 

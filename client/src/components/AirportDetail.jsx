@@ -1,5 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchFlights } from '../api/parishes';
+import { fetchWeather } from '../api/weather';
+
+// Jamaica time (America/Jamaica = EST, UTC-5), updates every second
+function useJamaicaTime() {
+  const format = () => new Date().toLocaleTimeString('en-US', { timeZone: 'America/Jamaica', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const [time, setTime] = useState(format);
+  useEffect(() => {
+    const id = setInterval(() => setTime(format()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return time;
+}
 
 // Parse scheduledTime (API can be "2025-03-15 08:45:00" or "08:45") → ms, or null
 function parseScheduledTime(scheduledTime) {
@@ -20,10 +32,13 @@ function parseScheduledTime(scheduledTime) {
 function AirportDetail({ airport, flightOnly, onClose, onFlightSelect }) {
   const [imgError, setImgError] = useState(false);
   const [flightData, setFlightData] = useState(null);
+  const [weather, setWeather] = useState(null);
+  const [weatherError, setWeatherError] = useState(false);
   const [activeTab, setActiveTab] = useState('arrivals');
   const [showDirections, setShowDirections] = useState(false);
   const [originInput, setOriginInput] = useState('');
   const originRef = useRef(null);
+  const jamaicaTime = useJamaicaTime();
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +52,16 @@ function AirportDetail({ airport, flightOnly, onClose, onFlightSelect }) {
     const interval = setInterval(load, 15000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [airport]);
+
+  // Weather at airport when flight-only view (for flight data window)
+  useEffect(() => {
+    if (!flightOnly || !airport?.lat || !airport?.lon) return;
+    let cancelled = false;
+    fetchWeather(airport.lat, airport.lon)
+      .then(data => { if (!cancelled) { setWeather(data); setWeatherError(false); } })
+      .catch(() => { if (!cancelled) setWeatherError(true); });
+    return () => { cancelled = true; };
+  }, [flightOnly, airport?.lat, airport?.lon]);
 
   if (!airport) return null;
 
@@ -85,12 +110,31 @@ function AirportDetail({ airport, flightOnly, onClose, onFlightSelect }) {
   return (
     <div className="airport-detail">
       {flightOnly ? (
-        <div className="airport-detail-flight-only-header">
-          <h2 className="airport-detail-title">{airport.name}</h2>
-          {(airport.code || airport.icao) && (
-            <span className="airport-badge airport-badge-code">{[airport.code, airport.icao].filter(Boolean).join(' / ')}</span>
-          )}
-        </div>
+        <>
+          <div className="airport-detail-flight-only-header">
+            <h2 className="airport-detail-title">{airport.name}</h2>
+            {(airport.code || airport.icao) && (
+              <span className="airport-badge airport-badge-code">{[airport.code, airport.icao].filter(Boolean).join(' / ')}</span>
+            )}
+          </div>
+          <div className="airport-detail-flight-only-weather">
+            <div className="airport-detail-flight-only-time" title="Jamaica time (EST, UTC−5)">
+              <span className="airport-detail-flight-only-time-label">Time</span>
+              <span className="airport-detail-flight-only-time-value">{jamaicaTime}</span>
+            </div>
+            {weatherError ? (
+              <span className="airport-detail-flight-only-weather-value">Weather unavailable</span>
+            ) : weather ? (
+              <div className="airport-detail-flight-only-weather-row">
+                <span className="airport-detail-flight-only-weather-temp">{Math.round(weather.temperature)}°C</span>
+                <span className="airport-detail-flight-only-weather-desc">{weather.description}</span>
+                <span className="airport-detail-flight-only-weather-meta">Wind {weather.windSpeed} km/h</span>
+              </div>
+            ) : (
+              <span className="airport-detail-flight-only-weather-value">Loading weather…</span>
+            )}
+          </div>
+        </>
       ) : (
         <>
       {/* Airport image */}

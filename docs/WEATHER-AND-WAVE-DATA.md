@@ -143,6 +143,13 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 - **Data:** `GET /api/weather/parish/:slug` (client calls `fetchWeatherForParish(parishSlug)`).
 - **Display:** Temperature (°C), short description (e.g. “Partly cloudy”), humidity, wind speed, and Jamaica time. If the request fails, the widget shows “Unavailable”.
 
+### Flight data window (infostation)
+
+- **When:** Live Flights is ON and an airport is selected (flight-only view).
+- **Data:** `GET /api/weather?lat=&lon=` using the airport's coordinates (client calls `fetchWeather(airport.lat, airport.lon)`).
+- **Display:** Jamaica time (live) and weather at the airport (temp °C, description, wind). Shown in a compact bar above the flight board. Failed or loading states show "Weather unavailable" or "Loading weather…".
+- **Client retries:** All weather API calls use `fetchWithRetry`: failed fetches are retried up to 3 times with exponential backoff.
+
 ---
 
 ## File Reference
@@ -150,7 +157,8 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 | File | Purpose |
 |------|---------|
 | `server/routes/weather.js` | Weather and wave API routes; parish/coastal definitions; 20-minute refresh; fetch and cache logic |
-| `client/src/api/weather.js` | `fetchWeather()`, `fetchWeatherForParish()`, `fetchWeatherIsland()`, `fetchWavesIsland()` |
+| `client/src/api/weather.js` | `fetchWeather()`, `fetchWeatherForParish()`, `fetchWeatherIsland()`, `fetchWavesIsland()` (all via fetchWithRetry) |
+| `client/src/api/fetchWithRetry.js` | Fetch wrapper: retries on failure (3 retries, exponential backoff) |
 | `client/src/components/MapSection.jsx` | Weather and wave map layers; 20-min client poll when layers on; icon builders (temp, cloud, wind, sun, rain, wave); rain overlay; unavailable marker; overlap avoidance (temp over land, wave nudge) |
 | `client/src/components/WeatherWidget.jsx` | Sidebar parish weather widget |
 | `docs/WEATHER-AND-WAVE-DATA.md` | This document |

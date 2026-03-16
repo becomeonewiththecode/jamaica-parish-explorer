@@ -217,12 +217,14 @@ So both ICAO (e.g. `B73C`, `GLF6`) and TCCA designators (e.g. `B73C`, `GLF6`, `E
 
 ### InfoSection — Airport Detail
 
-When an airport is selected (by clicking the map marker or from the parish Items dropdown):
-- Airport image, name, IATA/ICAO codes
-- Info grid: runway, serves, named after, opened, elevation, operator, website
-- Get Directions with location input (appends ", Jamaica" automatically)
-- Historical facts
-- **Flight Board** with Arrivals and Departures tabs — always displayed, shows "No arrivals at this time" when empty
+When an airport is selected (by clicking the map marker or from the parish Items dropdown), the panel content depends on the **Live Flights** toggle:
+
+- **Live Flights ON (flight data icon):** **Flight-only view** — airport name and code, **Jamaica time** (live, America/Jamaica), **weather at the airport** (temp, description, wind), and the Flight Board (Arrivals/Departures). No image, runway, directions, or historical facts.
+- **Live Flights OFF (airport icon):** **Full airport detail** — airport image, name, IATA/ICAO, info grid (runway, serves, named after, opened, elevation, operator, website), Get Directions, historical facts, and the Flight Board.
+
+In both cases the Flight Board is shown; it has Arrivals and Departures tabs and shows "No arrivals at this time" when empty.
+
+**Client API:** `fetchFlights()` and other client requests use `fetchWithRetry` (see `client/src/api/fetchWithRetry.js`): failed fetches are retried up to 3 times with exponential backoff (1s, 2s, 4s, cap 10s).
 
 ### Parish Items Dropdown
 
@@ -242,4 +244,5 @@ Parishes containing airports (Kingston, St. James, St. Mary) include an **Airpor
 | `client/src/components/AirportDetail.jsx` | Airport info panel with flight board |
 | `client/src/components/InfoSection.jsx` | Side panel that hosts AirportDetail |
 | `client/src/hooks/useParish.js` | Injects airports as place-like items in parish data |
-| `client/src/api/parishes.js` | `fetchFlights()` API call |
+| `client/src/api/parishes.js` | `fetchFlights()` and other parish/places API calls (via fetchWithRetry) |
+| `client/src/api/fetchWithRetry.js` | Fetch wrapper: retries on failure (3 retries, exponential backoff) |

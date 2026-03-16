@@ -2405,6 +2405,60 @@
   margin: 0;
 }
 
+.airport-detail-flight-only-weather {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #1e3a5f;
+  border-radius: 12px;
+  font-size: 0.8rem;
+}
+
+.airport-detail-flight-only-time-label,
+.airport-detail-flight-only-weather-value {
+  color: #5a7a9a;
+  text-transform: uppercase;
+  font-size: 0.6rem;
+  letter-spacing: 0.5px;
+}
+
+.airport-detail-flight-only-time {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.airport-detail-flight-only-time-value {
+  font-weight: 600;
+  color: #e0e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.airport-detail-flight-only-weather-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.airport-detail-flight-only-weather-temp {
+  font-weight: 600;
+  color: #f0c040;
+}
+
+.airport-detail-flight-only-weather-desc {
+  color: #b0c4de;
+}
+
+.airport-detail-flight-only-weather-meta {
+  color: #7a9cc6;
+  font-size: 0.72rem;
+}
+
 .airport-detail-grid {
   display: flex;
   flex-direction: column;
