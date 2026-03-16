@@ -22,6 +22,18 @@ This document describes how weather and wave (marine) data are collected, cached
 - **Options:** `cell_selection=sea` so the API returns a sea grid cell (wave data is over water).
 - **Use:** One request per coastal point (13 points around Jamaica). Manchester has no coastline and has no wave point.
 
+### Related external data sources (shown alongside weather/waves)
+
+These do **not** provide weather or wave values, but they appear on the same map views and are part of the overall “sea conditions” picture:
+
+- **Live vessel positions:** [AISStream.io](https://aisstream.io/) WebSocket feed, consumed by the server and exposed via `GET /api/vessels`. Used for ship markers and for counting vessels “in port” near cruise piers.
+- **Cruise schedules:**  
+  - [CruiseMapper](https://www.cruisemapper.com/) for Falmouth cruise calls.  
+  - [CruiseDig](https://www.cruisedig.com/) for Montego Bay and Ocho Rios cruise calls.  
+  These are scraped by `server/routes/port-cruises.js` and cached for 6 hours.
+
+For full details of vessel and cruise data usage, see `docs/VESSEL-DATA-AND-USAGE.md`.
+
 ---
 
 ## Data Collection

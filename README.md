@@ -159,7 +159,7 @@ project_jamaica/
 | GET | `/api/weather/island` | Island-wide weather (14 parishes) |
 | GET | `/api/weather/waves` | Coastal wave data |
 | GET | `/api/vessels` | Live vessel snapshot near Jamaica (AISStream.io; optional `?type=cruise`) |
-| GET | `/api/ports/:id/cruises` | Upcoming cruise calls for a port (scraped from public cruise calendars) |
+| GET | `/api/ports/:id/cruises` | Upcoming cruise calls for a port (CruiseDig/CruiseMapper, persisted in SQLite and refreshed when older than ~6h) |
 
 ## Data Documentation
 
@@ -173,6 +173,8 @@ project_jamaica/
 - **features** — notable features per parish (e.g. "Blue Mountains", "Port Royal")
 - **places** — POIs with name, category, lat/lon, address, phone, website, cuisine, image_url, description
 - **notes** — community notes per parish with author and timestamp
+- **cruise_ports** — logical cruise ports (e.g. Montego Bay, Ocho Rios, Falmouth) with code, name, city, lat/lon, and source URL
+- **cruise_calls** — scheduled and observed cruise ship calls per port (ship name, operator, MMSI when known, source, ETA text/UTC, status, first/last seen, timestamps)
 
 ## License
 

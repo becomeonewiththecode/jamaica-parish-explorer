@@ -4,7 +4,7 @@ This document describes how vessel (ship / boat / cruise) data is collected from
 
 ---
 
-## Data Source
+## Data Sources
 
 ### AISStream.io (AIS vessel positions)
 
@@ -26,6 +26,22 @@ This document describes how vessel (ship / boat / cruise) data is collected from
   - Optional static data when available: `ShipName`, `ShipType`.
 
 AISStream.io sends a continuous stream of AIS messages for vessels that are broadcasting within the bounding box. The app does **not** store raw AIS messages; it keeps only a compact, derived representation suitable for the map.
+
+### CruiseDig / CruiseMapper (cruise schedules per port)
+
+- **Providers:**
+  - [CruiseDig](https://www.cruisedig.com/) — Montego Bay and Ocho Rios cruise schedules.
+  - [CruiseMapper](https://www.cruisemapper.com/) — Falmouth cruise schedules.
+- **Module:** `server/routes/port-cruises.js`
+- **Endpoint:** `GET /api/ports/:id/cruises`
+- **Ports covered:**
+  - `montego-bay-cruise-port` → `https://cruisedig.com/ports/montego-bay-jamaica`
+  - `ocho-rios-cruise-port` → `https://cruisedig.com/ports/ocho-rios-jamaica`
+  - `falmouth-cruise-port` → `https://www.cruisemapper.com/ports/falmouth-port-4261`
+- **Frequency / cache:**
+  - HTML is fetched from the source site only when the cache is **stale**.
+  - Results are cached in-memory per port with a TTL of **6 hours** (`CACHE_TTL_MS`).
+  - If a refresh fails, the app keeps serving the last successful schedule from cache when available.
 
 ---
 
@@ -271,6 +287,6 @@ This keeps the map readable when viewing ships, while still allowing users to ov
 ## Operational Notes
 
 - If `/api/vessels` returns `vessels: []`, AISStream is connected but no AIS `PositionReport` messages are currently within the Jamaica bounding box (or the stream is temporarily quiet).
-- Keeping the app open with **Vessels ON** will automatically update markers as ships enter or leave the area or start/stop transmitting AIS.
-- Because the AIS stream is in-memory only, vessel markers will repopulate progressively after each server restart.
+- Keeping the app open with **Vessels ON** will automatically update markers as ships enter or leave the area or start/stop transmitting AIS (client polls `/api/vessels` every 60 seconds).
+- AIS messages are still held in-memory for map rendering, but cruise schedules scraped from CruiseDig / CruiseMapper are now also **persisted** to the SQLite database (`cruise_ports` and `cruise_calls` tables) when `/api/ports/:id/cruises` is requested. This allows future features (reports, history, AIS‑linked arrival tracking) to reuse the same stored cruise schedule data.
 
