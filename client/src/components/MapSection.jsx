@@ -16,9 +16,11 @@ import buffer from '@turf/buffer';
 import { fetchAirports, fetchAllPlaces } from '../api/parishes';
 import { fetchWeatherIsland, fetchWavesIsland } from '../api/weather';
 import { mapAirport } from '../data/airports';
+import { PORTS } from '../data/ports';
 import { fetchVessels } from '../api/vessels';
 import PlacePopup from './PlacePopup';
 import AirportPopup from './AirportPopup';
+import PortPopup from './PortPopup';
 import FlightTracker from './FlightTracker';
 
 // "Always on" categories — visible on map when zoomed in, no parish selection needed
@@ -142,6 +144,7 @@ function buildWeatherIcon(temp) {
     iconSize: [36, 36],
     iconAnchor: [18, 18],
   });
+}
 
 const vesselIcon = L.divIcon({
   className: 'vessel-leaflet-icon',
@@ -149,7 +152,13 @@ const vesselIcon = L.divIcon({
   iconSize: [30, 30],
   iconAnchor: [15, 15],
 });
-}
+
+const portIcon = L.divIcon({
+  className: 'port-leaflet-icon',
+  html: '<div class="port-icon-inner">⚓</div>',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+});
 
 function buildWeatherUnavailableIcon() {
   return L.divIcon({
@@ -377,6 +386,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
+  const [selectedPort, setSelectedPort] = useState(null);
   const [popupPos, setPopupPos] = useState(null);
   const mapRef = useRef(null);
   const geoJsonRef = useRef(null);
@@ -414,6 +424,11 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
     setSelectedPlace(place);
   }, [getPopupPosition]);
 
+  const handlePortClick = useCallback((port) => {
+    setPopupPos(getPopupPosition(port.lat, port.lon));
+    setSelectedPort(port);
+  }, [getPopupPosition]);
+
   const handleAirportClick = useCallback((airport) => {
     if (onAirportSelect) onAirportSelect(airport);
   }, [onAirportSelect]);
@@ -421,6 +436,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const closeAllPopups = useCallback(() => {
     setSelectedPlace(null);
     setSelectedAirport(null);
+    setSelectedPort(null);
   }, []);
 
   useEffect(() => {
@@ -1005,6 +1021,23 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             </Marker>
           ))}
 
+          {/* Major ports / piers — only when vessels layer is on (to keep context focused on maritime view) */}
+          {!thunderforestHidesItems && showVessels && PORTS.map(p => (
+            <Marker
+              key={p.id}
+              position={[p.lat, p.lon]}
+              icon={portIcon}
+              eventHandlers={{
+                click: () => handlePortClick(p),
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -14]} className="place-leaflet-tooltip">
+                <strong>{p.name}</strong><br />
+                <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>{p.city} · {p.type === 'cruise' ? 'Cruise pier' : 'Cruise & cargo port'}</span>
+              </Tooltip>
+            </Marker>
+          ))}
+
           {/* Vessel markers — hidden when Thunderforest layers are on */}
           {!thunderforestHidesItems && showVessels && vessels.map(v => (
             <Marker
@@ -1115,6 +1148,15 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
         <PlacePopup
           place={selectedPlace}
           onClose={() => setSelectedPlace(null)}
+          anchorPos={popupPos}
+        />
+      )}
+
+      {/* Port detail popup (shows when a cruise port icon is clicked) */}
+      {selectedPort && (
+        <PortPopup
+          port={selectedPort}
+          onClose={() => setSelectedPort(null)}
           anchorPos={popupPos}
         />
       )}

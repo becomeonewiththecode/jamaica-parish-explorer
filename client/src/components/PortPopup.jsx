@@ -1,0 +1,88 @@
+import { useDraggable } from '../hooks/useDraggable';
+
+function PortPopup({ port, onClose, anchorPos }) {
+  const { pos, onMouseDown } = useDraggable();
+
+  if (!port) return null;
+
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${port.lat},${port.lon}&travelmode=driving`;
+
+  return (
+    <div
+      className={`airport-popup${anchorPos ? ' airport-popup-anchored' : ''}`}
+      style={anchorPos
+        ? { left: anchorPos.x + 'px', top: anchorPos.y + 'px', transform: `translate(${pos.x}px, ${pos.y}px)` }
+        : { transform: `translate(${pos.x}px, ${pos.y}px)` }
+      }
+      onDoubleClick={onClose}
+    >
+      <div className="drag-handle" onMouseDown={onMouseDown}>
+        <span className="drag-dots">&#x2807;</span>
+        <span className="drag-hint">Drag to move · Double-click to close</span>
+      </div>
+      <button className="popup-close" onClick={onClose}>&times;</button>
+
+      <div className="popup-image-area">
+        <div className="popup-image-placeholder">
+          <span className="placeholder-icon">⚓</span>
+          <span className="placeholder-label">{port.city}</span>
+        </div>
+      </div>
+
+      <div className="airport-popup-body">
+        <h2 className="airport-popup-title">{port.name}</h2>
+
+        <div className="airport-badges">
+          <span className="airport-badge airport-badge-type">
+            <span>⚓</span> {port.type === 'cruise' ? 'Cruise Port' : 'Cruise & Cargo Port'}
+          </span>
+          <span className="airport-badge airport-badge-code">
+            {port.city}
+          </span>
+        </div>
+
+        <div className="airport-info-grid">
+          <div className="airport-info-row">
+            <span className="airport-info-icon">📍</span>
+            <div>
+              <span className="airport-info-label">Location</span>
+              <span className="airport-info-value">{port.city}, Jamaica</span>
+            </div>
+          </div>
+          <div className="airport-info-row">
+            <span className="airport-info-icon">🌊</span>
+            <div>
+              <span className="airport-info-label">Role</span>
+              <span className="airport-info-value">
+                {port.type === 'cruise' ? 'Major cruise embarkation port' : 'Cruise and cargo gateway for Jamaica'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="airport-history">
+          <h3 className="airport-history-title">How to use on the map</h3>
+          <ul className="airport-history-list">
+            <li>Turn on <strong>Vessels</strong> to see live AIS ships near this port.</li>
+            <li>Combine with <strong>Weather</strong> and <strong>Waves</strong> for sea conditions around the harbor.</li>
+          </ul>
+        </div>
+
+        <a
+          className="popup-directions-btn"
+          href={mapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11" />
+          </svg>
+          Get Directions
+        </a>
+      </div>
+    </div>
+  );
+}
+
+export default PortPopup;
+

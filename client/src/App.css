@@ -484,6 +484,26 @@
   box-shadow: 0 0 8px rgba(79, 195, 247, 0.6);
 }
 
+.port-leaflet-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.port-leaflet-icon .port-icon-inner {
+  width: 28px;
+  height: 28px;
+  border-radius: 16px;
+  background: rgba(10, 30, 48, 0.95);
+  border: 1px solid #ffca28;
+  color: #fff8e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 0 8px rgba(255, 202, 40, 0.6);
+}
+
 .map-top-cell.search-cell {
   display: flex;
   justify-content: stretch;
