@@ -5,11 +5,11 @@ const router = express.Router();
 
 const AISSTREAM_API_KEY = process.env.AISSTREAM_API_KEY || process.env.AISSTREAM_KEY || '';
 
-// Jamaica bounding box (lon/lat) with a bit of buffer for nearby traffic
-// [ [lonMin, latMin], [lonMax, latMax] ]
+// Jamaica bounding box (lat/lon) with a bit of buffer for nearby traffic
+// [ [latMin, lonMin], [latMax, lonMax] ]
 const JAMAICA_BBOX = [
-  [-79.5, 17.2],
-  [-75.5, 19.2],
+  [17.2, -79.5],
+  [19.2, -75.5],
 ];
 
 // In‑memory cache of recent vessel positions
@@ -95,8 +95,9 @@ function ensureAisStream() {
   socket.on('open', () => {
     socketConnecting = false;
     const subscriptionMessage = {
-      APIkey: AISSTREAM_API_KEY,
+      APIKey: AISSTREAM_API_KEY,
       BoundingBoxes: [JAMAICA_BBOX],
+      FilterMessageTypes: ['PositionReport'],
     };
     socket.send(JSON.stringify(subscriptionMessage));
     console.log('[Vessels] Connected to aisstream.io and subscribed to Jamaica bounding box.');

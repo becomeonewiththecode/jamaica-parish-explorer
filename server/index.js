@@ -9,6 +9,7 @@ const airportRoutes = require('./routes/airports');
 const flightRoutes = require('./routes/flights');
 const weatherRoutes = require('./routes/weather');
 const vesselRoutes = require('./routes/vessels');
+const portCruiseRoutes = require('./routes/port-cruises');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -32,6 +33,7 @@ app.use('/api/airports', airportRoutes);
 app.use('/api/flights', flightRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/vessels', vesselRoutes);
+app.use('/api/ports', portCruiseRoutes);
 
 // Production: serve React build
 if (process.env.NODE_ENV === 'production') {

@@ -135,6 +135,7 @@ project_jamaica/
       weather.js                # Weather and marine wave data
       airports.js               # Airport metadata and details
       vessels.js                # Live vessel traffic (AISStream.io)
+      port-cruises.js           # Scraped cruise schedules per port (CruiseDig / CruiseMapper)
 ```
 
 ## API Endpoints
@@ -158,6 +159,7 @@ project_jamaica/
 | GET | `/api/weather/island` | Island-wide weather (14 parishes) |
 | GET | `/api/weather/waves` | Coastal wave data |
 | GET | `/api/vessels` | Live vessel snapshot near Jamaica (AISStream.io; optional `?type=cruise`) |
+| GET | `/api/ports/:id/cruises` | Upcoming cruise calls for a port (scraped from public cruise calendars) |
 
 ## Data Documentation
 

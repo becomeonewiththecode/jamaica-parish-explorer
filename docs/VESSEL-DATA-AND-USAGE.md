@@ -219,6 +219,34 @@ When `showVessels` is `true` and no Thunderforest base layer is hiding items:
 
 - **Zoom levels:** Vessel markers are drawn at all map zooms; they are easiest to see around zoom 9–12.
 
+### Port markers and status badges
+
+- **Port icons:**
+  - For major cruise ports and marinas (Historic Falmouth, Montego Bay, Ocho Rios, Errol Flynn Marina, Kingston Harbour) the map shows a circular ⚓ icon:
+    - Dark navy background, gold border and glow.
+    - Tooltip: port name, city, and whether it is a cruise pier or cruise+cargo port.
+  - These icons are only visible when the **Vessels** layer is ON.
+
+- **Port status badges (map, above the port icon):**
+  - A small rounded pill rendered as a Leaflet `divIcon` via `buildPortStatusIcon(expectedCount, inPortCount)`.
+  - Layout:
+    - Left segment: `🛬 X` where X is the number of **upcoming cruise calls** for that port, scraped from CruiseDig / CruiseMapper via `/api/ports/:id/cruises`.
+    - Right segment: `🛥 Y` where Y is the number of **AIS vessels currently near the port**, computed from the `/api/vessels` snapshot within ~3 km of the pier.
+  - Styling:
+    - Dark navy pill with gold border.
+    - Expected segment in light blue, in‑port segment in teal, with a grey separator.
+  - Visibility:
+    - Only shown when **Vessels** is ON.
+    - Hidden when both counts are zero (no upcoming calls and no vessels in port).
+    - Tooltip shows the port name and both counts: “Expected: X · In port (AIS): Y”.
+
+- **Port detail popup:**
+  - Clicking a port icon opens `PortPopup` (reusing the airport popup layout) and shows:
+    - Port name, city, and type badge.
+    - Two badges mirroring the status pill: `🛬 Expected X` and `🛥 In port Y`.
+    - An **“Upcoming cruise calls”** section listing up to 6 upcoming cruises with ship name, operator (when available), ETA text, and data source (`CruiseDig` or `CruiseMapper`).
+    - A directions button linking to Google Maps for the port coordinates.
+
 ### Interaction with other layers
 
 - **Base maps:**

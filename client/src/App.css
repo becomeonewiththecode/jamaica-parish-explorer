@@ -504,6 +504,44 @@
   box-shadow: 0 0 8px rgba(255, 202, 40, 0.6);
 }
 
+.port-status-leaflet-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.port-status-leaflet-icon .port-status-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(10, 22, 40, 0.96);
+  border: 1px solid #ffca28;
+  font-size: 0.65rem;
+  color: #e0f7fa;
+  transform: translateY(-24px);
+}
+
+.port-status-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.port-status-expected {
+  color: #b3e5fc;
+}
+
+.port-status-inport {
+  color: #80cbc4;
+}
+
+.port-status-sep {
+  color: #607d8b;
+  padding: 0 2px;
+}
+
 .map-top-cell.search-cell {
   display: flex;
   justify-content: stretch;

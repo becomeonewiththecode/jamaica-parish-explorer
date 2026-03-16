@@ -1,7 +1,32 @@
+import { useEffect, useState } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
+import { fetchPortCruises } from '../api/portCruises';
 
-function PortPopup({ port, onClose, anchorPos }) {
+function PortPopup({ port, onClose, anchorPos, nearbyVessels = [] }) {
   const { pos, onMouseDown } = useDraggable();
+  const [cruises, setCruises] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!port?.id) return;
+    setLoading(true);
+    setError('');
+    fetchPortCruises(port.id)
+      .then((data) => {
+        if (cancelled) return;
+        setCruises(Array.isArray(data.cruises) ? data.cruises : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError('Could not load cruise schedule.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [port?.id]);
 
   if (!port) return null;
 
@@ -39,6 +64,12 @@ function PortPopup({ port, onClose, anchorPos }) {
           <span className="airport-badge airport-badge-code">
             {port.city}
           </span>
+          <span className="airport-badge airport-badge-type">
+            <span>🛬</span> Expected {cruises.length}
+          </span>
+          <span className="airport-badge airport-badge-type">
+            <span>🛥</span> In port {nearbyVessels.length}
+          </span>
         </div>
 
         <div className="airport-info-grid">
@@ -66,6 +97,30 @@ function PortPopup({ port, onClose, anchorPos }) {
             <li>Turn on <strong>Vessels</strong> to see live AIS ships near this port.</li>
             <li>Combine with <strong>Weather</strong> and <strong>Waves</strong> for sea conditions around the harbor.</li>
           </ul>
+        </div>
+
+        <div className="airport-history">
+          <h3 className="airport-history-title">Upcoming cruise calls</h3>
+          {loading && <div className="airport-history-empty">Loading schedule…</div>}
+          {!loading && error && <div className="airport-history-empty">{error}</div>}
+          {!loading && !error && cruises.length === 0 && (
+            <div className="airport-history-empty">No upcoming cruise calls found in the current schedule window.</div>
+          )}
+          {!loading && !error && cruises.length > 0 && (
+            <ul className="airport-history-list">
+              {cruises.slice(0, 6).map((c, idx) => (
+                <li key={idx}>
+                  <strong>{c.shipName}</strong>
+                  {c.operator && <> · <span>{c.operator}</span></>}
+                  {c.etaLocalText && <> · <span>{c.etaLocalText}</span></>}
+                  {c.source && <> · <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>{c.source}</span></>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="airport-history-empty" style={{ marginTop: '4px', fontSize: '0.7rem' }}>
+            Schedules are scraped from public cruise calendars (CruiseDig / CruiseMapper) and may be approximate.
+          </div>
         </div>
 
         <a

@@ -5,6 +5,7 @@ export async function fetchVessels(type = 'all') {
   if (type && type !== 'all') params.set('type', type);
   const query = params.toString();
   const url = `/api/vessels${query ? `?${query}` : ''}`;
-  return fetchWithRetry(url);
+  const res = await fetchWithRetry(url);
+  return res.json();
 }
 

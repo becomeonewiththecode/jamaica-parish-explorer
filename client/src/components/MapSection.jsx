@@ -18,6 +18,7 @@ import { fetchWeatherIsland, fetchWavesIsland } from '../api/weather';
 import { mapAirport } from '../data/airports';
 import { PORTS } from '../data/ports';
 import { fetchVessels } from '../api/vessels';
+import { fetchPortCruises } from '../api/portCruises';
 import PlacePopup from './PlacePopup';
 import AirportPopup from './AirportPopup';
 import PortPopup from './PortPopup';
@@ -159,6 +160,19 @@ const portIcon = L.divIcon({
   iconSize: [30, 30],
   iconAnchor: [15, 15],
 });
+
+function buildPortStatusIcon(expectedCount, inPortCount) {
+  return L.divIcon({
+    className: 'port-status-leaflet-icon',
+    html: `<div class="port-status-inner">
+      <span class="port-status-seg port-status-expected">🛬 ${expectedCount}</span>
+      <span class="port-status-sep">|</span>
+      <span class="port-status-seg port-status-inport">🛥 ${inPortCount}</span>
+    </div>`,
+    iconSize: [46, 22],
+    iconAnchor: [23, 28], // anchor slightly below so CSS can nudge it above the port icon
+  });
+}
 
 function buildWeatherUnavailableIcon() {
   return L.divIcon({
@@ -383,6 +397,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [vessels, setVessels] = useState([]);
   // Base map layer: one of standard OSM, or Thunderforest Transport / Landscape / Neighbourhood
   const [baseLayer, setBaseLayer] = useState('standard');
+  const [portCruiseCounts, setPortCruiseCounts] = useState({});
   const setActiveCategories = onCategoriesChange;
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
@@ -557,6 +572,31 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
     timer = setInterval(load, 60000); // refresh every 60s while visible
     return () => { if (timer) clearInterval(timer); };
   }, [showVessels, thunderforestHidesItems]);
+
+  // Load expected cruise counts per port when vessels view is on
+  useEffect(() => {
+    let cancelled = false;
+    if (!showVessels) return;
+    (async () => {
+      try {
+        const entries = await Promise.all(
+          PORTS.map(async (p) => {
+            try {
+              const data = await fetchPortCruises(p.id);
+              const count = Array.isArray(data.cruises) ? data.cruises.length : 0;
+              return [p.id, count];
+            } catch {
+              return [p.id, 0];
+            }
+          }),
+        );
+        if (!cancelled) setPortCruiseCounts(Object.fromEntries(entries));
+      } catch {
+        if (!cancelled) setPortCruiseCounts({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showVessels]);
 
   // Available categories for filter bar
   const availableCategories = useMemo(() => {
@@ -1038,6 +1078,33 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             </Marker>
           ))}
 
+          {/* Port status badges: expected vs in-port counts, similar to airport arrival/departure badges */}
+          {!thunderforestHidesItems && showVessels && PORTS.map(p => {
+            const expected = portCruiseCounts[p.id] ?? 0;
+            const inPort = vessels.filter(v => {
+              const dLat = v.lat - p.lat;
+              const dLon = v.lon - p.lon;
+              const distKm = Math.hypot(dLat * 111, dLon * 111 * Math.cos(p.lat * Math.PI / 180));
+              return distKm <= 3;
+            }).length;
+            if (expected === 0 && inPort === 0) return null;
+            return (
+              <Marker
+                key={`${p.id}-status`}
+                position={[p.lat, p.lon]}
+                icon={buildPortStatusIcon(expected, inPort)}
+              >
+                <Tooltip direction="top" offset={[0, -18]} className="airport-leaflet-tooltip">
+                  <strong>{p.name}</strong>
+                  <br />
+                  <span style={{ fontSize: '0.75rem', color: '#b3e5fc' }}>Expected: {expected}</span>
+                  <br />
+                  <span style={{ fontSize: '0.75rem', color: '#80cbc4' }}>In port (AIS): {inPort}</span>
+                </Tooltip>
+              </Marker>
+            );
+          })}
+
           {/* Vessel markers — hidden when Thunderforest layers are on */}
           {!thunderforestHidesItems && showVessels && vessels.map(v => (
             <Marker
@@ -1156,6 +1223,12 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
       {selectedPort && (
         <PortPopup
           port={selectedPort}
+          nearbyVessels={vessels.filter(v => {
+            const dLat = v.lat - selectedPort.lat;
+            const dLon = v.lon - selectedPort.lon;
+            const distKm = Math.hypot(dLat * 111, dLon * 111 * Math.cos(selectedPort.lat * Math.PI / 180));
+            return distKm <= 3; // within ~3 km of port
+          })}
           onClose={() => setSelectedPort(null)}
           anchorPos={popupPos}
         />
