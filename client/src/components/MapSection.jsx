@@ -79,6 +79,7 @@ const categoryStyles = {
   shopping: { color: '#ffc107', label: 'Shopping', icon: '🛍' },
   car_rental: { color: '#e65100', label: 'Car Rental', icon: '🚗' },
   stadium: { color: '#1b5e20', label: 'Stadiums', icon: '🏟' },
+   port: { color: '#00acc1', label: 'Ports', icon: '⚓' },
 };
 
 // Jamaica bounds — tight to the island
@@ -628,16 +629,29 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   }, [showVessels]);
 
   // Available categories for filter bar
+  const PORT_PARISH_SLUGS = new Set(['st-james', 'trelawny', 'st-ann', 'portland', 'kingston']);
+
   const availableCategories = useMemo(() => {
-    if (!parishPlaces || !parishPlaces.length) return [];
+    if (!parishPlaces || !parishPlaces.length) {
+      // Even when there are no place records, expose 'port' for parishes that have a cruise port
+      if (activeSlug && PORT_PARISH_SLUGS.has(activeSlug)) {
+        return [{ category: 'port', count: 1 }];
+      }
+      return [];
+    }
     const catCounts = {};
     for (const p of parishPlaces) {
       catCounts[p.category] = (catCounts[p.category] || 0) + 1;
     }
-    return Object.entries(catCounts)
+    const base = Object.entries(catCounts)
       .sort((a, b) => b[1] - a[1])
       .map(([cat, count]) => ({ category: cat, count }));
-  }, [parishPlaces]);
+    // Add synthetic 'port' category when this parish has a cruise port
+    if (activeSlug && PORT_PARISH_SLUGS.has(activeSlug) && !base.some(c => c.category === 'port')) {
+      base.push({ category: 'port', count: 1 });
+    }
+    return base;
+  }, [parishPlaces, activeSlug]);
 
   const toggleCategory = useCallback((cat) => {
     setActiveCategories(prev => {
@@ -818,7 +832,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
       {!hidePlaceIcons && !vesselsHideItems && activeSlug && availableCategories.length > 0 && (
       <div className="map-top-bar">
         {(() => {
-          const prominent = ['hotel', 'guest_house', 'resort', 'beach', 'car_rental', 'nightlife'];
+          const prominent = ['hotel', 'guest_house', 'resort', 'beach', 'port', 'car_rental', 'nightlife'];
           const prominentCats = prominent.filter(c => availableCategories.some(a => a.category === c));
           const otherCats = availableCategories.filter(a => !prominent.includes(a.category));
           const activeCat = activeCategories.size === 1 ? [...activeCategories][0] : '';
@@ -831,7 +845,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
                 All ({parishPlaces ? parishPlaces.length : 0})
               </button>
               {prominentCats.map(cat => {
-                const style = categoryStyles[cat] || { color: '#fff', label: cat };
+                const style = { ...(categoryStyles[cat] || { color: '#fff', label: cat }) };
+                if (cat === 'port') style.icon = '⚓';
                 const info = availableCategories.find(a => a.category === cat);
                 const isActive = activeCategories.has(cat);
                 return (
@@ -841,7 +856,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
                     style={{ '--cat-color': style.color }}
                     onClick={() => setActiveCategories(isActive ? new Set() : new Set([cat]))}
                   >
-                    <span className="cat-dot" />
+                    <span className="cat-dot">{style.icon}</span>
                     {style.label} ({info.count})
                   </button>
                 );
@@ -857,7 +872,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
                 >
                   <option value="">More categories...</option>
                   {otherCats.map(({ category, count }) => {
-                    const style = categoryStyles[category] || { color: '#fff', label: category };
+                    const style = { ...(categoryStyles[category] || { color: '#fff', label: category }) };
+                    if (category === 'port') style.icon = '⚓';
                     return (
                       <option key={category} value={category}>
                         {style.icon} {style.label} ({count})
@@ -1112,15 +1128,20 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             </Marker>
           ))}
 
-          {/* Port status badges: expected vs in-port counts (upcoming only) */}
+          {/* Port status badges: expected vs in-port counts (upcoming this month only) */}
           {!thunderforestHidesItems && showVessels && PORTS.map(p => {
             const cruisesForPort = portCruisesById[p.id] || [];
             const now = new Date();
-            const upcoming = cruisesForPort.filter(c => {
+            const thisMonthUpcoming = cruisesForPort.filter(c => {
               const eta = parseCruiseEtaToDate(c.etaLocalText || c.eta_localText || c.eta_local_text);
-              return eta && eta >= now;
+              if (!eta) return false;
+              return (
+                eta.getFullYear() === now.getFullYear() &&
+                eta.getMonth() === now.getMonth() &&
+                eta >= now
+              );
             });
-            const expected = upcoming.length;
+            const expected = thisMonthUpcoming.length;
             const inPort = vessels.filter(v => {
               const dLat = v.lat - p.lat;
               const dLon = v.lon - p.lon;

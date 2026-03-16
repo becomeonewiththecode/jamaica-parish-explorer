@@ -1,4 +1,6 @@
 import { useDraggable } from '../hooks/useDraggable';
+import { fetchWeather } from '../api/weather';
+import { useEffect, useState } from 'react';
 
 // Parse ETA text like "17 Mar 2026 - 09:30" into a Date
 function parseCruiseEtaToDate(etaLocalText) {
@@ -13,17 +15,55 @@ function parseCruiseEtaToDate(etaLocalText) {
 
 function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] }) {
   const { pos, onMouseDown } = useDraggable();
+  const [weather, setWeather] = useState(null);
+  const [weatherError, setWeatherError] = useState(null);
+
+  // Jamaica time (America/Jamaica = EST, UTC-5, no DST)
+  const [jamaicaTime, setJamaicaTime] = useState(
+    () => new Date().toLocaleTimeString('en-US', { timeZone: 'America/Jamaica', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setJamaicaTime(
+        new Date().toLocaleTimeString('en-US', { timeZone: 'America/Jamaica', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      );
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!port) return;
+    setWeather(null);
+    setWeatherError(null);
+    fetchWeather(port.lat, port.lon)
+      .then(setWeather)
+      .catch((err) => setWeatherError(err.message || 'Failed to load weather'));
+  }, [port]);
 
   if (!port) return null;
 
   const now = new Date();
-  const upcomingCruises = (cruises || [])
+  const monthFiltered = (cruises || [])
     .map((c) => ({
       ...c,
       _eta: parseCruiseEtaToDate(c.etaLocalText || c.eta_localText || c.eta_local_text),
     }))
-    .filter((c) => c._eta && c._eta >= now)
+    .filter((c) => {
+      if (!c._eta) return false;
+      return (
+        c._eta.getFullYear() === now.getFullYear() &&
+        c._eta.getMonth() === now.getMonth() &&
+        c._eta >= now
+      );
+    })
     .sort((a, b) => a._eta - b._eta);
+
+  const dockedShips = (nearbyVessels || []).map((v) => ({
+    name: v.name || `MMSI ${v.mmsi}`,
+    type: v.shipType || 'Vessel',
+    sog: typeof v.sog === 'number' ? v.sog : null,
+  }));
 
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${port.lat},${port.lon}&travelmode=driving`;
 
@@ -60,7 +100,7 @@ function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] 
             {port.city}
           </span>
           <span className="airport-badge airport-badge-type">
-            <span>🛬</span> Expected {upcomingCruises.length}
+            <span>🛬</span> Expected {monthFiltered.length}
           </span>
           <span className="airport-badge airport-badge-type">
             <span>🛥</span> In port {nearbyVessels.length}
@@ -84,31 +124,79 @@ function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] 
               </span>
             </div>
           </div>
-        </div>
-
-        <div className="airport-history">
-          <h3 className="airport-history-title">How to use on the map</h3>
-          <ul className="airport-history-list">
-            <li>Turn on <strong>Vessels</strong> to see live AIS ships near this port.</li>
-            <li>Combine with <strong>Weather</strong> and <strong>Waves</strong> for sea conditions around the harbor.</li>
-          </ul>
+          <div className="airport-info-row">
+            <span className="airport-info-icon">☀</span>
+            <div>
+              <span className="airport-info-label">Weather &amp; time</span>
+              <div className="port-meta-row">
+                <span className="port-meta-chip" title="Local weather at this port">
+                  {weatherError
+                    ? 'Weather unavailable'
+                    : weather
+                    ? `${Math.round(weather.temperature)}°C · ${weather.description} · Humidity ${weather.humidity}% · Wind ${weather.windSpeed} km/h`
+                    : 'Weather loading…'}
+                </span>
+                <span className="port-meta-chip" title="Jamaica time (EST, UTC−5)">
+                  {jamaicaTime}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="airport-history">
           <h3 className="airport-history-title">Upcoming cruise calls</h3>
-          {upcomingCruises.length === 0 && (
+          {monthFiltered.length === 0 && (
             <div className="airport-history-empty">No upcoming cruise calls found in the current schedule window.</div>
           )}
-          {upcomingCruises.length > 0 && (
-            <ul className="airport-history-list">
-              {upcomingCruises.slice(0, 6).map((c, idx) => (
-                <li key={idx}>
-                  <strong>{c.shipName}</strong>
-                  {c.operator && <> · <span>{c.operator}</span></>}
-                  {c.etaLocalText && <> · <span>{c.etaLocalText}</span></>}
-                </li>
-              ))}
-            </ul>
+          {monthFiltered.length > 0 && (
+            <div className="cruise-table-wrapper">
+              <table className="cruise-table">
+                <thead>
+                  <tr>
+                    <th>Ship</th>
+                    <th>Line</th>
+                    <th>Arrival</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthFiltered.map((c, idx) => (
+                    <tr key={idx}>
+                      <td>{c.shipName}</td>
+                      <td>{c.operator || '—'}</td>
+                      <td>{c.etaLocalText || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <h3 className="airport-history-title" style={{ marginTop: '16px' }}>Ships currently in port (AIS)</h3>
+          {dockedShips.length === 0 && (
+            <div className="airport-history-empty">There are no vessels currently within 3 km of this port.</div>
+          )}
+          {dockedShips.length > 0 && (
+            <div className="cruise-table-wrapper">
+              <table className="cruise-table">
+                <thead>
+                  <tr>
+                    <th>Ship</th>
+                    <th>Type</th>
+                    <th>Speed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dockedShips.map((s, idx) => (
+                    <tr key={idx}>
+                      <td>{s.name}</td>
+                      <td>{s.type}</td>
+                      <td>{s.sog != null ? `${s.sog.toFixed(1)} kn` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           <div className="airport-history-empty" style={{ marginTop: '4px', fontSize: '0.7rem' }}>
             Schedules are gathered from a cruise calendar and are approximate.

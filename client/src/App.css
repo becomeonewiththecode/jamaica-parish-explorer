@@ -1483,11 +1483,16 @@
 }
 
 .cat-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--cat-color);
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  border-radius: 999px;
+  background: rgba(15, 34, 64, 0.9);
+  border: 1px solid var(--cat-color);
+  font-size: 0.8em;
+  margin-right: 4px;
 }
 
 
@@ -2303,7 +2308,7 @@
   background: #0f2240;
   border: 1px solid #1e3a5f;
   border-radius: 12px;
-  width: 260px;
+  width: clamp(420px, 42vw, 560px); /* wide enough for 3-column cruise table */
   max-width: 94vw;
   max-height: 90vh;
   overflow-y: auto;
@@ -2407,6 +2412,25 @@
   line-height: 1.35;
 }
 
+.port-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.port-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(9, 30, 60, 0.9);
+  border: 1px solid #1e3a5f;
+  font-size: 0.7rem;
+  color: #c8daf0;
+  white-space: nowrap;
+}
+
 .airport-info-link {
   font-size: 0.72rem;
   color: #7abaff;
@@ -2442,6 +2466,55 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.cruise-table-wrapper {
+  max-height: 160px;
+  overflow-y: auto;
+  border-radius: 6px;
+  border: 1px solid #1e3a5f;
+  background: rgba(4, 15, 30, 0.7);
+}
+
+.cruise-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.cruise-table thead {
+  position: sticky;
+  top: 0;
+  background: rgba(10, 30, 60, 0.95);
+}
+
+.cruise-table th,
+.cruise-table td {
+  padding: 6px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.cruise-table th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #5a8ab5;
+  border-bottom: 1px solid #1e3a5f;
+}
+
+.cruise-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cruise-table tbody tr:nth-child(odd) {
+  background: transparent;
+}
+
+.cruise-table td {
+  color: #b0c4de;
 }
 
 .airport-history-list li {
