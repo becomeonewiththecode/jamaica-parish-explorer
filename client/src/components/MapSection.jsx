@@ -180,11 +180,18 @@ const vesselIcon = L.divIcon({
   iconAnchor: [15, 15],
 });
 
-const portIcon = L.divIcon({
-  className: 'port-leaflet-icon',
-  html: '<div class="port-icon-inner">⚓</div>',
+const cruisePortIcon = L.divIcon({
+  className: 'port-leaflet-icon port-cruise-icon',
+  html: '<div class="port-icon-inner port-icon-cruise">🛳</div>',
   iconSize: [30, 30],
   iconAnchor: [15, 15],
+});
+
+const marinaPortIcon = L.divIcon({
+  className: 'port-leaflet-icon port-marina-icon',
+  html: '<div class="port-icon-inner port-icon-marina">⚓</div>',
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
 });
 
 // Parse ETA text like "17 Mar 2026 - 09:30" (CruiseDig / CruiseMapper) into a Date
@@ -1183,25 +1190,36 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
             </Marker>
           ))}
 
-          {/* Major ports / piers — only when vessels layer is on (to keep context focused on maritime view) */}
-          {!thunderforestHidesItems && showVessels && PORTS.map(p => (
-            <Marker
-              key={p.id}
-              position={[p.lat, p.lon]}
-              icon={portIcon}
-              eventHandlers={{
-                click: () => handlePortClick(p),
-              }}
-            >
-              <Tooltip direction="top" offset={[0, -14]} className="place-leaflet-tooltip">
-                <strong>{p.name}</strong><br />
-                <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>{p.city} · {p.type === 'cruise' ? 'Cruise pier' : 'Cruise & cargo port'}</span>
-              </Tooltip>
-            </Marker>
-          ))}
-
-          {/* Port status badges: expected vs in-port counts (upcoming this month only) */}
+          {/* Major ports / piers and marinas — only when vessels layer is on (to keep context focused on maritime view) */}
           {!thunderforestHidesItems && showVessels && PORTS.map(p => {
+            const isCruiseCapable = p.type === 'cruise' || p.type === 'cruise-cargo';
+            const icon = isCruiseCapable ? cruisePortIcon : marinaPortIcon;
+            const roleLabel = isCruiseCapable
+              ? (p.type === 'cruise-cargo' ? 'Cruise & cargo port' : 'Cruise pier')
+              : (p.type === 'harbor' ? 'Harbor / anchorage' : 'Marina (no cruise ships)');
+            return (
+              <Marker
+                key={p.id}
+                position={[p.lat, p.lon]}
+                icon={icon}
+                eventHandlers={{
+                  click: () => handlePortClick(p),
+                }}
+              >
+                <Tooltip direction="top" offset={[0, -14]} className="place-leaflet-tooltip">
+                  <strong>{p.name}</strong><br />
+                  <span style={{ fontSize: '0.75rem', color: '#7a9cc6' }}>
+                    {p.city}{p.city ? ' · ' : ''}{roleLabel}
+                  </span>
+                </Tooltip>
+              </Marker>
+            );
+          })}
+
+          {/* Port status badges: expected vs in-port counts (upcoming this month only), only for cruise-capable ports */}
+          {!thunderforestHidesItems && showVessels && PORTS.map(p => {
+            const isCruiseCapable = p.type === 'cruise' || p.type === 'cruise-cargo';
+            if (!isCruiseCapable) return null;
             const cruisesForPort = portCruisesById[p.id] || [];
             const now = new Date();
             const thisMonthUpcoming = cruisesForPort.filter(c => {
