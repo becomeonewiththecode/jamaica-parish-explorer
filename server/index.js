@@ -35,6 +35,15 @@ app.use('/api/weather', weatherRoutes);
 app.use('/api/vessels', vesselRoutes);
 app.use('/api/ports', portCruiseRoutes);
 
+// Simple health endpoint for status board / monitoring
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    uptime: process.uptime(),
+    env: process.env.NODE_ENV || 'development',
+  });
+});
+
 // Production: serve React build
 if (process.env.NODE_ENV === 'production') {
   const clientDistPath = path.join(__dirname, '..', 'client', 'dist');

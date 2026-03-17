@@ -106,3 +106,47 @@ CREATE INDEX IF NOT EXISTS idx_cruise_ports_code ON cruise_ports(code);
 CREATE INDEX IF NOT EXISTS idx_cruise_calls_port ON cruise_calls(port_id);
 CREATE INDEX IF NOT EXISTS idx_cruise_calls_ship ON cruise_calls(ship_name);
 CREATE INDEX IF NOT EXISTS idx_cruise_calls_eta ON cruise_calls(eta_utc);
+
+-- Multi-provider weather forecasts (per parish/city/source/day)
+CREATE TABLE IF NOT EXISTS weather_forecasts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    parish_slug TEXT NOT NULL,
+    city_id     TEXT NOT NULL,
+    source      TEXT NOT NULL,          -- 'open-meteo','weatherapi','openweather'
+    lat         REAL NOT NULL,
+    lon         REAL NOT NULL,
+    date        TEXT NOT NULL,          -- 'YYYY-MM-DD' (local)
+    temp_min    REAL,
+    temp_max    REAL,
+    temp_mean   REAL,
+    humidity    REAL,
+    description TEXT,
+    raw_json    TEXT,
+    fetched_at  TEXT DEFAULT (datetime('now')),
+    UNIQUE (parish_slug, city_id, source, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_weather_forecasts_city_date
+    ON weather_forecasts(parish_slug, city_id, date);
+
+-- Tracked severe/bad weather events (hurricanes, storms, anomalies, etc.)
+CREATE TABLE IF NOT EXISTS weather_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    type        TEXT NOT NULL,          -- 'hurricane','tropical-storm','thunderstorm','heavy-rain','high-wind','anomaly',...
+    source      TEXT NOT NULL,          -- 'weatherapi','openweather','open-meteo','aggregate'
+    event_id    TEXT,
+    severity    TEXT,
+    headline    TEXT,
+    description TEXT,
+    parish_slug TEXT,                   -- null = island-wide / region
+    area        TEXT,
+    starts_at   TEXT,
+    ends_at     TEXT,
+    fetched_at  TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_weather_events_time
+    ON weather_events(ends_at, starts_at);
+
+CREATE INDEX IF NOT EXISTS idx_weather_events_parish
+    ON weather_events(parish_slug);

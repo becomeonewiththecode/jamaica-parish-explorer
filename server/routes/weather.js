@@ -1,5 +1,19 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../db/connection');
+
+// --- Configuration for weather sources (Open-Meteo, WeatherAPI, OpenWeatherMap) ---
+const WEATHER_SOURCE = (process.env.WEATHER_SOURCE || 'open-meteo').toLowerCase();
+
+// WeatherAPI (https://www.weatherapi.com/) — free tier requires an API key
+const WEATHERAPI_KEY = process.env.WEATHERAPI_KEY || process.env.WEATHER_API_KEY || '';
+const WEATHERAPI_BASE_URL = process.env.WEATHERAPI_BASE_URL || 'https://api.weatherapi.com/v1';
+
+// OpenWeatherMap (https://openweathermap.org/) — free tier requires an API key
+const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY || process.env.OPEN_WEATHER_API_KEY || '';
+const OPENWEATHER_BASE_URL = process.env.OPENWEATHER_BASE_URL || 'https://api.openweathermap.org';
+const OPENWEATHER_UNITS = process.env.OPENWEATHER_UNITS || 'metric'; // metric | imperial | standard
+const OPENWEATHER_LANG = process.env.OPENWEATHER_LANG || 'en';
 
 // Approximate parish/capital coordinates for Jamaica (for weather by parish)
 const PARISH_COORDINATES = {
@@ -28,6 +42,8 @@ const ISLAND_CACHE_MS = 20 * 60 * 1000; // 20 minutes — island data refreshed 
 let cache = { key: null, data: null, ts: 0 };
 let islandCache = { ts: 0, data: null };
 
+// --- Provider-specific fetch helpers ---
+
 async function fetchOpenMeteo(lat, lon) {
   const url = new URL(OPEN_METEO_BASE);
   url.searchParams.set('latitude', lat);
@@ -50,6 +66,64 @@ async function fetchOpenMeteo(lat, lon) {
   }
 }
 
+async function fetchWeatherApi(lat, lon) {
+  if (!WEATHERAPI_KEY) return null;
+  const url = new URL(`${WEATHERAPI_BASE_URL.replace(/\/+$/, '')}/current.json`);
+  url.searchParams.set('key', WEATHERAPI_KEY);
+  url.searchParams.set('q', `${lat},${lon}`);
+  url.searchParams.set('aqi', 'no');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url.toString(), { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timeout);
+    console.error('WeatherAPI fetch error:', err.message);
+    return null;
+  }
+}
+
+async function fetchOpenWeather(lat, lon) {
+  if (!OPENWEATHER_API_KEY) return null;
+  const url = new URL(`${OPENWEATHER_BASE_URL.replace(/\/+$/, '')}/data/2.5/weather`);
+  url.searchParams.set('lat', lat);
+  url.searchParams.set('lon', lon);
+  url.searchParams.set('appid', OPENWEATHER_API_KEY);
+  url.searchParams.set('units', OPENWEATHER_UNITS);
+  url.searchParams.set('lang', OPENWEATHER_LANG);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url.toString(), { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timeout);
+    console.error('OpenWeather fetch error:', err.message);
+    return null;
+  }
+}
+
+// Fetch current conditions from all three providers in parallel
+async function fetchAllProvidersCurrent(lat, lon) {
+  const [om, wa, ow] = await Promise.all([
+    fetchOpenMeteo(lat, lon),
+    fetchWeatherApi(lat, lon),
+    fetchOpenWeather(lat, lon),
+  ]);
+  const out = [];
+  if (om) out.push({ source: 'open-meteo', raw: om });
+  if (wa) out.push({ source: 'weatherapi', raw: wa });
+  if (ow) out.push({ source: 'openweather', raw: ow });
+  return out;
+}
+
 function mapWeatherCode(code) {
   const map = {
     0: 'Clear',
@@ -66,17 +140,90 @@ function mapWeatherCode(code) {
   return map[code] || 'Unknown';
 }
 
-function normalizeResponse(data) {
-  if (!data?.current) return null;
-  const c = data.current;
+function normalizeCurrent(raw, source) {
+  if (!raw) return null;
+
+  // Open-Meteo format
+  if (source === 'open-meteo' && raw.current && typeof raw.current.temperature_2m === 'number') {
+    const c = raw.current;
+    return {
+      temperature: c.temperature_2m,
+      humidity: c.relative_humidity_2m,
+      weatherCode: c.weather_code,
+      description: mapWeatherCode(c.weather_code),
+      windSpeed: c.wind_speed_10m,
+      windDirection: c.wind_direction_10m,
+      cloudCover: c.cloud_cover,
+    };
+  }
+
+  // WeatherAPI format (https://www.weatherapi.com/docs/)
+  if (source === 'weatherapi' && raw.current && typeof raw.current.temp_c === 'number') {
+    const c = raw.current;
+    return {
+      temperature: c.temp_c,
+      humidity: c.humidity,
+      weatherCode: c.condition?.code ?? null,
+      description: c.condition?.text ?? 'Unknown',
+      windSpeed: c.wind_kph != null ? c.wind_kph / 3.6 : null, // convert kph → m/s approx
+      windDirection: c.wind_degree,
+      cloudCover: c.cloud,
+    };
+  }
+
+  // OpenWeatherMap format (https://openweathermap.org/current)
+  if (source === 'openweather' && raw.main && Array.isArray(raw.weather)) {
+    const w = raw.weather[0] || {};
+    return {
+      temperature: raw.main.temp,
+      humidity: raw.main.humidity,
+      weatherCode: w.id ?? null,
+      description: w.description || 'Unknown',
+      windSpeed: raw.wind?.speed ?? null,
+      windDirection: raw.wind?.deg ?? null,
+      cloudCover: raw.clouds?.all ?? null,
+    };
+  }
+
+  return null;
+}
+
+function aggregateCurrent(list) {
+  const normals = list
+    .map(entry => {
+      const norm = normalizeCurrent(entry.raw, entry.source);
+      return norm ? { source: entry.source, ...norm } : null;
+    })
+    .filter(Boolean);
+
+  if (!normals.length) return null;
+
+  const temps = normals
+    .map(n => n.temperature)
+    .filter(t => typeof t === 'number')
+    .sort((a, b) => a - b);
+  const medianTemp = temps.length
+    ? temps[Math.floor(temps.length / 2)]
+    : null;
+
+  const humidities = normals
+    .map(n => n.humidity)
+    .filter(h => typeof h === 'number');
+  const avgHumidity = humidities.length
+    ? humidities.reduce((a, b) => a + b, 0) / humidities.length
+    : null;
+
+  const base = normals[0];
+
   return {
-    temperature: c.temperature_2m,
-    humidity: c.relative_humidity_2m,
-    weatherCode: c.weather_code,
-    description: mapWeatherCode(c.weather_code),
-    windSpeed: c.wind_speed_10m,
-    windDirection: c.wind_direction_10m,
-    cloudCover: c.cloud_cover,
+    temperature: medianTemp ?? base.temperature,
+    humidity: avgHumidity ?? base.humidity,
+    weatherCode: base.weatherCode,
+    description: base.description,
+    windSpeed: base.windSpeed,
+    windDirection: base.windDirection,
+    cloudCover: base.cloudCover,
+    sources: normals,
   };
 }
 
@@ -91,8 +238,8 @@ router.get('/', async (req, res) => {
   if (cache.key === key && Date.now() - cache.ts < CACHE_MS) {
     return res.json(cache.data);
   }
-  const raw = await fetchOpenMeteo(lat, lon);
-  const out = normalizeResponse(raw);
+  const all = await fetchAllProvidersCurrent(lat, lon);
+  const out = aggregateCurrent(all);
   if (!out) {
     return res.status(502).json({ error: 'Weather service unavailable' });
   }
@@ -113,8 +260,8 @@ router.get('/parish/:slug', async (req, res) => {
   if (cache.key === key && Date.now() - cache.ts < CACHE_MS) {
     return res.json(cache.data);
   }
-  const raw = await fetchOpenMeteo(lat, lon);
-  const out = normalizeResponse(raw);
+  const all = await fetchAllProvidersCurrent(lat, lon);
+  const out = aggregateCurrent(all);
   if (!out) {
     return res.status(502).json({ error: 'Weather service unavailable' });
   }
@@ -127,11 +274,11 @@ async function fetchIslandWeather() {
   const entries = Object.entries(PARISH_COORDINATES);
   const results = await Promise.all(
     entries.map(async ([slug, [lat, lon]]) => {
-      let raw = await fetchOpenMeteo(lat, lon);
-      let out = raw ? normalizeResponse(raw) : null;
+      let all = await fetchAllProvidersCurrent(lat, lon);
+      let out = aggregateCurrent(all);
       if (!out) {
-        raw = await fetchOpenMeteo(lat, lon);
-        out = raw ? normalizeResponse(raw) : null;
+        all = await fetchAllProvidersCurrent(lat, lon);
+        out = aggregateCurrent(all);
       }
       return out
         ? { slug, lat, lon, ...out }
@@ -226,6 +373,147 @@ router.get('/waves', async (req, res) => {
   res.json(list);
 });
 
+// GET /api/weather/events — list active / upcoming bad-weather events
+router.get('/events', (req, res) => {
+  const { type, parish } = req.query;
+  let where = '1=1';
+  const params = {};
+  if (type) {
+    where += ' AND type = @type';
+    params.type = String(type);
+  }
+  if (parish) {
+    where += ' AND parish_slug = @parish';
+    params.parish = String(parish).toLowerCase();
+  }
+  // Only return events that are ongoing or start in the future
+  where += ' AND (ends_at IS NULL OR ends_at >= datetime(\'now\', \'-1 hour\'))';
+
+  const rows = db.prepare(`
+    SELECT id, type, source, event_id, severity, headline, description, parish_slug, area, starts_at, ends_at, fetched_at
+    FROM weather_events
+    WHERE ${where}
+    ORDER BY starts_at ASC
+  `).all(params);
+
+  res.json({ events: rows });
+});
+
+// Simple event classification based on Open-Meteo weather codes and wind/precip values
+function classifyBadWeatherFromCurrent(slug, current) {
+  const events = [];
+  const code = current.weatherCode;
+  const desc = current.description || '';
+  const nowIso = new Date().toISOString();
+  const twoHoursIso = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+  // Thunderstorms (95,96,99)
+  if (code === 95 || code === 96 || code === 99 || /thunder/i.test(desc)) {
+    events.push({
+      type: 'thunderstorm',
+      source: 'open-meteo',
+      severity: 'severe',
+      headline: 'Thunderstorm in area',
+      description: desc || 'Thunderstorm likely',
+      parish_slug: slug,
+      area: null,
+      starts_at: nowIso,
+      ends_at: twoHoursIso,
+    });
+  }
+
+  // Heavy rain (65,82 or description)
+  if (code === 65 || code === 82 || /heavy rain|torrential/i.test(desc)) {
+    events.push({
+      type: 'heavy-rain',
+      source: 'open-meteo',
+      severity: 'moderate',
+      headline: 'Heavy rain',
+      description: desc || 'Heavy rain likely',
+      parish_slug: slug,
+      area: null,
+      starts_at: nowIso,
+      ends_at: twoHoursIso,
+    });
+  }
+
+  // High wind (approx: > 12 m/s ≈ 43 km/h)
+  if (typeof current.windSpeed === 'number' && current.windSpeed > 12) {
+    events.push({
+      type: 'high-wind',
+      source: 'open-meteo',
+      severity: 'moderate',
+      headline: 'High winds',
+      description: `Wind ${Math.round(current.windSpeed * 3.6)} km/h`,
+      parish_slug: slug,
+      area: null,
+      starts_at: nowIso,
+      ends_at: twoHoursIso,
+    });
+  }
+
+  return events;
+}
+
+function classifyAnomalyFromSources(slug, aggregate) {
+  if (!aggregate?.sources || aggregate.sources.length < 2) return null;
+  const temps = aggregate.sources
+    .map(s => s.temperature)
+    .filter(t => typeof t === 'number')
+    .sort((a, b) => a - b);
+  if (temps.length < 2) return null;
+  const spread = temps[temps.length - 1] - temps[0];
+  if (spread < 5) return null; // less than 5°C difference → not anomalous enough
+
+  const nowIso = new Date().toISOString();
+  const twoHoursIso = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const descParts = aggregate.sources.map(s => `${s.source}: ${Math.round(s.temperature)}°C`);
+
+  return {
+    type: 'anomaly',
+    source: 'aggregate',
+    severity: 'minor',
+    headline: 'Conflicting temperature readings',
+    description: descParts.join(', '),
+    parish_slug: slug,
+    area: null,
+    starts_at: nowIso,
+    ends_at: twoHoursIso,
+  };
+}
+
+function upsertWeatherEvents(events) {
+  if (!events.length) return;
+  const stmt = db.prepare(`
+    INSERT INTO weather_events (type, source, event_id, severity, headline, description, parish_slug, area, starts_at, ends_at)
+    VALUES (@type, @source, @event_id, @severity, @headline, @description, @parish_slug, @area, @starts_at, @ends_at)
+  `);
+  const tx = db.transaction((rows) => {
+    for (const ev of rows) {
+      stmt.run({
+        type: ev.type,
+        source: ev.source,
+        event_id: ev.event_id || null,
+        severity: ev.severity || null,
+        headline: ev.headline || null,
+        description: ev.description || null,
+        parish_slug: ev.parish_slug || null,
+        area: ev.area || null,
+        starts_at: ev.starts_at || null,
+        ends_at: ev.ends_at || null,
+      });
+    }
+  });
+  tx(events);
+}
+
+function pruneOldWeatherEvents() {
+  db.prepare(`
+    DELETE FROM weather_events
+    WHERE ends_at IS NOT NULL AND ends_at < datetime('now', '-1 day')
+  `).run();
+}
+
 // Refresh weather and wave caches every 20 minutes so every parish has up-to-date rain/sun/wind and wave data
 const REFRESH_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -234,6 +522,26 @@ async function refreshWeatherAndWaves() {
     const list = await fetchIslandWeather();
     islandCache = { ts: Date.now(), data: list };
     console.log('[Weather] Island weather refreshed:', list.filter(r => !r.error).length, 'parishes OK');
+    // Derive bad-weather and anomaly events from aggregate data
+    const derivedEvents = [];
+    for (const item of list) {
+      if (item.error) continue;
+      const slug = item.slug;
+      const current = {
+        temperature: item.temperature,
+        humidity: item.humidity,
+        weatherCode: item.weatherCode,
+        description: item.description,
+        windSpeed: item.windSpeed,
+        windDirection: item.windDirection,
+        cloudCover: item.cloudCover,
+      };
+      derivedEvents.push(...classifyBadWeatherFromCurrent(slug, current));
+      const anomaly = classifyAnomalyFromSources(slug, item);
+      if (anomaly) derivedEvents.push(anomaly);
+    }
+    pruneOldWeatherEvents();
+    upsertWeatherEvents(derivedEvents);
   } catch (e) {
     console.error('[Weather] Island refresh failed:', e.message);
   }

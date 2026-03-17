@@ -19,6 +19,7 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Vessel traffic** — live AIS-based vessel layer around Jamaica (AISStream.io) with ship icons, optional cruise-only filter, and ability to overlay flights, weather, and waves; port popup shows upcoming cruise calls with an AIS column (In port / not in port) and warns when a ship expected today does not report as docked
 - **Map base layers** — optional Thunderforest layers: **Transport** (roads, railways, transit), **Landscape** (terrain, nature, topography), **Neighbourhood** (streets, clear labels); one at a time in map controls (requires `VITE_THUNDERFOREST_API_KEY`)
 - **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
+ - **Status board** — a small dashboard on port `5555` that checks API health, flights, weather, waves, vessels, and cruise schedule endpoints
 
 ## Tech Stack
 
@@ -75,8 +76,8 @@ npm run enrich:places
 ### Running
 
 ```bash
-# Development — starts both server (port 3001) and client (port 5173)
-npm run dev
+# Development — ensures server (3001), client (5173), and status board (5555) are running
+npm run init
 
 # Production build
 npm run build
@@ -178,6 +179,7 @@ project_jamaica/
 - **Flights:** see `docs/FLIGHT-DATA.md`
 - **Weather and Waves:** see `docs/WEATHER-AND-WAVE-DATA.md`
 - **Vessels (AISStream):** see `docs/VESSEL-DATA-AND-USAGE.md`
+- **Status board:** see `docs/STATUS-BOARD.md`
 
 ## Database Schema
 
