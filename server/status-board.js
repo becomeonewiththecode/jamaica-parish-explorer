@@ -151,11 +151,15 @@ function runExternalCheck(urlString) {
       },
       (res) => {
         const ok = res.statusCode >= 200 && res.statusCode < 300;
-        res.resume();
+        // For OpenSky, honor X-Rate-Limit-Retry-After-Seconds if present so we don't hammer the API.
         if (url.hostname.includes('opensky-network.org') && res.statusCode === 429) {
-          // Back off OpenSky checks for 10 minutes
-          openSkyRateLimitedUntil = Date.now() + 10 * 60 * 1000;
+          const retryAfter = parseInt(res.headers['x-rate-limit-retry-after-seconds'] || '0', 10);
+          const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1000
+            : 10 * 60 * 1000; // fallback: 10 minutes
+          openSkyRateLimitedUntil = Date.now() + delayMs;
         }
+        res.resume();
         resolve({ ok, code: res.statusCode, ms: Date.now() - started });
       }
     );

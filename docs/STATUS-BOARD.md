@@ -191,3 +191,10 @@ With this in place:
 
 > **Containerized / orchestrated environments:** In Docker or Kubernetes you typically do **not** use PM2; instead you run a single Node process per container and let the platform handle restarts and scaling. The status board and `/api/health` work the same either way — PM2 is an optional convenience for standalone VMs or bare-metal servers.
 
+### OpenSky rate limiting behaviour
+
+- When the status board pings OpenSky (`/api/states/all`), it:
+  - **Uses OAuth2 bearer tokens** from the main flights code (`OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` in `server/.env`).
+  - If OpenSky returns **HTTP 429 Too Many Requests**, it reads the `X-Rate-Limit-Retry-After-Seconds` header and backs off further checks for that many seconds (converted to milliseconds). During this backoff the “OpenSky (flights)” pill will show **429 / backoff**, but the flights feature continues via `adsb.lol`.
+  - If the header is missing, a conservative default backoff of **10 minutes** is used.
+
