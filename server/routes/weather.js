@@ -41,10 +41,16 @@ const CACHE_MS = 10 * 60 * 1000; // 10 minutes (single-request cache)
 const ISLAND_CACHE_MS = 20 * 60 * 1000; // 20 minutes — island data refreshed every 20 min
 let cache = { key: null, data: null, ts: 0 };
 let islandCache = { ts: 0, data: null };
+let openMeteoRateLimitedUntil = 0;
 
 // --- Provider-specific fetch helpers ---
 
 async function fetchOpenMeteo(lat, lon) {
+  // Skip calls for a while after a 429 to avoid hammering the API
+  if (Date.now() < openMeteoRateLimitedUntil) {
+    return null;
+  }
+
   const url = new URL(OPEN_METEO_BASE);
   url.searchParams.set('latitude', lat);
   url.searchParams.set('longitude', lon);
@@ -57,6 +63,12 @@ async function fetchOpenMeteo(lat, lon) {
   try {
     const res = await fetch(url.toString(), { signal: controller.signal });
     clearTimeout(timeout);
+    if (res.status === 429) {
+      // Back off Open-Meteo for 10 minutes and let WeatherAPI/OpenWeather take over
+      openMeteoRateLimitedUntil = Date.now() + 10 * 60 * 1000;
+      console.warn('[Weather] Open-Meteo rate limited (429); backing off for 10 minutes');
+      return null;
+    }
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {

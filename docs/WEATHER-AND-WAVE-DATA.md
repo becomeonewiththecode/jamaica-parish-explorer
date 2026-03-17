@@ -13,6 +13,7 @@ This document describes how weather and wave (marine) data are collected, cached
 - **Data requested:** Current conditions only: `temperature_2m`, `relative_humidity_2m`, `weather_code`, `wind_speed_10m`, `wind_direction_10m`, `cloud_cover`
 - **Timezone:** `America/Jamaica`
 - **Use:** One request per parish (14 parishes), using fixed parish capital/representative coordinates (see **Parish coordinates** below). The `weather_code` (WMO) drives display: e.g. 0 = Clear, 1 = Mainly clear (sun icon), 2–3 = Partly cloudy / Overcast (cloud), 51–99 = rain/showers/thunderstorm (rain icon).
+- **Rate limiting behaviour:** When Open‑Meteo returns **HTTP 429 (Too Many Requests)**, the server backs off this provider for 10 minutes and **falls back to other providers** (WeatherAPI and OpenWeatherMap) for temperature/humidity/wind until the backoff window expires. This avoids hammering Open‑Meteo when its free tier is saturated.
 
 ### Open-Meteo Marine API (Wave height, direction, period)
 
@@ -20,7 +21,21 @@ This document describes how weather and wave (marine) data are collected, cached
 - **Endpoint:** `https://marine-api.open-meteo.com/v1/marine`
 - **Data requested:** Current: `wave_height`, `wave_direction`, `wave_period`
 - **Options:** `cell_selection=sea` so the API returns a sea grid cell (wave data is over water).
-- **Use:** One request per coastal point (13 points around Jamaica). Manchester has no coastline and has no wave point.
+- **Use:** One request per coastal point (13 points around Jamaica). Manchester has no coastline and has no wave point. There is currently **no secondary marine provider** wired in; if this API is rate limited or unavailable, wave data may be temporarily missing for some or all points.
+
+### WeatherAPI and OpenWeatherMap (current conditions & fallback)
+
+- **Providers:**  
+  - [WeatherAPI](https://www.weatherapi.com/) — requires `WEATHERAPI_KEY` in `server/.env`  
+  - [OpenWeatherMap](https://openweathermap.org/) — requires `OPENWEATHER_API_KEY` in `server/.env`
+- **Endpoints used:**  
+  - WeatherAPI: `https://api.weatherapi.com/v1/current.json?q={lat},{lon}&key=...`  
+  - OpenWeatherMap: `https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid=...`
+- **Use:** For each weather request (single point, parish, or island‑wide), the server queries **Open‑Meteo, WeatherAPI, and OpenWeatherMap in parallel**, normalizes their responses, and aggregates them:
+  - Temperatures are combined using the median across available providers.
+  - Humidity is averaged across available providers.
+  - Descriptions, wind, and cloud cover are taken from a representative provider.
+- **Fallback behaviour:** If Open‑Meteo is **rate limited (429)** or otherwise unavailable, only WeatherAPI and OpenWeatherMap are used in the aggregate for the next 10 minutes. If one of these fails or is misconfigured (e.g. OpenWeatherMap returns 401), the remaining providers are still used to compute island/parish conditions.
 
 ### Related external data sources (shown alongside weather/waves)
 
