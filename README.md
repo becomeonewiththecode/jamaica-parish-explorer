@@ -93,6 +93,7 @@ The dev server runs at **http://localhost:5173** with API requests proxied to th
   - `RAPIDAPI_KEY`, `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`
   - `AISSTREAM_API_KEY` (AISStream vessel layer)
   - `TRACKED_SHIP_MMSIS` (optional: comma-separated MMSIs to track globally, e.g. `311263000` for Adventure of the Seas; see `docs/VESSEL-DATA-AND-USAGE.md`)
+  - `ADMIN_RESTART_TOKEN` (optional: strong shared secret used by `POST /api/admin/restart` for PM2-based DIY remote restarts; see `docs/STATUS-BOARD.md` for details)
 - Frontend build-time config lives in `client/.env` (read by Vite at build; only `VITE_*` keys are exposed to the browser), e.g.:
   - `VITE_THUNDERFOREST_API_KEY`
 

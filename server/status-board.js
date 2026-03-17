@@ -342,7 +342,6 @@ app.get('/', (req, res) => {
     </div>
     <div class="pill">backend: <span id="api-host"></span></div>
   </header>
-  <p class="updated">This page pings the main API for flights, weather, waves, vessels, and cruise data every 15 seconds and shows whether each service is ONLINE or OFFLINE. It also checks external provider APIs and server processes.</p>
   <h2 style="font-size:1rem; margin-top:1.5rem;">Servers</h2>
   <div class="grid" id="grid-servers"></div>
   <h2 style="font-size:1rem; margin-top:1.5rem;">Internal services</h2>

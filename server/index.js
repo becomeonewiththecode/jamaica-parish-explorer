@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { exec } = require('child_process');
 const parishRoutes = require('./routes/parishes');
 const noteRoutes = require('./routes/notes');
 const placeRoutes = require('./routes/places');
@@ -46,6 +47,44 @@ app.get('/api/health', (req, res) => {
     uptime: process.uptime(),
     env: process.env.NODE_ENV || 'development',
     providers,
+  });
+});
+
+// Admin endpoint to trigger PM2 restarts (DIY remote control).
+// WARNING: This is powerful and must be protected with a strong secret token.
+// Set ADMIN_RESTART_TOKEN in the server .env and send it via the X-Admin-Token header.
+app.post('/api/admin/restart', (req, res) => {
+  const expected = process.env.ADMIN_RESTART_TOKEN;
+  const provided = req.headers['x-admin-token'];
+
+  if (!expected || !provided || provided !== expected) {
+    return res.status(403).json({ ok: false, error: 'Forbidden' });
+  }
+
+  const target = (req.body && req.body.target) || 'all';
+  let cmd;
+  if (target === 'api') {
+    cmd = 'pm2 restart jamaica-api';
+  } else if (target === 'status') {
+    cmd = 'pm2 restart jamaica-status';
+  } else {
+    cmd = 'pm2 restart all';
+  }
+
+  exec(cmd, (err, stdout, stderr) => {
+    if (err) {
+      return res.status(500).json({
+        ok: false,
+        error: err.message,
+        stderr: stderr,
+      });
+    }
+    res.json({
+      ok: true,
+      command: cmd,
+      stdout,
+      stderr,
+    });
   });
 });
 

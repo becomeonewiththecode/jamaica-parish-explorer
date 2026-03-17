@@ -75,6 +75,64 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
     });
     ```
 
+### Admin PM2 restart endpoint (DIY remote control)
+
+> ⚠️ **Warning:** This endpoint is powerful and should only be enabled if you understand the risks. It lets the API process ask PM2 to restart processes on the host. Always protect it with a strong shared secret and never expose it to untrusted clients.
+
+- **Endpoint**: `POST /api/admin/restart`
+- **Location**: `server/index.js`
+- **Usage**:
+
+  - Request headers:
+
+    ```http
+    X-Admin-Token: <your-ADMIN_RESTART_TOKEN-value>
+    Content-Type: application/json
+    ```
+
+  - Optional JSON body:
+
+    ```json
+    { "target": "api" }      // pm2 restart jamaica-api
+    { "target": "status" }   // pm2 restart jamaica-status
+    { "target": "all" }      // pm2 restart all (default)
+    ```
+
+- **How authentication works**:
+
+  - On the server, set a **strong, random** token in `server/.env`:
+
+    ```bash
+    ADMIN_RESTART_TOKEN=some-long-random-string-here
+    ```
+
+  - Each time you call `POST /api/admin/restart`, you must send the **same value** in the `X-Admin-Token` header.
+  - The route compares:
+
+    ```js
+    const expected = process.env.ADMIN_RESTART_TOKEN;
+    const provided = req.headers['x-admin-token'];
+    ```
+
+    - If `expected` is missing, or `provided` does not match, it returns `403 Forbidden` and does not run PM2.
+
+- **Generating a strong token** (examples):
+
+  - Using `openssl`:
+
+    ```bash
+    openssl rand -hex 32
+    # copy the output into server/.env as ADMIN_RESTART_TOKEN=...
+    ```
+
+  - Using Node.js:
+
+    ```bash
+    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+    ```
+
+  - Or generate a long random password in a password manager and paste it into `server/.env` as `ADMIN_RESTART_TOKEN=...`.
+
 - **NPM script**: `package.json`
 
   ```json
