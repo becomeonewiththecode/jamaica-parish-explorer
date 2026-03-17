@@ -2528,6 +2528,29 @@
   color: #b0c4de;
 }
 
+.port-ais-docked {
+  color: #6fcf97;
+  font-weight: 500;
+}
+
+.port-ais-not-docked {
+  color: #6c7a89;
+}
+
+.port-expected-not-docked {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 0.75rem;
+  color: #f0c674;
+  background: rgba(240, 198, 116, 0.12);
+  border-radius: 6px;
+  border-left: 3px solid #f0c674;
+}
+
+.port-expected-not-docked-icon {
+  margin-right: 4px;
+}
+
 .airport-history-list li {
   position: relative;
   padding-left: 14px;

@@ -16,7 +16,7 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Live flights** — scheduled arrivals/departures (AeroDataBox) and live radar (OpenSky, adsb.lol) for Jamaica airports; plane icons on the map with altitude-based coloring
 - **Airport detail** — full airport info and flight board, or flight-only view (when Live Flights is on) with Jamaica time and weather at the airport
 - **Weather and waves** — island-wide parish weather with centred glyph clusters (temperature, wind, cloud, rain, sun) for all 14 parishes at zoom 9–11, refreshed every 20 minutes when data changes, plus coastal wave data
-- **Vessel traffic** — live AIS-based vessel layer around Jamaica (AISStream.io) with ship icons, optional cruise-only filter, and ability to overlay flights, weather, and waves
+- **Vessel traffic** — live AIS-based vessel layer around Jamaica (AISStream.io) with ship icons, optional cruise-only filter, and ability to overlay flights, weather, and waves; port popup shows upcoming cruise calls with an AIS column (In port / not in port) and warns when a ship expected today does not report as docked
 - **Map base layers** — optional Thunderforest layers: **Transport** (roads, railways, transit), **Landscape** (terrain, nature, topography), **Neighbourhood** (streets, clear labels); one at a time in map controls (requires `VITE_THUNDERFOREST_API_KEY`)
 - **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
 
@@ -91,6 +91,7 @@ The dev server runs at **http://localhost:5173** with API requests proxied to th
   - `PORT`, `HOST`
   - `RAPIDAPI_KEY`, `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`
   - `AISSTREAM_API_KEY` (AISStream vessel layer)
+  - `TRACKED_SHIP_MMSIS` (optional: comma-separated MMSIs to track globally, e.g. `311263000` for Adventure of the Seas; see `docs/VESSEL-DATA-AND-USAGE.md`)
 - Frontend build-time config lives in `client/.env` (read by Vite at build; only `VITE_*` keys are exposed to the browser), e.g.:
   - `VITE_THUNDERFOREST_API_KEY`
 
