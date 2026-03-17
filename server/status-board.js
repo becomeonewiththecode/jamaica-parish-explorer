@@ -53,15 +53,9 @@ if (process.env.WEATHERAPI_KEY || process.env.WEATHER_API_KEY) {
   });
 }
 
-if (process.env.OPENWEATHER_API_KEY || process.env.OPEN_WEATHER_API_KEY) {
-  WEATHER_PROVIDER_ENDPOINTS.push({
-    id: 'openweather',
-    label: 'OpenWeatherMap',
-    url:
-      'https://api.openweathermap.org/data/2.5/weather?lat=18.0&lon=-77.0&appid=' +
-      encodeURIComponent(process.env.OPENWEATHER_API_KEY || process.env.OPEN_WEATHER_API_KEY),
-  });
-}
+// Default refresh interval for status board front-end (ms).
+// Can be overridden with STATUS_REFRESH_MS env var.
+const STATUS_REFRESH_MS = Number(process.env.STATUS_REFRESH_MS || 600000); // default 10 minutes
 
 // Flight provider endpoints (grouped under one external status)
 const FLIGHT_PROVIDER_ENDPOINTS = [
@@ -76,6 +70,8 @@ const FLIGHT_PROVIDER_ENDPOINTS = [
     url: 'https://api.adsb.lol/v2/lat/18.0/lon/-77.0/dist/50',
   },
 ];
+
+let openSkyRateLimitedUntil = 0;
 
 // External provider checks (third-party APIs)
 const EXTERNAL_CHECKS = [
@@ -140,6 +136,11 @@ function runExternalCheck(urlString) {
     } catch (e) {
       return resolve({ ok: false, error: 'invalid url', ms: 0 });
     }
+    // Simple 429 backoff for OpenSky to avoid constant red when rate limited
+    if (url.hostname.includes('opensky-network.org') && Date.now() < openSkyRateLimitedUntil) {
+      return resolve({ ok: false, code: 429, error: 'backoff', ms: 0 });
+    }
+
     const lib = url.protocol === 'https:' ? https : http;
     const req = lib.get(
       {
@@ -151,7 +152,44 @@ function runExternalCheck(urlString) {
       (res) => {
         const ok = res.statusCode >= 200 && res.statusCode < 300;
         res.resume();
+        if (url.hostname.includes('opensky-network.org') && res.statusCode === 429) {
+          // Back off OpenSky checks for 10 minutes
+          openSkyRateLimitedUntil = Date.now() + 10 * 60 * 1000;
+        }
         resolve({ ok, code: res.statusCode, ms: Date.now() - started });
+      }
+    );
+    req.on('error', (err) => {
+      resolve({ ok: false, error: err.message, ms: Date.now() - started });
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, error: 'timeout', ms: Date.now() - started });
+    });
+  });
+}
+
+function fetchApiHealth() {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const req = http.get(
+      { host: API_HOST, port: API_PORT, path: '/api/health', timeout: 8000 },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          let json;
+          try {
+            json = JSON.parse(body);
+          } catch (e) {
+            // ignore parse errors; json stays undefined
+          }
+          const ok = res.statusCode >= 200 && res.statusCode < 300;
+          resolve({ ok, code: res.statusCode, ms: Date.now() - started, body: json });
+        });
       }
     );
     req.on('error', (err) => {
@@ -168,6 +206,7 @@ app.get('/status.json', async (req, res) => {
   const results = {};
   const external = {};
   const servers = {};
+  const apiHealth = await fetchApiHealth();
   await Promise.all(
     CHECKS.map(async (c) => {
       if (c.id === 'cruise') {
@@ -192,25 +231,44 @@ app.get('/status.json', async (req, res) => {
       }
     })
   );
+
+  // Derive weather provider status from the API health endpoint, so we don't
+  // hit OpenWeather (or other providers) directly from the status board.
+  if (apiHealth && apiHealth.body && apiHealth.body.providers) {
+    const prov = apiHealth.body.providers;
+    const providerEntries = Object.entries(prov).map(([id, h]) => {
+      const label =
+        id === 'openweather'
+          ? 'OpenWeatherMap'
+          : id === 'weatherapi'
+          ? 'WeatherAPI'
+          : 'Open-Meteo';
+      const ok = !!h.lastOk;
+      return {
+        id,
+        label,
+        ok,
+        code: ok ? 200 : 500,
+        error: ok ? undefined : h.lastError || 'unhealthy',
+      };
+    });
+    if (providerEntries.length) {
+      const allOk = providerEntries.every((p) => p.ok);
+      external['weather-apis'] = {
+        ok: allOk,
+        code: allOk ? 200 : 500,
+        ms: apiHealth.ms,
+        providers: providerEntries,
+      };
+    }
+  }
+
   await Promise.all(
     EXTERNAL_CHECKS.map(async (c) => {
       if (c.id === 'weather-apis') {
-        // Group weather providers under one status entry
-        const perProvider = await Promise.all(
-          WEATHER_PROVIDER_ENDPOINTS.map(async (p) => {
-            const r = await runExternalCheck(p.url);
-            return { id: p.id, label: p.label, ...r };
-          })
-        );
-        const allOk = perProvider.every(p => p.ok);
-        const firstBad = perProvider.find(p => !p.ok);
-        external[c.id] = {
-          ok: allOk,
-          code: allOk ? 200 : (firstBad && firstBad.code) || 500,
-          ms: perProvider.reduce((max, p) => Math.max(max, p.ms || 0), 0),
-          error: allOk ? undefined : perProvider.map(p => `${p.label}:${p.ok ? 'OK' : (p.code || p.error || 'FAIL')}`).join(', '),
-          providers: perProvider,
-        };
+        // Weather provider status is derived from the main API's /api/health.
+        // Nothing to do here; external['weather-apis'] is populated above.
+        return;
       } else if (c.id === 'flight-apis') {
         // Group flight providers under one status entry
         const perProvider = await Promise.all(
@@ -458,7 +516,8 @@ app.get('/', (req, res) => {
       }
     }
     refresh();
-    setInterval(refresh, 15000);
+    // Front-end refresh interval (mirrors STATUS_REFRESH_MS on the server)
+    setInterval(refresh, ${STATUS_REFRESH_MS});
   </script>
 </body>
 </html>`);

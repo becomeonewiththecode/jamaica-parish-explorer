@@ -43,11 +43,29 @@ let cache = { key: null, data: null, ts: 0 };
 let islandCache = { ts: 0, data: null };
 let openMeteoRateLimitedUntil = 0;
 
+// In-memory provider health snapshot for status/monitoring.
+// Updated opportunistically whenever we call a provider.
+const providerHealth = {
+  'open-meteo': { lastOk: null, lastError: null, lastChecked: null },
+  weatherapi: { lastOk: null, lastError: null, lastChecked: null },
+  openweather: { lastOk: null, lastError: null, lastChecked: null },
+};
+
+function updateProviderHealth(source, ok, error) {
+  if (!providerHealth[source]) return;
+  providerHealth[source] = {
+    lastOk: !!ok,
+    lastError: ok ? null : (error || null),
+    lastChecked: new Date().toISOString(),
+  };
+}
+
 // --- Provider-specific fetch helpers ---
 
 async function fetchOpenMeteo(lat, lon) {
   // Skip calls for a while after a 429 to avoid hammering the API
   if (Date.now() < openMeteoRateLimitedUntil) {
+    updateProviderHealth('open-meteo', false, 'rate-limited-backoff');
     return null;
   }
 
@@ -67,19 +85,29 @@ async function fetchOpenMeteo(lat, lon) {
       // Back off Open-Meteo for 10 minutes and let WeatherAPI/OpenWeather take over
       openMeteoRateLimitedUntil = Date.now() + 10 * 60 * 1000;
       console.warn('[Weather] Open-Meteo rate limited (429); backing off for 10 minutes');
+      updateProviderHealth('open-meteo', false, 'status 429');
       return null;
     }
-    if (!res.ok) return null;
-    return await res.json();
+    if (!res.ok) {
+      updateProviderHealth('open-meteo', false, `status ${res.status}`);
+      return null;
+    }
+    const json = await res.json();
+    updateProviderHealth('open-meteo', true, null);
+    return json;
   } catch (err) {
     clearTimeout(timeout);
     console.error('Weather fetch error:', err.message);
+    updateProviderHealth('open-meteo', false, err.message);
     return null;
   }
 }
 
 async function fetchWeatherApi(lat, lon) {
-  if (!WEATHERAPI_KEY) return null;
+  if (!WEATHERAPI_KEY) {
+    updateProviderHealth('weatherapi', false, 'missing api key');
+    return null;
+  }
   const url = new URL(`${WEATHERAPI_BASE_URL.replace(/\/+$/, '')}/current.json`);
   url.searchParams.set('key', WEATHERAPI_KEY);
   url.searchParams.set('q', `${lat},${lon}`);
@@ -90,17 +118,26 @@ async function fetchWeatherApi(lat, lon) {
   try {
     const res = await fetch(url.toString(), { signal: controller.signal });
     clearTimeout(timeout);
-    if (!res.ok) return null;
-    return await res.json();
+    if (!res.ok) {
+      updateProviderHealth('weatherapi', false, `status ${res.status}`);
+      return null;
+    }
+    const json = await res.json();
+    updateProviderHealth('weatherapi', true, null);
+    return json;
   } catch (err) {
     clearTimeout(timeout);
     console.error('WeatherAPI fetch error:', err.message);
+    updateProviderHealth('weatherapi', false, err.message);
     return null;
   }
 }
 
 async function fetchOpenWeather(lat, lon) {
-  if (!OPENWEATHER_API_KEY) return null;
+  if (!OPENWEATHER_API_KEY) {
+    updateProviderHealth('openweather', false, 'missing api key');
+    return null;
+  }
   const url = new URL(`${OPENWEATHER_BASE_URL.replace(/\/+$/, '')}/data/2.5/weather`);
   url.searchParams.set('lat', lat);
   url.searchParams.set('lon', lon);
@@ -113,11 +150,17 @@ async function fetchOpenWeather(lat, lon) {
   try {
     const res = await fetch(url.toString(), { signal: controller.signal });
     clearTimeout(timeout);
-    if (!res.ok) return null;
-    return await res.json();
+    if (!res.ok) {
+      updateProviderHealth('openweather', false, `status ${res.status}`);
+      return null;
+    }
+    const json = await res.json();
+    updateProviderHealth('openweather', true, null);
+    return json;
   } catch (err) {
     clearTimeout(timeout);
     console.error('OpenWeather fetch error:', err.message);
+    updateProviderHealth('openweather', false, err.message);
     return null;
   }
 }
@@ -569,5 +612,10 @@ async function refreshWeatherAndWaves() {
 // Run on load and every hour
 refreshWeatherAndWaves();
 setInterval(refreshWeatherAndWaves, REFRESH_INTERVAL_MS);
+
+// Expose provider health snapshot for /api/health and status board.
+router.getProviderHealth = function getProviderHealth() {
+  return providerHealth;
+};
 
 module.exports = router;

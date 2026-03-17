@@ -19,7 +19,7 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Vessel traffic** — live AIS-based vessel layer around Jamaica (AISStream.io) with ship icons, optional cruise-only filter, and ability to overlay flights, weather, and waves; port popup shows upcoming cruise calls with an AIS column (In port / not in port) and warns when a ship expected today does not report as docked
 - **Map base layers** — optional Thunderforest layers: **Transport** (roads, railways, transit), **Landscape** (terrain, nature, topography), **Neighbourhood** (streets, clear labels); one at a time in map controls (requires `VITE_THUNDERFOREST_API_KEY`)
 - **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
- - **Status board** — a small dashboard on port `5555` that checks API health, flights, weather, waves, vessels, and cruise schedule endpoints
+- **Status board** — a small dashboard on port `5555` that checks API health, flights, weather, waves, vessels, and cruise schedule endpoints. Weather provider health (Open‑Meteo, WeatherAPI, OpenWeather) is derived from the backend's `/api/health` response instead of calling those providers directly from the board, which keeps external API usage centralized and cache‑friendly.
 
 ## Tech Stack
 

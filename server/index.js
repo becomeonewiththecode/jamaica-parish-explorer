@@ -37,10 +37,15 @@ app.use('/api/ports', portCruiseRoutes);
 
 // Simple health endpoint for status board / monitoring
 app.get('/api/health', (req, res) => {
+  const providers =
+    typeof weatherRoutes.getProviderHealth === 'function'
+      ? weatherRoutes.getProviderHealth()
+      : undefined;
   res.json({
     ok: true,
     uptime: process.uptime(),
     env: process.env.NODE_ENV || 'development',
+    providers,
   });
 });
 

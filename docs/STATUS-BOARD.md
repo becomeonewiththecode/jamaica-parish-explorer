@@ -47,6 +47,7 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
     - `STATUS_PORT` (default `5555`) — port for the status board.
     - `API_HOST` (default `localhost`) — where the main API is reachable.
     - `API_PORT` (default `3001`) — port for the main API.
+    - `STATUS_REFRESH_MS` (default `600000`) — how often the browser UI refreshes `/status.json` (in ms). Use this to throttle how often the board polls the API.
 
 ### Implementation details
 
@@ -55,7 +56,10 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
   - Uses Node's `http` module to call each backend endpoint with an 8s timeout.
   - Exposes:
     - `GET /status.json` — full JSON snapshot of all checks.
-    - `GET /` — minimal HTML UI with auto‑refresh every 15 seconds.
+    - `GET /` — minimal HTML UI with auto‑refresh every `STATUS_REFRESH_MS` milliseconds (default 10 minutes).
+  - For **weather providers**, the status board no longer calls OpenWeather (or other weather APIs) directly. Instead it:
+    - Calls the main API's `GET /api/health` once per refresh.
+    - Uses the `providers` object in that response to render the "Weather providers" card (Open‑Meteo, WeatherAPI, OpenWeather) so provider health reflects the internal service state and cache.
 
 - **Health endpoint**: `server/index.js`
   - Adds:
@@ -66,6 +70,7 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
         ok: true,
         uptime: process.uptime(),
         env: process.env.NODE_ENV || 'development',
+        providers, // optional: weather provider health snapshot from routes/weather.js
       });
     });
     ```
