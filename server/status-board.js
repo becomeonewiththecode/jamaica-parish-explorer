@@ -150,17 +150,26 @@ function runExternalCheck(urlString) {
         timeout: 8000,
       },
       (res) => {
-        const ok = res.statusCode >= 200 && res.statusCode < 300;
-        // For OpenSky, honor X-Rate-Limit-Retry-After-Seconds if present so we don't hammer the API.
+        const startedAt = started;
+        const base = { ms: Date.now() - startedAt, code: res.statusCode };
+        // For OpenSky, honor X-Rate-Limit-Retry-After-Seconds if present so we don't hammer the API,
+        // and surface that information in the status board error text.
         if (url.hostname.includes('opensky-network.org') && res.statusCode === 429) {
           const retryAfter = parseInt(res.headers['x-rate-limit-retry-after-seconds'] || '0', 10);
           const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
             ? retryAfter * 1000
             : 10 * 60 * 1000; // fallback: 10 minutes
           openSkyRateLimitedUntil = Date.now() + delayMs;
+          const hours = retryAfter > 0 ? (retryAfter / 3600).toFixed(1) : null;
+          const errorText = hours
+            ? `429 (retry after ~${hours}h)`
+            : '429 (rate limited, backoff)';
+          res.resume();
+          return resolve({ ok: false, ...base, error: errorText });
         }
+        const ok = res.statusCode >= 200 && res.statusCode < 300;
         res.resume();
-        resolve({ ok, code: res.statusCode, ms: Date.now() - started });
+        resolve({ ok, ...base });
       }
     );
     req.on('error', (err) => {

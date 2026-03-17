@@ -24,7 +24,10 @@ Flight data comes from two external APIs, each covering different airports:
 - **Token endpoint:** `https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token`
 - **API endpoint:** `https://opensky-network.org/api/states/all?lamin=...&lamax=...&lomin=...&lomax=...`
 - **Fallback role:** If AeroDataBox fails entirely, OpenSky is also used as a Jamaica-wide fallback (bounding box covering the full island)
-- **Note:** Caribbean ADS-B receiver coverage is sparse — OpenSky may return zero aircraft even when flights are active
+- **Rate limiting / 429 handling:**
+  - For **flight data** (in `server/routes/flights.js`), OpenSky is treated as a **secondary source** behind adsb.lol, and all calls include the bearer token. If OpenSky returns **HTTP 429**, the flights code simply treats the response as empty and continues using adsb.lol, so the UI stays live even when OpenSky is temporarily unavailable.
+  - For the **status board** (in `server/status-board.js`), when the OpenSky check returns **429**, the code now reads the `X-Rate-Limit-Retry-After-Seconds` header and backs off further checks for that many seconds. During this period, the "OpenSky (flights)" pill shows an error like `429 (retry after ~20.7h)` to reflect OpenSky’s own retry advice.
+- **Note:** Caribbean ADS-B receiver coverage is sparse — OpenSky may return zero aircraft even when flights are active; adsb.lol is used as the primary live radar source.
 
 ### adsb.lol (Tertiary — Live Radar, Free)
 - **Provider:** adsb.lol (open ADS-B data aggregator)
