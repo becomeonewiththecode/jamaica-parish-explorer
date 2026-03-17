@@ -165,3 +165,29 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
   }
   ```
 
+### Running API + status board under PM2
+
+Once you have PM2 installed globally (`npm install -g pm2`), you can use the provided `ecosystem.config.js` at the project root:
+
+```bash
+cd ~/Documents/cursor/project_jamaica
+
+# Start API and status board under PM2
+pm2 start ecosystem.config.js
+
+# Optional: see processes
+pm2 list
+
+# Optional: persist across reboots
+pm2 save
+pm2 startup   # follow the printed instructions once
+```
+
+With this in place:
+
+- `jamaica-api` runs `server/index.js` on port `3001`.
+- `jamaica-status` runs `server/status-board.js` on port `5555`.
+- The `/api/admin/restart` endpoint can safely call `pm2 restart jamaica-api`, `pm2 restart jamaica-status`, or `pm2 restart all` without depending on an open terminal session.
+
+> **Containerized / orchestrated environments:** In Docker or Kubernetes you typically do **not** use PM2; instead you run a single Node process per container and let the platform handle restarts and scaling. The status board and `/api/health` work the same either way — PM2 is an optional convenience for standalone VMs or bare-metal servers.
+

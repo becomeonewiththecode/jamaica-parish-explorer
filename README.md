@@ -73,7 +73,7 @@ npm run fetch:places
 npm run enrich:places
 ```
 
-### Running
+### Running (local or VM)
 
 ```bash
 # Development — ensures server (3001), client (5173), and status board (5555) are running
@@ -82,6 +82,11 @@ npm run init
 # Production build
 npm run build
 npm start
+
+# Optional: run API + status board under PM2 (on a bare VM/server)
+# (after deploying code and installing dependencies on the server, and setting NODE_ENV=production)
+pm2 start ecosystem.config.js
+pm2 save
 ```
 
 The dev server runs at **http://localhost:5173** with API requests proxied to the Express server on port 3001.
@@ -98,6 +103,15 @@ The dev server runs at **http://localhost:5173** with API requests proxied to th
   - `VITE_THUNDERFOREST_API_KEY`
 
 `AISSTREAM_API_KEY` is **server-only** and should not be placed in `client/.env`.
+
+### Deployment notes (Docker, VMs, Kubernetes)
+
+- **PM2 is optional** and primarily useful on a **single VM / bare-metal server** where you want Node processes (API + status board) to stay up independently of any shell session.
+- In **Docker** or **Kubernetes**, the recommended pattern is:
+  - Run one Node process per container (no PM2).
+  - Let the orchestrator (Docker, docker-compose, Kubernetes, systemd, etc.) handle restarts and scaling.
+  - You can still keep `ecosystem.config.js` and the `/api/admin/restart` endpoint, but they are not required in those environments.
+- The core app (Express API + built React frontend) does **not depend** on PM2: it can be started with plain `node server/index.js` or `npm start` in any environment.
 
 ### Optional: Map base layers (Transport, Landscape, Neighbourhood)
 
