@@ -13,6 +13,30 @@ function parseCruiseEtaToDate(etaLocalText) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+// Normalize ship name for matching (schedule "Adventure of the Seas" vs AIS "ADVENTURE OF THE SEAS")
+function normalizeShipName(name) {
+  if (!name || typeof name !== 'string') return '';
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// True if schedule name likely matches a docked vessel name (AIS can drop trailing S, etc.)
+function isShipDocked(scheduleShipName, dockedShips) {
+  const norm = normalizeShipName(scheduleShipName);
+  if (!norm) return false;
+  for (const d of dockedShips) {
+    const dockedNorm = normalizeShipName(d.name);
+    if (!dockedNorm) continue;
+    // Match if one contains the other (handles "ADVENTURE OF THE SEA" vs "Adventure of the Seas")
+    if (dockedNorm.includes(norm) || norm.includes(dockedNorm)) return true;
+    // Or exact match after normalizing
+    if (dockedNorm === norm) return true;
+  }
+  return false;
+}
+
 function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] }) {
   const { pos, onMouseDown } = useDraggable();
   const [weather, setWeather] = useState(null);
@@ -64,6 +88,17 @@ function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] 
     type: v.shipType || 'Vessel',
     sog: typeof v.sog === 'number' ? v.sog : null,
   }));
+
+  // Upcoming calls whose ETA is today but do not report as docked in AIS
+  const expectedTodayNotDocked = monthFiltered.filter((c) => {
+    if (!c._eta) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const etaDay = new Date(c._eta);
+    etaDay.setHours(0, 0, 0, 0);
+    const isEtaToday = etaDay.getTime() === today.getTime();
+    return isEtaToday && !isShipDocked(c.shipName, dockedShips);
+  });
 
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${port.lat},${port.lon}&travelmode=driving`;
 
@@ -157,18 +192,30 @@ function PortPopup({ port, onClose, anchorPos, nearbyVessels = [], cruises = [] 
                     <th>Ship</th>
                     <th>Line</th>
                     <th>Arrival</th>
+                    <th>AIS</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {monthFiltered.map((c, idx) => (
-                    <tr key={idx}>
-                      <td>{c.shipName}</td>
-                      <td>{c.operator || '—'}</td>
-                      <td>{c.etaLocalText || '—'}</td>
-                    </tr>
-                  ))}
+                  {monthFiltered.map((c, idx) => {
+                    const docked = isShipDocked(c.shipName, dockedShips);
+                    return (
+                      <tr key={idx}>
+                        <td>{c.shipName}</td>
+                        <td>{c.operator || '—'}</td>
+                        <td>{c.etaLocalText || '—'}</td>
+                        <td title={docked ? 'Vessel is within 3 km of this port (AIS)' : 'Not reporting in port (AIS)'}>
+                          {docked ? <span className="port-ais-docked">In port</span> : <span className="port-ais-not-docked">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+          )}
+          {expectedTodayNotDocked.length > 0 && (
+            <div className="port-expected-not-docked" role="status">
+              <span className="port-expected-not-docked-icon">⚠</span> {expectedTodayNotDocked.length} ship{expectedTodayNotDocked.length !== 1 ? 's' : ''} expected today not yet reporting in port (AIS): {expectedTodayNotDocked.map((c) => c.shipName).join(', ')}.
             </div>
           )}
 

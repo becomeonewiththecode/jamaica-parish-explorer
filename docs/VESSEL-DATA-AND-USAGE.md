@@ -55,6 +55,8 @@ AISStream.io sends a continuous stream of AIS messages for vessels that are broa
 
 If `AISSTREAM_API_KEY` is not set, the vessels route is available but returns an empty list and logs a warning; no WebSocket connection is opened.
 
+- **Optional env var:** `TRACKED_SHIP_MMSIS` — comma-separated list of MMSI numbers (e.g. `311263000` for Adventure of the Seas). When set, the server opens a second AISStream connection subscribed to a **global bounding box** with `FiltersShipMMSI` set to these MMSIs. Positions for these vessels are then available from `/api/vessels` wherever the ship is, so you can locate them before they enter the Jamaica box.
+
 ### WebSocket subscription
 
 On first request to `/api/vessels`, the server ensures a single shared WebSocket is connected:
@@ -256,11 +258,20 @@ When `showVessels` is `true` and no Thunderforest base layer is hiding items:
     - Hidden when both counts are zero (no upcoming calls and no vessels in port).
     - Tooltip shows the port name and both counts: “Expected: X · In port (AIS): Y”.
 
+- **Dock verification (schedule vs AIS):**
+  - A vessel is considered **docked** at a port if its AIS position is within **3 km** of that port's coordinates (computed client-side from `/api/vessels` and port lat/lon).
+  - The port popup compares **upcoming cruise calls** (from CruiseDig / CruiseMapper) with **ships currently in port (AIS)** by matching ship names: normalized (lowercase, collapsed spaces), with a "contains" check so minor naming differences (e.g. "Adventure of the Sea" vs "Adventure of the Seas") still match.
+  - Each upcoming call gets an AIS status: **In port** if a matching vessel is within 3 km, **—** otherwise. If a call has ETA **today** and no matching docked vessel, a warning is displayed so users can see when an expected ship is not yet reporting in port.
+
 - **Port detail popup:**
   - Clicking a port icon opens `PortPopup` (reusing the airport popup layout) and shows:
     - Port name, city, and type badge.
     - Two badges mirroring the status pill: `🛬 Expected X` and `🛥 In port Y`.
-    - An **“Upcoming cruise calls”** section listing up to 6 upcoming cruises with ship name, operator (when available), ETA text, and data source (`CruiseDig` or `CruiseMapper`).
+    - An **“Upcoming cruise calls”** section listing upcoming cruises (current month, future ETAs) with ship name, operator (when available), ETA text, and an **AIS** column:
+      - **“In port”** — a vessel in the AIS “ships currently in port” list matches this scheduled ship by name (normalized, case-insensitive; handles minor variants like “Adventure of the Sea” vs “Adventure of the Seas”), so the ship is considered **docked** (within 3 km of the port).
+      - **“—”** — no matching AIS vessel; the ship does **not** report as docked.
+    - If any ship with an ETA **today** does not match a docked vessel, a warning is shown: *“N ship(s) expected today not yet reporting in port (AIS): Ship1, Ship2.”*
+    - A **“Ships currently in port (AIS)”** section listing vessels within 3 km of the port (name, type, speed).
     - A directions button linking to Google Maps for the port coordinates.
 
 ### Interaction with other layers

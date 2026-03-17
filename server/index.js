@@ -37,9 +37,12 @@ app.use('/api/ports', portCruiseRoutes);
 
 // Production: serve React build
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
+  const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
+  app.use(express.static(clientDistPath));
+
+  // Catch-all for SPA routes (use regex to avoid path-to-regexp '*' issues)
+  app.get(/.*/, (req, res) => {
+    res.sendFile(path.join(clientDistPath, 'index.html'));
   });
 }
 

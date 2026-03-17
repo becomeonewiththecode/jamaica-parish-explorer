@@ -495,13 +495,24 @@
   height: 28px;
   border-radius: 16px;
   background: rgba(10, 30, 48, 0.95);
-  border: 1px solid #ffca28;
+  border: 2px solid #ffca28;
   color: #fff8e1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   box-shadow: 0 0 8px rgba(255, 202, 40, 0.6);
+}
+
+.port-icon-inner.port-icon-cruise {
+  border-color: #ffca28;
+  box-shadow: 0 0 10px rgba(255, 202, 40, 0.9);
+}
+
+.port-icon-inner.port-icon-marina {
+  border-color: #26c6da;
+  box-shadow: 0 0 8px rgba(38, 198, 218, 0.8);
+  font-size: 1rem;
 }
 
 .port-status-leaflet-icon {
@@ -2515,6 +2526,29 @@
 
 .cruise-table td {
   color: #b0c4de;
+}
+
+.port-ais-docked {
+  color: #6fcf97;
+  font-weight: 500;
+}
+
+.port-ais-not-docked {
+  color: #6c7a89;
+}
+
+.port-expected-not-docked {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 0.75rem;
+  color: #f0c674;
+  background: rgba(240, 198, 116, 0.12);
+  border-radius: 6px;
+  border-left: 3px solid #f0c674;
+}
+
+.port-expected-not-docked-icon {
+  margin-right: 4px;
 }
 
 .airport-history-list li {
