@@ -133,6 +133,29 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
 
   - Or generate a long random password in a password manager and paste it into `server/.env` as `ADMIN_RESTART_TOKEN=...`.
 
+- **Example: restart API and status board from your machine**:
+
+  ```bash
+  # Replace <ADMIN_RESTART_TOKEN> with the exact value from server/.env
+  # and <host> with your server hostname or IP.
+  curl -X POST http://<host>:3001/api/admin/restart \
+    -H "Content-Type: application/json" \
+    -H "X-Admin-Token: <ADMIN_RESTART_TOKEN>" \
+    -d '{"target":"all"}'
+
+  # Restart only the API process (pm2 restart jamaica-api):
+  curl -X POST http://<host>:3001/api/admin/restart \
+    -H "Content-Type: application/json" \
+    -H "X-Admin-Token: <ADMIN_RESTART_TOKEN>" \
+    -d '{"target":"api"}'
+
+  # Restart only the status board process (pm2 restart jamaica-status):
+  curl -X POST http://<host>:3001/api/admin/restart \
+    -H "Content-Type: application/json" \
+    -H "X-Admin-Token: <ADMIN_RESTART_TOKEN>" \
+    -d '{"target":"status"}'
+  ```
+
 - **NPM script**: `package.json`
 
   ```json
