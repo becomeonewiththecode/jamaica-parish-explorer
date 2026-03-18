@@ -565,7 +565,8 @@
 }
 
 .map-top-cell.search-cell .search-bar {
-  width: 100%;
+  width: 280px;
+  max-width: 280px;
   min-width: 0;
 }
 
@@ -2208,7 +2209,7 @@
 
 /* SEARCH BAR — inside .map-top-strip, centered with controls */
 .search-bar {
-  width: 305px;
+  width: 280px;
   flex-shrink: 0;
 }
 
