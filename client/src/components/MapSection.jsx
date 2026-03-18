@@ -465,6 +465,20 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [islandWaves, setIslandWaves] = useState([]);
   const [showVessels, setShowVessels] = useState(false);
   const [vessels, setVessels] = useState([]);
+  const liveDataOn = showFlights || showWeatherView || showWavesView || showVessels;
+  const toggleAllLiveData = () => {
+    if (liveDataOn) {
+      setShowFlights(false);
+      setShowWeatherView(false);
+      setShowWavesView(false);
+      setShowVessels(false);
+    } else {
+      setShowFlights(true);
+      setShowWeatherView(true);
+      setShowWavesView(true);
+      setShowVessels(true);
+    }
+  };
   // Base map layer: one of standard OSM, or Thunderforest Transport / Landscape / Neighbourhood
   const [baseLayer, setBaseLayer] = useState('standard');
   const [portCruisesById, setPortCruisesById] = useState({});
@@ -872,32 +886,11 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
           {/* Cell 3: Flight, Weather, Waves, Map layer */}
           <div className="map-top-cell toggles-cell">
             <button
-              className={`flight-toggle-btn${showFlights ? ' flight-toggle-active' : ''}`}
-              onClick={() => setShowFlights(!showFlights)}
-              title={showFlights ? 'Hide live flights' : 'Show live flights'}
+              className={`flight-toggle-btn${liveDataOn ? ' flight-toggle-active' : ''}`}
+              onClick={toggleAllLiveData}
+              title={liveDataOn ? 'Hide all live data (flights, weather, waves, vessels)' : 'Show all live data (flights, weather, waves, vessels)'}
             >
-              ✈ Live Flights <span className="toggle-value">{showFlights ? 'ON' : 'OFF'}</span>
-            </button>
-            <button
-              className={`flight-toggle-btn weather-view-btn${showWeatherView ? ' flight-toggle-active' : ''}`}
-              onClick={() => setShowWeatherView(prev => !prev)}
-              title={showWeatherView ? 'Hide island weather' : 'Show island weather (zoom 9–11, no places)'}
-            >
-              ☀ Weather <span className="toggle-value">{showWeatherView ? 'ON' : 'OFF'}</span>
-            </button>
-            <button
-              className={`flight-toggle-btn waves-view-btn${showWavesView ? ' flight-toggle-active' : ''}`}
-              onClick={() => setShowWavesView(prev => !prev)}
-              title={showWavesView ? 'Hide wave conditions' : 'Show wave height & direction (zoom 9–11)'}
-            >
-              🌊 Waves <span className="toggle-value">{showWavesView ? 'ON' : 'OFF'}</span>
-            </button>
-            <button
-              className={`flight-toggle-btn vessel-toggle-btn${showVessels ? ' flight-toggle-active' : ''}`}
-              onClick={() => setShowVessels(prev => !prev)}
-              title={showVessels ? 'Hide vessel traffic' : 'Show vessels and cruise ships around Jamaica'}
-            >
-              🛳 Vessels <span className="toggle-value">{showVessels ? 'ON' : 'OFF'}</span>
+              ✈ Live Data <span className="toggle-value">{liveDataOn ? 'ON' : 'OFF'}</span>
             </button>
             {hasThunderforestKey ? (
               <select
