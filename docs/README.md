@@ -2,6 +2,19 @@
 
 This folder contains reference and architecture docs for the Jamaica Parish Explorer backend, status board, and data integrations.
 
+## Table of Contents
+
+- [API reference](./API-REFERENCE.md)
+- [Admin site](./ADMIN-SITE.md)
+- [Status board](./STATUS-BOARD.md)
+- [Status board diagram](./STATUS-BOARD-DIAGRAM.md)
+- [Weather and wave data](./WEATHER-AND-WAVE-DATA.md)
+- [Weather and waves diagram](./WEATHER-WAVES-DIAGRAM.md)
+- [Flight data](./FLIGHT-DATA.md)
+- [Flight data diagram](./FLIGHT-DATA-DIAGRAM.md)
+- [Vessel data and usage](./VESSEL-DATA-AND-USAGE.md)
+- [Vessel data diagram](./VESSEL-DATA-DIAGRAM.md)
+
 ### API reference
 
 - [`API-REFERENCE.md`](./API-REFERENCE.md) — complete reference for all 24 API endpoints with parameters, responses, and usage. Interactive Swagger docs are served at `/api/docs`.
