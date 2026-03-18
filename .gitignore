@@ -8,3 +8,5 @@ jamaiaca.md
 jamaica.md
 reports/
 .claude/
+.cursor/
+server/parish_data.sqlite
