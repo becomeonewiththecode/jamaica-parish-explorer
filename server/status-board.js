@@ -58,7 +58,7 @@ if (process.env.WEATHERAPI_KEY || process.env.WEATHER_API_KEY) {
 
 // Default refresh interval for status board front-end (ms).
 // Can be overridden with STATUS_REFRESH_MS env var.
-const STATUS_REFRESH_MS = Number(process.env.STATUS_REFRESH_MS || 600000); // default 10 minutes
+const STATUS_REFRESH_MS = Number(process.env.STATUS_REFRESH_MS || 60000); // default 1 minute
 
 // All flight provider statuses are derived from /api/health to avoid extra API calls.
 
@@ -438,7 +438,10 @@ app.get('/', (req, res) => {
       <h1>Jamaica Explorer – Status Board</h1>
       <div class="updated" id="updated"></div>
     </div>
-    <div class="pill">backend: <span id="api-host"></span></div>
+    <div style="display:flex; align-items:center; gap:0.75rem;">
+      <div class="pill">backend: <span id="api-host"></span></div>
+      <div id="countdown" class="pill" style="min-width:5.5rem; text-align:center;"></div>
+    </div>
   </header>
   <h2 style="font-size:1rem; margin-top:1.5rem;">Servers</h2>
   <div id="grid-servers" style="margin-top:1rem;"></div>
@@ -715,9 +718,20 @@ app.get('/', (req, res) => {
         document.getElementById('updated').textContent = 'Status fetch failed: ' + e.message;
       }
     }
-    refresh();
-    // Front-end refresh interval (mirrors STATUS_REFRESH_MS on the server)
-    setInterval(refresh, ${STATUS_REFRESH_MS});
+    var REFRESH_MS = ${STATUS_REFRESH_MS};
+    var nextRefreshAt = Date.now() + REFRESH_MS;
+    function updateCountdown() {
+      var remaining = Math.max(0, Math.round((nextRefreshAt - Date.now()) / 1000));
+      var el = document.getElementById('countdown');
+      if (el) el.textContent = 'refresh ' + remaining + 's';
+    }
+    function doRefresh() {
+      refresh();
+      nextRefreshAt = Date.now() + REFRESH_MS;
+    }
+    doRefresh();
+    setInterval(doRefresh, REFRESH_MS);
+    setInterval(updateCountdown, 1000);
   </script>
 </body>
 </html>`);

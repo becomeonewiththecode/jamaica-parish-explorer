@@ -79,7 +79,7 @@ Each section title uses a traffic-light colour scheme:
     - `STATUS_HOST` (default `0.0.0.0`) — bind address; use `0.0.0.0` so the board is reachable on your LAN (e.g. `http://10.0.0.205:5555/`).
     - `API_HOST` (default `localhost`) — where the main API is reachable.
     - `API_PORT` (default `3001`) — port for the main API.
-    - `STATUS_REFRESH_MS` (default `600000`) — how often the browser UI refreshes `/status.json` (in ms). Use this to throttle how often the board polls the API.
+    - `STATUS_REFRESH_MS` (default `60000` / 1 minute) — how often the browser UI refreshes `/status.json` (in ms).
 
 ### Implementation details
 
@@ -88,7 +88,7 @@ Each section title uses a traffic-light colour scheme:
   - Uses Node's `http` module to call each backend endpoint with an 8s timeout.
   - Exposes:
     - `GET /status.json` — full JSON snapshot of all checks.
-    - `GET /` — minimal HTML UI with auto‑refresh every `STATUS_REFRESH_MS` milliseconds (default 10 minutes).
+    - `GET /` — minimal HTML UI with auto‑refresh every `STATUS_REFRESH_MS` milliseconds (default 1 minute).
   - For **weather providers** and **flight providers**, the status board does **not** call external APIs directly. Instead it:
     - Calls the main API's `GET /api/health` once per refresh.
     - Uses the `providers` object (weather) and `flightProviders` object (flights) in that response to render the provider cards, so status reflects the internal service state and cache without consuming API quotas or rate limits.
