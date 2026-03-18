@@ -69,14 +69,6 @@ let islandCache = { ts: 0, data: null };
 let openMeteoRateLimitedUntil = 0;
 
 // Restore island and wave caches from disk so a restart doesn't trigger unnecessary API calls.
-const _persisted = loadPersistedCache();
-if (_persisted) {
-  if (_persisted.island && _persisted.island.data && Date.now() - _persisted.island.ts < ISLAND_CACHE_MS) {
-    islandCache = { ts: _persisted.island.ts, data: _persisted.island.data };
-    console.log('[Weather] Restored island cache from disk (' + islandCache.data.length + ' parishes, age ' + Math.round((Date.now() - islandCache.ts) / 1000) + 's)');
-  }
-}
-
 // In-memory provider health snapshot for status/monitoring.
 // Updated opportunistically whenever we call a provider.
 const providerHealth = {
@@ -88,6 +80,19 @@ const providerHealth = {
 const waveProviderHealth = {
   'open-meteo-marine': { lastOk: null, lastError: null, lastChecked: null },
 };
+
+const _persisted = loadPersistedCache();
+if (_persisted) {
+  if (_persisted.island && _persisted.island.data && Date.now() - _persisted.island.ts < ISLAND_CACHE_MS) {
+    islandCache = { ts: _persisted.island.ts, data: _persisted.island.data };
+    console.log('[Weather] Restored island cache from disk (' + islandCache.data.length + ' parishes, age ' + Math.round((Date.now() - islandCache.ts) / 1000) + 's)');
+    // Mark weather providers as ok since the cached data was fetched successfully before restart
+    const restoredTs = new Date(_persisted.island.ts).toISOString();
+    for (const key of Object.keys(providerHealth)) {
+      providerHealth[key] = { lastOk: true, lastError: null, lastChecked: restoredTs };
+    }
+  }
+}
 
 function updateWaveProviderHealth(ok, error) {
   waveProviderHealth['open-meteo-marine'] = {
@@ -466,6 +471,7 @@ let waveCache = { ts: 0, data: null };
 // Restore wave cache from disk
 if (_persisted && _persisted.wave && _persisted.wave.data && Date.now() - _persisted.wave.ts < WAVE_CACHE_MS) {
   waveCache = { ts: _persisted.wave.ts, data: _persisted.wave.data };
+  waveProviderHealth['open-meteo-marine'] = { lastOk: true, lastError: null, lastChecked: new Date(_persisted.wave.ts).toISOString() };
   console.log('[Weather] Restored wave cache from disk (' + waveCache.data.length + ' points, age ' + Math.round((Date.now() - waveCache.ts) / 1000) + 's)');
 }
 

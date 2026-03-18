@@ -324,19 +324,7 @@ function dashboardPage() {
 
     async function doRestart(target) {
       if (target === 'all' && !confirm('Restart ALL PM2 processes? This will briefly interrupt all services.')) return;
-      if (target === 'admin') {
-        // Admin restart: use PM2 directly since restarting self via API proxy won't return a response
-        try {
-          var res = await fetch('/api/restart', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ target: 'admin' }),
-          });
-        } catch (e) { /* expected — the process restarts */ }
-        showToast('Admin restart initiated — reloading in 3s...', true);
-        setTimeout(function() { location.reload(); }, 3000);
-        return;
-      }
+      var selfRestart = (target === 'admin' || target === 'all');
       var btns = document.querySelectorAll('.restart-btn');
       btns.forEach(function(b) { b.disabled = true; });
       try {
@@ -352,10 +340,15 @@ function dashboardPage() {
           showToast('Restart failed: ' + (data.error || 'unknown error'), false);
         }
       } catch (e) {
-        showToast('Restart request failed: ' + e.message, false);
+        // Connection errors are expected when restarting — the target process dies mid-request
+        showToast('Restart ' + target + ' initiated (process restarting)', true);
       }
       btns.forEach(function(b) { b.disabled = false; });
-      setTimeout(refreshPm2, 2000);
+      if (selfRestart) {
+        setTimeout(function() { location.reload(); }, 3000);
+      } else {
+        setTimeout(refreshPm2, 2000);
+      }
     }
 
     refreshPm2();

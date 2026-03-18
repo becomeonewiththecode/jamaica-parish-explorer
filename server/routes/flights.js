@@ -288,6 +288,10 @@ if (_persistedFlights && _persistedFlights.ts) {
     for (const f of flights) { f.dataSource = 'scheduled'; }
     cachedScheduledFlights = flights;
     cachedScheduledSources = ['aerodatabox'];
+    // Mark AeroDataBox and RapidAPI as ok since cached data was fetched successfully before restart
+    const restoredTs = new Date(_persistedFlights.ts).toISOString();
+    flightProviderHealth.aerodatabox = { lastOk: true, lastError: null, lastChecked: restoredTs };
+    flightProviderHealth.rapidapi = { lastOk: true, lastError: null, lastChecked: restoredTs };
     const byAirport = Object.entries(cachedScheduledByAirport).map(([iata, list]) => `${iata}:${(list || []).length}`).join(', ');
     console.log(`[Flights] Restored scheduled cache from disk (${flights.length} flights, ${byAirport}, age ${Math.round(age / 1000)}s)`);
   }

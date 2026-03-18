@@ -113,6 +113,8 @@ Wave data is fetched for 15 named coastal points. Positions are chosen so icons 
 
 - **Cache persistence:** After each successful refresh cycle, both the island weather and wave caches are written to `server/.weather-cache.json`. This file is read on server startup to restore caches and skip redundant API calls. The file is excluded from version control via `.gitignore`.
 
+- **Provider health on restart:** When caches are restored from disk, the in-memory provider health snapshots are pre-populated with `lastOk: true` and the timestamp of the cached data. This ensures the status board shows weather and wave providers as online immediately after a restart, rather than showing them as "not checked yet" until the next live fetch.
+
 - **Single-request caches:**
   - `GET /api/weather?lat=...&lon=...` and `GET /api/weather/parish/:slug` use a separate short-lived cache (10 minutes) for ad-hoc requests.
   - `GET /api/weather/island` and `GET /api/weather/waves` use the 20-minute island cache and 30-minute wave cache; they are also repopulated by the 20-minute background refresh.

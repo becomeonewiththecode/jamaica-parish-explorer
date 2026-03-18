@@ -92,6 +92,8 @@ A scheduled job removes **live** landed arrivals and departed departures from th
 
 **Cache persistence:** After each scheduled fetch and every 5 minutes for route data, the server writes both the per-airport scheduled flights and the route lookup cache to `server/.flight-cache.json`. This file is restored on startup so server restarts within the poll interval do not trigger redundant AeroDataBox (paid) or route lookup API calls.
 
+**Provider health on restart:** When the scheduled flight cache is restored from disk, the AeroDataBox and RapidAPI provider health snapshots are pre-populated with `lastOk: true` and the timestamp of the cached data. This ensures the status board shows these providers as online immediately after a restart, rather than "not checked yet" until the next scheduled poll (up to 15 minutes).
+
 **Key intervals (in code):**
 - Scheduled poll: 15 min. Live radar poll: 30 s. Cleanup: every 2 min. Cache persist: every 5 min (routes).
 - Completed flights hidden after **45 min** (client and server cleanup for live only).
