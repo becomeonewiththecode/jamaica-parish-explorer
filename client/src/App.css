@@ -432,7 +432,7 @@
 .map-top-grid {
   display: grid;
   grid-template-columns: auto minmax(380px, auto) minmax(220px, 320px);
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   justify-content: center;
   width: 100%;
@@ -457,7 +457,7 @@
 .map-top-cell.zoom-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .map-top-cell.toggles-cell {
@@ -2206,7 +2206,7 @@
 
 /* SEARCH BAR — inside .map-top-strip, centered with controls */
 .search-bar {
-  width: 323px;
+  width: 305px;
   flex-shrink: 0;
 }
 
