@@ -3260,15 +3260,15 @@
   }
 
   .zoom-level-control {
-    padding: 4px 6px;
-    gap: 2px;
+    padding: 0px 2px;
+    gap: 1px;
   }
 
   .zoom-level-btn {
-    width: 28px;
-    height: 28px;
-    min-width: 28px;
-    min-height: 28px;
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+    min-height: 14px;
   }
 
   .flight-toggle-btn {
