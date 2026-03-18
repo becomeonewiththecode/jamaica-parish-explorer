@@ -431,7 +431,7 @@
 
 .map-top-grid {
   display: grid;
-  grid-template-columns: auto minmax(380px, auto) minmax(220px, 320px);
+  grid-template-columns: auto minmax(340px, auto) minmax(220px, 300px);
   gap: 6px;
   align-items: center;
   justify-content: center;
@@ -440,7 +440,7 @@
 }
 
 .map-top-grid.has-parish {
-  grid-template-columns: minmax(140px, auto) auto minmax(380px, auto) minmax(220px, 320px);
+  grid-template-columns: minmax(140px, auto) auto minmax(340px, auto) minmax(220px, 300px);
 }
 
 .map-top-cell {
@@ -559,7 +559,7 @@
 
 .map-top-cell.search-cell {
   display: flex;
-  justify-content: stretch;
+  justify-content: center;
 }
 
 .map-top-cell.search-cell .search-bar {
