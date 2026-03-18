@@ -2,12 +2,15 @@ const express = require('express');
 const http = require('http');
 const https = require('https');
 const path = require('path');
+const { exec } = require('child_process');
 
 // Load server .env so we can see API keys when present
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.STATUS_PORT || 5555;
+/** Bind all interfaces so LAN (e.g. 10.0.0.x:5555) works, not only localhost */
+const HOST = process.env.STATUS_HOST || '0.0.0.0';
 const API_HOST = process.env.API_HOST || 'localhost';
 const API_PORT = process.env.API_PORT || 3001;
 const CLIENT_PORT = process.env.CLIENT_PORT || 5173;
@@ -87,6 +90,60 @@ const SERVER_TARGETS = [
   { id: 'client-server', label: 'Client (Vite, 5173)', host: 'localhost', port: CLIENT_PORT, path: '/' },
 ];
 
+function fetchPm2Status() {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    exec('pm2 jlist --silent', { maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        return resolve({
+          ok: false,
+          code: 500,
+          error: stderr && stderr.trim() ? stderr.trim() : err.message,
+          ms: Date.now() - started,
+          processes: [],
+        });
+      }
+      try {
+        const raw = JSON.parse(stdout || '[]');
+        const processes = Array.isArray(raw)
+          ? raw.map((p) => {
+              const env = p.pm2_env || {};
+              const monit = p.monit || {};
+              return {
+                name: p.name || env.name || 'unknown',
+                status: env.status || 'unknown',
+                restarts: typeof env.restart_time === 'number' ? env.restart_time : null,
+                cpu: typeof monit.cpu === 'number' ? monit.cpu : null,
+                memory: typeof monit.memory === 'number' ? monit.memory : null,
+              };
+            })
+          : [];
+        // jamaica-status often shows "errored" while the board is still served by
+        // npm run dev:status or a fresh node process; don't fail the whole PM2 strip.
+        const allOnline =
+          processes.length > 0 &&
+          processes.every((p) =>
+            p.name === 'jamaica-status' ? true : p.status === 'online'
+          );
+        resolve({
+          ok: allOnline,
+          code: processes.length ? (allOnline ? 200 : 500) : 204,
+          ms: Date.now() - started,
+          processes,
+        });
+      } catch (e) {
+        resolve({
+          ok: false,
+          code: 500,
+          error: 'Failed to parse pm2 jlist output',
+          ms: Date.now() - started,
+          processes: [],
+        });
+      }
+    });
+  });
+}
+
 function runCheck(path) {
   return new Promise((resolve) => {
     const started = Date.now();
@@ -114,15 +171,30 @@ function runServerCheck(target) {
     const req = http.get(
       { host: target.host, port: target.port, path: target.path, timeout: 4000 },
       (res) => {
-        const ok = res.statusCode >= 200 && res.statusCode < 500;
+        const code = res.statusCode;
+        const ok = code >= 200 && code < 500;
         res.resume();
-        resolve({ ok, code: res.statusCode, ms: Date.now() - started });
+        resolve({ ok, code, ms: Date.now() - started });
       }
     );
-    req.on('error', () => resolve({ ok: false }));
+    req.on('error', (err) =>
+      resolve({
+        ok: false,
+        code: null,
+        unreachable: true,
+        error: (err && err.code) || err.message || 'error',
+        ms: Date.now() - started,
+      })
+    );
     req.on('timeout', () => {
       req.destroy();
-      resolve({ ok: false });
+      resolve({
+        ok: false,
+        code: null,
+        unreachable: true,
+        error: 'timeout',
+        ms: Date.now() - started,
+      });
     });
   });
 }
@@ -220,6 +292,7 @@ app.get('/status.json', async (req, res) => {
   const external = {};
   const servers = {};
   const apiHealth = await fetchApiHealth();
+  const pm2 = await fetchPm2Status();
   await Promise.all(
     CHECKS.map(async (c) => {
       if (c.id === 'cruise') {
@@ -290,13 +363,14 @@ app.get('/status.json', async (req, res) => {
             return { id: p.id, label: p.label, ...r };
           })
         );
-        const allOk = perProvider.every(p => p.ok);
+        const anyOk = perProvider.some(p => p.ok);
         const firstBad = perProvider.find(p => !p.ok);
         external[c.id] = {
-          ok: allOk,
-          code: allOk ? 200 : (firstBad && firstBad.code) || 500,
+          // Consider the overall flight providers ONLINE if at least one is OK
+          ok: anyOk,
+          code: anyOk ? 200 : (firstBad && firstBad.code) || 500,
           ms: perProvider.reduce((max, p) => Math.max(max, p.ms || 0), 0),
-          error: allOk ? undefined : perProvider.map(p => `${p.label}:${p.ok ? 'OK' : (p.code || p.error || 'FAIL')}`).join(', '),
+          error: anyOk ? undefined : perProvider.map(p => `${p.label}:${p.ok ? 'OK' : (p.code || p.error || 'FAIL')}`).join(', '),
           providers: perProvider,
         };
       } else {
@@ -309,6 +383,24 @@ app.get('/status.json', async (req, res) => {
       servers[s.id] = await runServerCheck(s);
     })
   );
+
+  const underPm2 =
+    process.env.pm_id !== undefined &&
+    /status-board\.js$/.test(String(process.argv[1] || '').replace(/\\/g, '/'));
+  if (pm2.processes && Array.isArray(pm2.processes)) {
+    pm2.processes = pm2.processes.map((proc) => {
+      if (proc.name !== 'jamaica-status' || proc.status === 'online') return proc;
+      return {
+        ...proc,
+        pm2RowNote:
+          underPm2
+            ? 'PM2 may still show old state; this page is served by PID ' + process.pid
+            : 'Dashboard is up (this request). PM2 slot is not online — align with: pm2 restart jamaica-status or pm2 delete jamaica-status && pm2 start ecosystem.config.js --only jamaica-status',
+        pm2RowOkish: true,
+      };
+    });
+  }
+
   res.json({
     timestamp: new Date().toISOString(),
     host: API_HOST,
@@ -316,6 +408,8 @@ app.get('/status.json', async (req, res) => {
     checks: results,
     external,
     servers,
+    pm2,
+    statusBoard: { pid: process.pid, underPm2 },
   });
 });
 
@@ -338,10 +432,21 @@ app.get('/', (req, res) => {
     .pill-btn { display:inline-flex; align-items:center; justify-content:center; padding:0.15rem 0.6rem; border-radius:999px; font-size:0.75rem; font-weight:600; margin-right:0.25rem; margin-bottom:0.25rem; }
     .pill-btn.ok { background:#064e3b; color:#6ee7b7; }
     .pill-btn.fail { background:#7f1d1d; color:#fecaca; }
+    .pill-btn.warn { background:#422006; color:#fcd34d; }
     .status-table { width:100%; border-collapse:collapse; margin-top:0.35rem; }
     .status-table th, .status-table td { padding:0.1rem 0.2rem; font-size:0.78rem; text-align:left; vertical-align:middle; }
     .status-table th { font-weight:600; color:#d1d5db; }
     .status-table th.code, .status-table td.code { width:4rem; text-align:right; }
+    .status-table.servers-3col { table-layout:fixed; }
+    .status-table.servers-3col th, .status-table.servers-3col td { padding:0.3rem 0.4rem; }
+    .status-table.servers-3col th.col-app, .status-table.servers-3col td.col-app { width:44%; }
+    .status-table.servers-3col th.col-status, .status-table.servers-3col td.col-status { width:36%; color:#d1d5db; }
+    .status-table.servers-3col th.col-code, .status-table.servers-3col td.col-code { width:20%; text-align:right; font-variant-numeric:tabular-nums; color:#e5e7eb; }
+    .status-table.servers-3col td.col-app { font-weight:600; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:0.4rem; vertical-align:middle; }
+    .dot.ok { background:#4ade80; box-shadow:0 0 4px #4ade80; }
+    .dot.fail { background:#f97373; box-shadow:0 0 4px #f97373; }
+    .dot.warn { background:#fcd34d; box-shadow:0 0 4px #fcd34d; }
     header { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
     .pill { font-size:0.75rem; padding:0.15rem 0.5rem; border-radius:999px; background:#111827; color:#9ca3af; }
     .updated { font-size:0.8rem; color:#9ca3af; }
@@ -356,9 +461,9 @@ app.get('/', (req, res) => {
     <div class="pill">backend: <span id="api-host"></span></div>
   </header>
   <h2 style="font-size:1rem; margin-top:1.5rem;">Servers</h2>
-  <div class="grid" id="grid-servers"></div>
+  <div id="grid-servers" style="margin-top:1rem;"></div>
   <h2 style="font-size:1rem; margin-top:1.5rem;">Internal services</h2>
-  <div class="grid" id="grid"></div>
+  <div id="grid" style="margin-top:1rem;"></div>
   <h2 style="font-size:1rem; margin-top:2rem;">External APIs</h2>
   <div class="grid" id="grid-external"></div>
   <script>
@@ -379,82 +484,176 @@ app.get('/', (req, res) => {
         const gridExternal = document.getElementById('grid-external');
         gridExternal.innerHTML = '';
 
-        // Servers card
+        // Servers card — 3 columns: application (pill) | status | code
+        function esc(t) { return String(t == null ? '' : t).replace(/</g, '&lt;'); }
         (function renderServers() {
+          function serverAppRow(r) {
+            if (!r) return { pill: 'fail', status: 'unknown', code: '—' };
+            var c = r.code;
+            if (r.ok && typeof c === 'number' && c >= 200 && c < 300)
+              return { pill: 'ok', status: 'online', code: String(c) };
+            if (r.ok && typeof c === 'number' && c >= 300 && c < 400)
+              return { pill: 'warn', status: 'redirect', code: String(c) };
+            if (r.ok && typeof c === 'number' && c >= 400 && c < 500) {
+              if (c === 401) return { pill: 'fail', status: 'unauthorized', code: '401' };
+              if (c === 403) return { pill: 'fail', status: 'forbidden', code: '403' };
+              if (c === 429) return { pill: 'warn', status: 'rate limited', code: '429' };
+              if (c === 404) return { pill: 'fail', status: 'not found', code: '404' };
+              return { pill: 'fail', status: 'client error', code: String(c) };
+            }
+            if (r.ok && typeof c === 'number' && c >= 500)
+              return { pill: 'fail', status: 'server error', code: String(c) };
+            if (typeof c === 'number' && !r.ok) {
+              if (c === 401) return { pill: 'fail', status: 'unauthorized', code: '401' };
+              if (c === 403) return { pill: 'fail', status: 'forbidden', code: '403' };
+              if (c === 429) return { pill: 'warn', status: 'rate limited', code: '429' };
+              if (c >= 400 && c < 500) return { pill: 'fail', status: 'client error', code: String(c) };
+              if (c >= 500) return { pill: 'fail', status: 'server error', code: String(c) };
+            }
+            if (r.unreachable || c == null) {
+              if (r.error === 'timeout') return { pill: 'fail', status: 'timeout', code: '—' };
+              return { pill: 'fail', status: 'OFF', code: '—' };
+            }
+            return { pill: 'fail', status: 'offline', code: '—' };
+          }
+          function pm2AppRow(p, warnRow) {
+            var online = p.status === 'online';
+            if (online) return { pill: 'ok', status: 'online', code: 'OK' };
+            if (warnRow)
+              return { pill: 'warn', status: 'errored (PM2)', code: '—' };
+            var st = (p.status || '').toLowerCase();
+            if (st === 'stopped') return { pill: 'fail', status: 'stopped', code: '—' };
+            if (st === 'errored') return { pill: 'fail', status: 'errored', code: 'ERR' };
+            return { pill: 'fail', status: esc(p.status || 'unknown'), code: '—' };
+          }
           const card = document.createElement('div');
           card.className = 'card';
           let rowsHtml = '';
           if (SERVERS.length) {
-            rowsHtml += '<table class="status-table"><thead><tr><th>Server</th><th class="code">Status</th></tr></thead><tbody>';
+            rowsHtml +=
+              '<table class="status-table servers-3col"><thead><tr>' +
+              '<th class="col-app">Application</th><th class="col-status">Status</th><th class="col-code">Code</th>' +
+              '</tr></thead><tbody>';
             for (const s of SERVERS) {
               const r = data.servers && data.servers[s.id];
-              const ok = r && r.ok;
-              const codeText = (r && r.code !== undefined && r.code !== null) ? r.code : (ok ? 'OK' : 'OFF');
+              const row = serverAppRow(r);
               rowsHtml +=
                 '<tr>' +
-                  '<td><span class="pill-btn ' + (ok ? 'ok' : 'fail') + '">' + s.label + '</span></td>' +
-                  '<td class="code">' + codeText + '</td>' +
+                  '<td class="col-app"><span class="dot ' + row.pill + '"></span>' + esc(s.label) + '</td>' +
+                  '<td class="col-status">' + esc(row.status) + '</td>' +
+                  '<td class="col-code">' + esc(row.code) + '</td>' +
                 '</tr>';
             }
             rowsHtml += '</tbody></table>';
           }
+
+          const pm2 = data.pm2;
+          const pm2Procs = pm2 && Array.isArray(pm2.processes) ? pm2.processes : [];
+          const pm2Healthy =
+            !pm2 ||
+            pm2.ok ||
+            (pm2Procs.length > 0 &&
+              pm2Procs.every((p) => p.name === 'jamaica-status' || p.status === 'online'));
+          let pm2Html = '';
+          if (pm2Procs.length) {
+            pm2Html += '<div style="margin-top:0.75rem; font-size:0.8rem; font-weight:600;">PM2 processes</div>';
+            pm2Html +=
+              '<table class="status-table servers-3col"><thead><tr>' +
+              '<th class="col-app">Application</th><th class="col-status">Status</th><th class="col-code">Code</th>' +
+              '</tr></thead><tbody>';
+            for (const p of pm2Procs) {
+              const online = p.status === 'online';
+              const isStatusApp = p.name === 'jamaica-status';
+              const warnRow = !online && isStatusApp;
+              const row = pm2AppRow(p, warnRow);
+              let note = p.pm2RowNote
+                ? String(p.pm2RowNote)
+                : warnRow
+                  ? 'You are viewing this page; PM2 may show a stale slot. pm2 delete jamaica-status && pm2 start ecosystem.config.js --only jamaica-status'
+                  : '';
+              let statusCell = esc(row.status);
+              if (note) {
+                statusCell +=
+                  '<div style="font-size:0.65rem;color:#9ca3af;margin-top:0.2rem;line-height:1.2;">' +
+                  esc(note) +
+                  '</div>';
+              }
+              pm2Html +=
+                '<tr>' +
+                  '<td class="col-app"><span class="dot ' + row.pill + '"></span>' + esc(p.name || 'unknown') + '</td>' +
+                  '<td class="col-status">' + statusCell + '</td>' +
+                  '<td class="col-code">' + esc(row.code) + '</td>' +
+                '</tr>';
+            }
+            pm2Html += '</tbody></table>';
+          }
           card.innerHTML =
             '<div class="name">Servers</div>' +
-            '<div class="status ' + ((Object.values(data.servers || {}).every(s => s && s.ok)) ? 'ok' : 'fail') + '">' +
-              ((Object.values(data.servers || {}).every(s => s && s.ok)) ? 'ONLINE' : 'CHECK') +
+            '<div class="status ' + ((Object.values(data.servers || {}).every(s => s && s.ok) && pm2Healthy) ? 'ok' : 'fail') + '">' +
+              ((Object.values(data.servers || {}).every(s => s && s.ok) && pm2Healthy) ? 'ONLINE' : 'CHECK') +
             '</div>' +
             '<div class="meta">' +
               (rowsHtml || 'No server info') +
+              (pm2Html ? pm2Html : '') +
             '</div>' +
-            '<div class="meta" style="margin-top:0.5rem; font-size:0.75rem;">' +
-              'Restart commands: <code>npm run init</code>, <code>npm run dev:server</code>, <code>npm run dev:client</code>, <code>npm run dev:status</code>' +
-            '</div>';
+            '';
           gridServers.appendChild(card);
         })();
-        for (const c of CHECKS) {
-          const r = data.checks[c.id];
-          const ok = r && r.ok;
+        // Combined internal services card
+        (function renderInternalServices() {
           const card = document.createElement('div');
           card.className = 'card';
-
-          if (c.id === 'cruise') {
-            // Special rendering: one card with per-port table like providers
-            const ports = (r && r.ports) || [];
-            let rowsHtml = '';
+          const allOk = CHECKS.every(function(c) { const r = data.checks[c.id]; return r && r.ok; });
+          let rowsHtml = '<table class="status-table servers-3col"><thead><tr>' +
+            '<th class="col-app">Service</th><th class="col-status">Status</th><th class="col-code">Code</th>' +
+            '</tr></thead><tbody>';
+          for (const c of CHECKS) {
+            if (c.id === 'cruise') continue; // rendered separately below
+            const r = data.checks[c.id];
+            const rok = r && r.ok;
+            const statusText = !r ? 'no data' : rok ? 'online' : (r.error || 'offline');
+            const codeText = !r ? '—' : (r.code !== undefined && r.code !== null) ? r.code : (rok ? 'OK' : '—');
+            rowsHtml +=
+              '<tr>' +
+                '<td class="col-app"><span class="dot ' + (rok ? 'ok' : 'fail') + '"></span>' + esc(c.label) + '</td>' +
+                '<td class="col-status">' + esc(statusText) + '</td>' +
+                '<td class="col-code">' + esc(String(codeText)) + '</td>' +
+              '</tr>';
+          }
+          rowsHtml += '</tbody></table>';
+          // Cruise ports sub-table
+          const cruiseCheck = CHECKS.find(function(c) { return c.id === 'cruise'; });
+          let cruiseHtml = '';
+          if (cruiseCheck) {
+            const cr = data.checks['cruise'];
+            const ports = (cr && cr.ports) || [];
             if (ports.length) {
-              rowsHtml += '<table class="status-table"><thead><tr><th>Cruise schedules</th><th class="code">Status</th></tr></thead><tbody>';
+              cruiseHtml += '<div style="margin-top:0.75rem; font-size:0.8rem; font-weight:600;">Cruise schedules</div>';
+              cruiseHtml += '<table class="status-table servers-3col"><thead><tr>' +
+                '<th class="col-app">Port</th><th class="col-status">Status</th><th class="col-code">Code</th>' +
+                '</tr></thead><tbody>';
               for (const p of ports) {
                 const pok = p && p.ok;
-                const codeText = (p.code !== undefined && p.code !== null) ? p.code : (pok ? 'OK' : (p.error || 'FAIL'));
-                rowsHtml +=
+                const statusText = pok ? 'online' : (p.error || 'offline');
+                const codeText = (p.code !== undefined && p.code !== null) ? p.code : (pok ? 'OK' : '—');
+                cruiseHtml +=
                   '<tr>' +
-                    '<td><span class="pill-btn ' + (pok ? 'ok' : 'fail') + '">' + p.label + '</span></td>' +
-                    '<td class="code">' + codeText + '</td>' +
+                    '<td class="col-app"><span class="dot ' + (pok ? 'ok' : 'fail') + '"></span>' + esc(p.label) + '</td>' +
+                    '<td class="col-status">' + esc(statusText) + '</td>' +
+                    '<td class="col-code">' + esc(String(codeText)) + '</td>' +
                   '</tr>';
               }
-              rowsHtml += '</tbody></table>';
+              cruiseHtml += '</tbody></table>';
             }
-            card.innerHTML =
-              '<div class="name">' + c.label + '</div>' +
-              '<div class="status ' + (ok ? 'ok' : 'fail') + '">' +
-                (ok ? 'ONLINE' : 'OFFLINE') +
-              '</div>' +
-              '<div class="meta">' +
-                (ports.length ? rowsHtml : (r ? ('code: ' + (r.code || '-') + ' · ' + (r.ms || 0) + ' ms') : 'no data')) +
-              '</div>';
-          } else {
-            card.innerHTML =
-              '<div class="name">' + c.label + '</div>' +
-              '<div class="status ' + (ok ? 'ok' : 'fail') + '">' +
-                (ok ? 'ONLINE' : 'OFFLINE') +
-              '</div>' +
-              '<div class="meta">' +
-                (r ? ('code: ' + (r.code || '-') + ' · ' + (r.ms || 0) + ' ms' + (r.error ? ' · ' + r.error : '')) : 'no data') +
-              '</div>';
           }
-
+          card.innerHTML =
+            '<div class="name">Internal Services</div>' +
+            '<div class="status ' + (allOk ? 'ok' : 'fail') + '">' +
+              (allOk ? 'ONLINE' : 'CHECK') +
+            '</div>' +
+            '<div class="meta">' + rowsHtml + cruiseHtml + '</div>';
           grid.appendChild(card);
-        }
+        })();
 
         for (const c of EXTERNAL) {
           const r = data.external && data.external[c.id];
@@ -466,14 +665,16 @@ app.get('/', (req, res) => {
             const providers = (r && r.providers) || [];
             let rowsHtml = '';
             if (providers.length) {
-              rowsHtml += '<table class="status-table"><thead><tr><th>API service</th><th class="code">Status</th></tr></thead><tbody>';
+              rowsHtml += '<table class="status-table servers-3col"><thead><tr><th class="col-app">API service</th><th class="col-status">Status</th><th class="col-code">Code</th></tr></thead><tbody>';
               for (const p of providers) {
                 const pok = p && p.ok;
-                const codeText = (p.code !== undefined && p.code !== null) ? p.code : (pok ? 'OK' : (p.error || 'FAIL'));
+                const statusText = pok ? 'online' : (p.error || 'offline');
+                const codeText = (p.code !== undefined && p.code !== null) ? p.code : (pok ? 'OK' : '—');
                 rowsHtml +=
                   '<tr>' +
-                    '<td><span class="pill-btn ' + (pok ? 'ok' : 'fail') + '">' + p.label + '</span></td>' +
-                    '<td class="code">' + codeText + '</td>' +
+                    '<td class="col-app"><span class="dot ' + (pok ? 'ok' : 'fail') + '"></span>' + p.label + '</td>' +
+                    '<td class="col-status">' + statusText + '</td>' +
+                    '<td class="col-code">' + codeText + '</td>' +
                   '</tr>';
               }
               rowsHtml += '</tbody></table>';
@@ -490,14 +691,16 @@ app.get('/', (req, res) => {
             const providers = (r && r.providers) || [];
             let rowsHtml = '';
             if (providers.length) {
-              rowsHtml += '<table class="status-table"><thead><tr><th>API service</th><th class="code">Status</th></tr></thead><tbody>';
+              rowsHtml += '<table class="status-table servers-3col"><thead><tr><th class="col-app">API service</th><th class="col-status">Status</th><th class="col-code">Code</th></tr></thead><tbody>';
               for (const p of providers) {
                 const pok = p && p.ok;
-                const codeText = (p.code !== undefined && p.code !== null) ? p.code : (pok ? 'OK' : (p.error || 'FAIL'));
+                const statusText = pok ? 'online' : (p.error || 'offline');
+                const codeText = (p.code !== undefined && p.code !== null) ? p.code : (pok ? 'OK' : '—');
                 rowsHtml +=
                   '<tr>' +
-                    '<td><span class="pill-btn ' + (pok ? 'ok' : 'fail') + '">' + p.label + '</span></td>' +
-                    '<td class="code">' + codeText + '</td>' +
+                    '<td class="col-app"><span class="dot ' + (pok ? 'ok' : 'fail') + '"></span>' + p.label + '</td>' +
+                    '<td class="col-status">' + statusText + '</td>' +
+                    '<td class="col-code">' + codeText + '</td>' +
                   '</tr>';
               }
               rowsHtml += '</tbody></table>';
@@ -535,7 +738,9 @@ app.get('/', (req, res) => {
 </html>`);
 });
 
-app.listen(PORT, () => {
-  console.log('Status board running on http://localhost:' + PORT);
+app.listen(PORT, HOST, () => {
+  console.log(
+    `Status board: http://localhost:${PORT}/  (LAN: http://<this-host>:${PORT}/) bound ${HOST}`
+  );
 });
 
