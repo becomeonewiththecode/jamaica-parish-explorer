@@ -4,6 +4,20 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 
 ![Jamaica Parish Explorer](https://img.shields.io/badge/React-19-blue) ![Express](https://img.shields.io/badge/Express-5-green) ![SQLite](https://img.shields.io/badge/SQLite-3-lightgrey)
 
+## Table of Contents
+
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+- [Running (local or VM)](#running-local-or-vm)
+- [Environment configuration](#environment-configuration)
+- [Deployment notes (Docker, VMs, Kubernetes)](#deployment-notes-docker-vms-kubernetes)
+- [Project Structure](#project-structure)
+- [API Endpoints](#api-endpoints)
+- [Data Documentation](#data-documentation)
+- [Database Schema](#database-schema)
+- [License](#license)
+
 ## Features
 
 - **Interactive SVG map** of Jamaica with all 14 parishes, hover highlights, and click-to-zoom
@@ -97,8 +111,8 @@ The dev server runs at **http://localhost:5173** with API requests proxied to th
   - `PORT`, `HOST`
   - `RAPIDAPI_KEY`, `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`
   - `AISSTREAM_API_KEY` (AISStream vessel layer)
-  - `TRACKED_SHIP_MMSIS` (optional: comma-separated MMSIs to track globally, e.g. `311263000` for Adventure of the Seas; see `docs/VESSEL-DATA-AND-USAGE.md`)
-  - `ADMIN_RESTART_TOKEN` (optional: strong shared secret used by `POST /api/admin/restart` for PM2-based DIY remote restarts; see `docs/STATUS-BOARD.md` for details)
+  - `TRACKED_SHIP_MMSIS` (optional: comma-separated MMSIs to track globally, e.g. `311263000` for Adventure of the Seas; see [`docs/VESSEL-DATA-AND-USAGE.md`](./docs/VESSEL-DATA-AND-USAGE.md))
+  - `ADMIN_RESTART_TOKEN` (optional: strong shared secret used by `POST /api/admin/restart` for PM2-based DIY remote restarts; see [`docs/STATUS-BOARD.md`](./docs/STATUS-BOARD.md) for details)
 - Frontend build-time config lives in `client/.env` (read by Vite at build; only `VITE_*` keys are exposed to the browser), e.g.:
   - `VITE_THUNDERFOREST_API_KEY`
 
@@ -191,10 +205,10 @@ project_jamaica/
 
 ## Data Documentation
 
-- **Flights:** see `docs/FLIGHT-DATA.md`
-- **Weather and Waves:** see `docs/WEATHER-AND-WAVE-DATA.md`
-- **Vessels (AISStream):** see `docs/VESSEL-DATA-AND-USAGE.md`
-- **Status board:** see `docs/STATUS-BOARD.md`
+- **Flights:** see [`docs/FLIGHT-DATA.md`](./docs/FLIGHT-DATA.md)
+- **Weather and Waves:** see [`docs/WEATHER-AND-WAVE-DATA.md`](./docs/WEATHER-AND-WAVE-DATA.md)
+- **Vessels (AISStream):** see [`docs/VESSEL-DATA-AND-USAGE.md`](./docs/VESSEL-DATA-AND-USAGE.md)
+- **Status board:** see [`docs/STATUS-BOARD.md`](./docs/STATUS-BOARD.md)
 
 ## Database Schema
 
