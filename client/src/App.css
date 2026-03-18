@@ -1135,12 +1135,12 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 1px 4px;
+  padding: 0px 3px;
   background: rgba(10, 22, 40, 0.85);
   backdrop-filter: blur(8px);
   border: 1px solid #1e3a5f;
-  border-radius: 16px;
-  font-size: 0.6rem;
+  border-radius: 14px;
+  font-size: 0.56rem;
   font-family: inherit;
 }
 
@@ -1148,19 +1148,21 @@
   color: #5a7a9a;
   font-weight: 600;
   font-size: 0.6rem;
+  /* Shrink: keep the label as a semantic hint, but don't render the extra width. */
+  display: none;
 }
 
 .zoom-level-value {
   color: #f0c040;
   font-weight: 700;
-  min-width: 12px;
+  min-width: 10px;
   text-align: center;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
 }
 
 .zoom-level-btn {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1168,7 +1170,7 @@
   border: 1px solid #1e3a5f;
   border-radius: 50%;
   color: #b0c4de;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
