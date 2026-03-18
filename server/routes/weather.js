@@ -1,6 +1,31 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 const db = require('../db/connection');
+
+// --- Persistent weather/wave cache (survives server restarts) ---
+const CACHE_FILE = path.join(__dirname, '..', '.weather-cache.json');
+
+function loadPersistedCache() {
+  try {
+    const raw = fs.readFileSync(CACHE_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function persistCache(island, wave) {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify({
+      island: { ts: island.ts, data: island.data },
+      wave: { ts: wave.ts, data: wave.data },
+    }), 'utf8');
+  } catch (e) {
+    console.error('[Weather] Failed to persist cache:', e.message);
+  }
+}
 
 // --- Configuration for weather sources (Open-Meteo, WeatherAPI, OpenWeatherMap) ---
 const WEATHER_SOURCE = (process.env.WEATHER_SOURCE || 'open-meteo').toLowerCase();
@@ -42,6 +67,15 @@ const ISLAND_CACHE_MS = 20 * 60 * 1000; // 20 minutes — island data refreshed 
 let cache = { key: null, data: null, ts: 0 };
 let islandCache = { ts: 0, data: null };
 let openMeteoRateLimitedUntil = 0;
+
+// Restore island and wave caches from disk so a restart doesn't trigger unnecessary API calls.
+const _persisted = loadPersistedCache();
+if (_persisted) {
+  if (_persisted.island && _persisted.island.data && Date.now() - _persisted.island.ts < ISLAND_CACHE_MS) {
+    islandCache = { ts: _persisted.island.ts, data: _persisted.island.data };
+    console.log('[Weather] Restored island cache from disk (' + islandCache.data.length + ' parishes, age ' + Math.round((Date.now() - islandCache.ts) / 1000) + 's)');
+  }
+}
 
 // In-memory provider health snapshot for status/monitoring.
 // Updated opportunistically whenever we call a provider.
@@ -370,6 +404,12 @@ const MARINE_API = 'https://marine-api.open-meteo.com/v1/marine';
 const WAVE_CACHE_MS = 30 * 60 * 1000; // 30 minutes
 let waveCache = { ts: 0, data: null };
 
+// Restore wave cache from disk
+if (_persisted && _persisted.wave && _persisted.wave.data && Date.now() - _persisted.wave.ts < WAVE_CACHE_MS) {
+  waveCache = { ts: _persisted.wave.ts, data: _persisted.wave.data };
+  console.log('[Weather] Restored wave cache from disk (' + waveCache.data.length + ' points, age ' + Math.round((Date.now() - waveCache.ts) / 1000) + 's)');
+}
+
 // Coastal points around Jamaica for wave data (name, lat, lon)
 // Manchester has a short south-facing coastline; Alligator Pond represents its marine point.
 const COASTAL_POINTS = [
@@ -629,10 +669,16 @@ async function refreshWeatherAndWaves() {
   } catch (e) {
     console.error('[Weather] Wave refresh failed:', e.message);
   }
+  persistCache(islandCache, waveCache);
 }
 
-// Run on load and every hour
-refreshWeatherAndWaves();
+// On startup, only fetch if caches are stale or empty to avoid unnecessary API calls on restart.
+if (!islandCache.data || Date.now() - islandCache.ts >= REFRESH_INTERVAL_MS ||
+    !waveCache.data || Date.now() - waveCache.ts >= REFRESH_INTERVAL_MS) {
+  refreshWeatherAndWaves();
+} else {
+  console.log('[Weather] Caches still fresh, skipping startup fetch');
+}
 setInterval(refreshWeatherAndWaves, REFRESH_INTERVAL_MS);
 
 // Expose provider health snapshot for /api/health and status board.

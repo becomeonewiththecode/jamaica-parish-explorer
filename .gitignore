@@ -10,3 +10,5 @@ reports/
 .claude/
 .cursor/
 server/parish_data.sqlite
+server/.weather-cache.json
+server/.flight-cache.json

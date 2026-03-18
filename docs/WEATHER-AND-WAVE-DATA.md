@@ -101,16 +101,20 @@ Wave data is fetched for 15 named coastal points. Positions are chosen so icons 
 ### Refresh schedule
 
 - **Island weather (all 14 parishes):** Refreshed every **20 minutes**.
-  - On server startup: one full fetch runs immediately.
+  - On server startup: the server checks for a persisted cache file (`server/.weather-cache.json`). If fresh data exists (less than 20 minutes old for weather, 30 minutes for waves), it is restored into memory and **no API calls are made**. This avoids unnecessary fetches when the server is restarted shortly after a successful refresh.
+  - If the cache is stale or missing, one full fetch runs immediately on startup.
   - Then `setInterval(refreshWeatherAndWaves, 20 * 60 * 1000)` runs every 20 minutes.
   - Each parish is requested twice if the first attempt fails (retry once).
   - **All 14 parishes** are always returned: successful parishes have full data; failed ones have `error: true` and `description: 'Unavailable'` so the map can still show a marker.
 
-- **Wave data (13 coastal points):** Refreshed in the same 20-minute cycle as island weather (same `refreshWeatherAndWaves()` function).
+- **Wave data (15 coastal points):** Refreshed in the same 20-minute cycle as island weather (same `refreshWeatherAndWaves()` function).
   - Each point is requested with up to two attempts; only successful points are stored in the wave cache.
+  - On startup, the wave cache is also restored from the persisted cache file if still within its 30-minute TTL.
 
-- **Single-request caches:**  
-  - `GET /api/weather?lat=...&lon=...` and `GET /api/weather/parish/:slug` use a separate short-lived cache (10 minutes) for ad-hoc requests.  
+- **Cache persistence:** After each successful refresh cycle, both the island weather and wave caches are written to `server/.weather-cache.json`. This file is read on server startup to restore caches and skip redundant API calls. The file is excluded from version control via `.gitignore`.
+
+- **Single-request caches:**
+  - `GET /api/weather?lat=...&lon=...` and `GET /api/weather/parish/:slug` use a separate short-lived cache (10 minutes) for ad-hoc requests.
   - `GET /api/weather/island` and `GET /api/weather/waves` use the 20-minute island cache and 30-minute wave cache; they are also repopulated by the 20-minute background refresh.
 
 ---
@@ -137,9 +141,9 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 
 ### Caches
 
-- **Island weather cache:** Holds the full 14-parish list. Refreshed every 20 minutes in the background and on first request if stale.
-- **Wave cache:** Holds the list of coastal points with wave data. Refreshed every 20 minutes in the background and on first request if stale.
-- **Single-request cache:** Used only for `GET /api/weather` and `GET /api/weather/parish/:slug`; 10-minute TTL.
+- **Island weather cache:** Holds the full 14-parish list. Refreshed every 20 minutes in the background and on first request if stale. Persisted to `server/.weather-cache.json` after each refresh so it survives server restarts.
+- **Wave cache:** Holds the list of coastal points with wave data. Refreshed every 20 minutes in the background and on first request if stale. Also persisted to the same cache file.
+- **Single-request cache:** Used only for `GET /api/weather` and `GET /api/weather/parish/:slug`; 10-minute TTL. Not persisted to disk (in-memory only).
 
 ---
 
@@ -190,7 +194,8 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 
 | File | Purpose |
 |------|---------|
-| `server/routes/weather.js` | Weather and wave API routes; parish/coastal definitions; 20-minute refresh; fetch and cache logic |
+| `server/routes/weather.js` | Weather and wave API routes; parish/coastal definitions; 20-minute refresh; fetch, cache, and disk-persistence logic |
+| `server/.weather-cache.json` | Auto-generated persisted cache (island weather + wave data); restored on startup to avoid redundant API calls. Git-ignored |
 | `client/src/api/weather.js` | `fetchWeather()`, `fetchWeatherForParish()`, `fetchWeatherIsland()`, `fetchWavesIsland()` (all via fetchWithRetry) |
 | `client/src/api/fetchWithRetry.js` | Fetch wrapper: retries on failure (3 retries, exponential backoff) |
 | `client/src/components/MapSection.jsx` | Weather and wave map layers; 20-min client poll when layers on; icon builders (temp, cloud, wind, sun, rain, wave); rain overlay; unavailable marker; overlap avoidance (temp over land, wave nudge) |
@@ -201,6 +206,6 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 
 ## Summary
 
-- **Collection:** Weather from Open-Meteo (14 parishes, retry once per parish). Waves from Open-Meteo Marine (13 coastal points, up to two attempts per point). Island weather and wave caches are refreshed every **20 minutes** in the background and on first request when stale.
+- **Collection:** Weather from Open-Meteo (14 parishes, retry once per parish). Waves from Open-Meteo Marine (15 coastal points, up to two attempts per point). Island weather and wave caches are refreshed every **20 minutes** in the background and on first request when stale. Caches are persisted to disk (`server/.weather-cache.json`) so server restarts within the refresh window do not trigger redundant API calls.
 - **Use:** Island and wave data are cached and served by `GET /api/weather/island` and `GET /api/weather/waves`; parish widget uses `GET /api/weather/parish/:slug`. Every parish is always included in the island response (with `error: true` if fetch failed).
 - **Display:** Map shows weather (temperature at parish centre, cloud, wind, sun when clear/mainly clear, rain when applicable) and optionally waves (height, direction) per parish/coastal point; icons are positioned so they do not overlap. The client polls island weather and wave data every 20 minutes while the respective layers are visible so the map stays up to date. Sidebar shows current weather for the selected parish. Unavailable parishes still get a “—°” marker and “Weather unavailable · Next refresh within 20 min” on the map.
