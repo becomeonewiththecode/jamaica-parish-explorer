@@ -32,6 +32,8 @@ Triggers a PM2 process restart. Requires `X-Admin-Token` header matching `ADMIN_
 
 Returns `403` if token is missing or invalid.
 
+If `target` is `api` or `all`, the API server may rebuild the React client in production (only when it detects that `client/` source files are newer than `client/dist/`). The JSON response includes `clientBuildRebuilt` and (when a rebuild occurs) a truncated `clientBuild` output.
+
 ---
 
 ## Parishes

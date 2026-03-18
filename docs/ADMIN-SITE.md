@@ -100,6 +100,9 @@ Send a POST to `/api/restart` with a JSON body:
 | `admin` | Runs `pm2 restart jamaica-admin` directly (self-restart) |
 | `all` | Proxies to `POST /api/admin/restart` → `pm2 restart all` (includes all processes) |
 
+When restarting `api` or `all`, the API server may also rebuild the React client in production if it detects that `client/` sources are newer than `client/dist/`.
+This ensures UI changes (title/favicon/etc.) are picked up automatically after the restart.
+
 When restarting `admin`, the response may not reach the browser since the process is restarting itself. The dashboard handles this gracefully by showing a message and reloading after 3 seconds.
 
 ---

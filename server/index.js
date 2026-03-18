@@ -2,6 +2,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
+const util = require('util');
 const { exec } = require('child_process');
 const parishRoutes = require('./routes/parishes');
 const noteRoutes = require('./routes/notes');
@@ -16,6 +18,7 @@ const swagger = require('./swagger');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const execAsync = util.promisify(exec);
 
 app.use(express.json());
 swagger.setup(app);
@@ -73,6 +76,86 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+function safeMtimeMs(filePath) {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+function getMaxMtimeMsUnder(dirPath, { excludeDirs = [] } = {}) {
+  let max = 0;
+  const stack = [dirPath];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let stat;
+    try {
+      stat = fs.statSync(current);
+    } catch {
+      continue;
+    }
+
+    if (stat.isDirectory()) {
+      max = Math.max(max, stat.mtimeMs);
+
+      let entries;
+      try {
+        entries = fs.readdirSync(current, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          if (excludeDirs.includes(entry.name)) continue;
+          stack.push(path.join(current, entry.name));
+        } else {
+          // Only care about files' mtimes.
+          stack.push(path.join(current, entry.name));
+        }
+      }
+    } else {
+      max = Math.max(max, stat.mtimeMs);
+    }
+  }
+
+  return max;
+}
+
+function needsClientBuild() {
+  const clientRoot = path.join(__dirname, '..', 'client');
+  const distDir = path.join(clientRoot, 'dist');
+
+  if (!fs.existsSync(distDir)) return true;
+
+  // Source side: anything that should invalidate the Vite build output.
+  const sourceFiles = [
+    path.join(clientRoot, 'index.html'),
+    path.join(clientRoot, 'vite.config.js'),
+    path.join(clientRoot, 'package.json'),
+    path.join(clientRoot, 'package-lock.json'),
+  ];
+  const sourceMtime = Math.max(
+    ...sourceFiles.map(safeMtimeMs),
+    getMaxMtimeMsUnder(path.join(clientRoot, 'src'), { excludeDirs: ['node_modules'] }),
+    getMaxMtimeMsUnder(path.join(clientRoot, 'public'), { excludeDirs: ['node_modules'] }),
+  );
+
+  const outputMtime = getMaxMtimeMsUnder(distDir, { excludeDirs: ['node_modules'] });
+
+  // A small grace period avoids false positives on filesystems with coarse timestamps.
+  const GRACE_MS = 2000;
+  return sourceMtime > outputMtime + GRACE_MS;
+}
+
+function truncateOutput(s, maxLen = 4000) {
+  if (typeof s !== 'string') return s;
+  if (s.length <= maxLen) return s;
+  return s.slice(-maxLen);
+}
+
 /**
  * @swagger
  * /admin/restart:
@@ -122,19 +205,41 @@ app.post('/api/admin/restart', (req, res) => {
     cmd = 'pm2 restart all';
   }
 
-  exec(cmd, (err, stdout, stderr) => {
-    if (err) {
-      return res.status(500).json({
-        ok: false,
-        error: err.message,
-        stderr: stderr,
+  const shouldRebuildClient = (target === 'api' || target === 'all') && needsClientBuild();
+
+  (async () => {
+    let build = null;
+    if (shouldRebuildClient) {
+      const buildCmd = 'cd .. && npm run build';
+      const { stdout, stderr } = await execAsync(buildCmd, {
+        maxBuffer: 1024 * 1024 * 20,
       });
+      build = {
+        command: buildCmd,
+        // Keep admin responses small; UI only needs to know success/failure.
+        stdout: truncateOutput(stdout),
+        stderr: truncateOutput(stderr),
+      };
     }
+
+    const { stdout, stderr } = await execAsync(cmd, {
+      maxBuffer: 1024 * 1024 * 10,
+    });
     res.json({
       ok: true,
       command: cmd,
       stdout,
       stderr,
+      clientBuild: build,
+      clientBuildRebuilt: Boolean(build),
+    });
+  })().catch((err) => {
+    res.status(500).json({
+      ok: false,
+      error: err && err.message ? err.message : String(err),
+      // best-effort details: execAsync rejection often includes stdout/stderr
+      stdout: err && err.stdout ? err.stdout : undefined,
+      stderr: err && err.stderr ? err.stderr : undefined,
     });
   });
 });

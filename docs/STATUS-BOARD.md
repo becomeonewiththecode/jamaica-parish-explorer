@@ -136,6 +136,10 @@ Each section title uses a traffic-light colour scheme:
     { "target": "all" }      // pm2 restart all (default)
     ```
 
+- **Client rebuild behavior (production)**:
+  - When `target` is `api` or `all`, the API server checks whether the React client build needs to be regenerated (based on `client/` source changes vs `client/dist/` output).
+  - If needed, it runs `npm run build` before restarting `jamaica-api`, so UI changes (e.g. title/favicon) are picked up automatically.
+
 - **How authentication works**:
 
   - On the server, set a **strong, random** token in `server/.env`:
