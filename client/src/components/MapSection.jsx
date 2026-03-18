@@ -841,9 +841,9 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   return (
     <>
       <div className="map-top-strip">
-        <div className="map-top-grid">
-          {/* Cell 1: Parish select or Back + title */}
-          {activeSlug ? (
+        <div className={`map-top-grid${activeSlug ? ' has-parish' : ''}`}>
+          {/* Cell 1: Back + title (when parish selected) */}
+          {activeSlug && (
             <div className="map-top-cell parish-cell parish-zoom-header">
               <button className="zoom-back-btn" onClick={() => onSelect(null)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -855,23 +855,6 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
                 {geojson ? (geojson.features.find(f => nameToSlug[f.properties.shapeName] === activeSlug)?.properties.shapeName || activeSlug) : activeSlug}
               </h2>
               <span className="zoom-place-count">{parishPlaces ? parishPlaces.length : 0} places</span>
-            </div>
-          ) : (
-            <div className="map-top-cell parish-cell">
-              {geojson && (
-                <select
-                  className="parish-select-dropdown"
-                  value=""
-                  onChange={(e) => { if (e.target.value) onSelect(e.target.value); }}
-                >
-                  <option value="">Select a Parish...</option>
-                  {Object.entries(nameToSlug)
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([name, slug]) => (
-                      <option key={slug} value={slug}>{name}</option>
-                    ))}
-                </select>
-              )}
             </div>
           )}
 

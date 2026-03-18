@@ -18,6 +18,8 @@ module.exports = {
       watch: false,
       env: {
         NODE_ENV: 'production',
+        STATUS_HOST: '0.0.0.0',
+        STATUS_PORT: '5555',
       },
     },
   ],

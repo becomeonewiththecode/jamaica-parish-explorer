@@ -431,12 +431,16 @@
 
 .map-top-grid {
   display: grid;
-  grid-template-columns: minmax(140px, auto) auto minmax(380px, auto) minmax(220px, 320px);
+  grid-template-columns: auto minmax(380px, auto) minmax(220px, 320px);
   gap: 12px;
   align-items: center;
   justify-content: center;
   width: 100%;
   max-width: min(1200px, calc(100vw - 32px));
+}
+
+.map-top-grid.has-parish {
+  grid-template-columns: minmax(140px, auto) auto minmax(380px, auto) minmax(220px, 320px);
 }
 
 .map-top-cell {
@@ -2149,7 +2153,7 @@
 }
 
 .search-input::placeholder {
-  color: #4a6d94;
+  color: #8a9bb0;
 }
 
 .search-clear {
@@ -2224,6 +2228,20 @@
 .search-result-parish {
   color: #5a8ab5;
   font-size: 0.7rem;
+}
+
+.search-results-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 4px 0;
+}
+
+.search-results-hint {
+  padding: 6px 12px;
+  color: #6b7f8e;
+  font-size: 0.7rem;
+  text-align: center;
+  font-style: italic;
 }
 
 @keyframes star-pulse {
@@ -3043,8 +3061,12 @@
 
   .map-top-grid {
     max-width: 100%;
-    grid-template-columns: minmax(100px, 1fr) auto minmax(340px, auto) minmax(200px, 280px);
+    grid-template-columns: auto minmax(340px, auto) minmax(200px, 280px);
     gap: 10px;
+  }
+
+  .map-top-grid.has-parish {
+    grid-template-columns: minmax(100px, 1fr) auto minmax(340px, auto) minmax(200px, 280px);
   }
 
   .parish-select-dropdown {
@@ -3111,10 +3133,14 @@
   }
 
   .map-top-grid {
-    grid-template-columns: 1fr auto minmax(320px, auto) minmax(180px, 260px);
+    grid-template-columns: auto minmax(320px, auto) minmax(180px, 260px);
     gap: 8px;
     width: 100%;
     max-width: 100%;
+  }
+
+  .map-top-grid.has-parish {
+    grid-template-columns: 1fr auto minmax(320px, auto) minmax(180px, 260px);
   }
 
   .parish-zoom-header {

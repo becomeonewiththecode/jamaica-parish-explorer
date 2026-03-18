@@ -68,7 +68,7 @@ router.get('/search', (req, res) => {
     ORDER BY
       CASE WHEN p.name LIKE ? THEN 0 ELSE 1 END,
       p.name
-    LIMIT 20
+    LIMIT 10
   `).all(`%${q.trim()}%`, `${q.trim()}%`);
 
   res.json(places);

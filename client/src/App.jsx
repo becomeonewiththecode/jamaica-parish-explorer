@@ -73,7 +73,7 @@ function App() {
         focusPlace={focusPlace}
         focusKey={focusKey}
       >
-        <SearchBar onSelectPlace={handleSearchSelect} />
+        <SearchBar onSelectPlace={handleSearchSelect} onSelectParish={handleParishSelect} />
       </MapSection>
       <InfoSection
         parish={parish}
