@@ -36,7 +36,7 @@ flowchart LR
   end
 
   %% Frontend calls backend
-  Map -->|"needs vessel layer"| VesselsApiClient
+  Map -->|"needs vessel layer (Live Data enabled; vessels ON by default)"| VesselsApiClient
   PortViews -->|"needs AIS dock status"| VesselsApiClient
   VesselsApiClient -->|"GET /api/vessels[?type=cruise]"| VesselsEndpoint
 

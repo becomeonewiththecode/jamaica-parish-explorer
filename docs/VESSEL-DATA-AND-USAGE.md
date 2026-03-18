@@ -189,17 +189,18 @@ The client always receives the server snapshot and lets the map decide how to re
 
 #### Top bar toggle
 
-A new toggle is added alongside flights, weather, and waves:
+Vessels are controlled by the app's global `✈ Live Data` toggle (the same control that also enables/disables flights, weather, and waves):
 
-- **Label:** `🛳 Vessels`
 - **States:**
   - `OFF` — no vessel markers drawn; polling stopped.
   - `ON` — vessel markers drawn on the map; polling active.
 
-Tooltip:
+On initial load:
+- **Vessels start ON**
+- **Flights start OFF**, so you may see weather/waves/vessel markers even though the flight overlay is not shown yet.
 
-- `Show vessels and cruise ships around Jamaica` when OFF.
-- `Hide vessel traffic` when ON.
+Tooltip:
+- Use the app's Live Data button tooltip to infer whether all live overlays are shown/hidden.
 
 #### Polling behavior
 

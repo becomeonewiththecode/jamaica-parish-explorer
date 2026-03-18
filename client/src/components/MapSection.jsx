@@ -459,11 +459,13 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [currentZoom, setCurrentZoom] = useState(11);
   const showFlights = showFlightsProp !== undefined ? showFlightsProp : true;
   const setShowFlights = onFlightsChange || (() => {});
-  const [showWeatherView, setShowWeatherView] = useState(false); // when on: zoom 9–11 only airports + weather, no places
+  // Weather/waves/vessels are independent layers from flights.
+  // Keep them ON by default so map glyphs appear immediately on refresh (no need to toggle).
+  const [showWeatherView, setShowWeatherView] = useState(true); // when on: zoom 9–11 only airports + weather, no places
   const [islandWeather, setIslandWeather] = useState([]);
-  const [showWavesView, setShowWavesView] = useState(false);
+  const [showWavesView, setShowWavesView] = useState(true);
   const [islandWaves, setIslandWaves] = useState([]);
-  const [showVessels, setShowVessels] = useState(false);
+  const [showVessels, setShowVessels] = useState(true);
   const [vessels, setVessels] = useState([]);
   const liveDataOn = showFlights || showWeatherView || showWavesView || showVessels;
   const toggleAllLiveData = () => {

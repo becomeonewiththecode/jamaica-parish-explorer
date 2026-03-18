@@ -43,7 +43,7 @@ flowchart LR
   end
 
   %% Frontend calls backend
-  Map -->|"needs parish / island weather"| WeatherApiClient
+  Map -->|"needs weather/waves layer (Live Data enabled; weather ON by default)"| WeatherApiClient
   WeatherApiClient -->|"GET /api/weather/island"| IslandEndpoint
   WeatherApiClient -->|"GET /api/weather/parish/:slug"| ParishEndpoint
   WeatherApiClient -->|"GET /api/weather/waves"| WavesEndpoint

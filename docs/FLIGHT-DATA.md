@@ -212,7 +212,9 @@ Queries stored flight records from the database.
 
 ### Map Markers (FlightTracker component)
 
-When "Live Flights" is toggled on:
+Live Flights are controlled by the flight layer (`showFlights` in `MapSection`):
+- **Initial load:** Live Flights are **OFF by default**.
+- When Live Flights are enabled (via the app's Live Data toggle / turning flights on), the map shows:
 - **AeroDataBox airports (KIN, MBJ):** Flight count badges appear at airport positions showing arrival/departure counts (e.g. `↓13 ↑12`)
 - **Live aircraft:** Plane icons at actual aircraft positions, rotated to match heading. **Icons** match the typecode category: helicopter, cargo, business, small, widebody, and narrow each have a distinct inline SVG shape; **color** is from altitude (see altitude legend at bottom of map).
 - Clicking a flight count badge opens the airport's detail view in the InfoSection panel

@@ -8,7 +8,7 @@ import './App.css';
 function App() {
   const [selectedSlug, setSelectedSlug] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
-  const [showFlights, setShowFlights] = useState(true);
+  const [showFlights, setShowFlights] = useState(false);
   const [highlightedPlace, setHighlightedPlace] = useState(null);
   const [activeCategories, setActiveCategories] = useState(new Set());
   const [focusPlace, setFocusPlace] = useState(null);
