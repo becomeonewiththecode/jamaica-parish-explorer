@@ -431,7 +431,8 @@
 
 .map-top-grid {
   display: grid;
-  grid-template-columns: auto minmax(340px, auto) minmax(220px, 300px);
+  /* Center the Live Data controls (middle column) exactly above the map. */
+  grid-template-columns: 1fr auto 1fr;
   gap: 6px;
   align-items: center;
   justify-content: center;
@@ -458,6 +459,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  justify-content: flex-end;
 }
 
 .map-top-cell.toggles-cell {
@@ -559,7 +561,7 @@
 
 .map-top-cell.search-cell {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .map-top-cell.search-cell .search-bar {
