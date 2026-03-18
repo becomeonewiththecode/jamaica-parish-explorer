@@ -4,23 +4,30 @@ services:
   jamaica-parish-explorer:
     build:
       context: ../..
-      dockerfile: deployment/option3-docker-compose/Dockerfile
+      dockerfile: deployment/docker-compose/Dockerfile
     container_name: jamaica-parish-explorer
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      # Fallbacks if not set in .env
       - NODE_ENV=production
-      - PORT=${PORT:-3000}
+      - PORT=${PORT:-3001}
+      - HOST=0.0.0.0
+      - STATUS_HOST=0.0.0.0
+      - STATUS_PORT=5555
+      - ADMIN_HOST=0.0.0.0
+      - ADMIN_PORT=5556
     ports:
-      # Change "80:3000" if you want a different external port
-      - "${HOST_PORT:-80}:${PORT:-3000}"
+      # API server
+      - "${HOST_PORT:-80}:${PORT:-3001}"
+      # Status board
+      - "${STATUS_PORT:-5555}:5555"
+      # Admin dashboard
+      - "${ADMIN_PORT:-5556}:5556"
     volumes:
-      # Persist SQLite database and any generated files
-      - jamaica_data:/app/data
+      # Persist SQLite database and cache files
+      - jamaica_data:/app/server
     working_dir: /app
-    command: ["npm", "start"]
 
 volumes:
   jamaica_data:
