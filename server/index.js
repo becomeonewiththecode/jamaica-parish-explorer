@@ -42,11 +42,16 @@ app.get('/api/health', (req, res) => {
     typeof weatherRoutes.getProviderHealth === 'function'
       ? weatherRoutes.getProviderHealth()
       : undefined;
+  const flightProviders =
+    typeof flightRoutes.getFlightProviderHealth === 'function'
+      ? flightRoutes.getFlightProviderHealth()
+      : undefined;
   res.json({
     ok: true,
     uptime: process.uptime(),
     env: process.env.NODE_ENV || 'development',
     providers,
+    flightProviders,
   });
 });
 

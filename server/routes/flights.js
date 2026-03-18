@@ -7,6 +7,22 @@ const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '';
 const OPENSKY_CLIENT_ID = process.env.OPENSKY_CLIENT_ID || '';
 const OPENSKY_CLIENT_SECRET = process.env.OPENSKY_CLIENT_SECRET || '';
 
+// In-memory flight provider health snapshot for status/monitoring.
+const flightProviderHealth = {
+  aerodatabox: { lastOk: null, lastError: null, lastChecked: null },
+  opensky: { lastOk: null, lastError: null, lastChecked: null },
+  'adsb-lol': { lastOk: null, lastError: null, lastChecked: null },
+};
+
+function updateFlightProviderHealth(source, ok, error) {
+  if (!flightProviderHealth[source]) return;
+  flightProviderHealth[source] = {
+    lastOk: !!ok,
+    lastError: ok ? null : (error || null),
+    lastChecked: new Date().toISOString(),
+  };
+}
+
 // ICAO airline code → name lookup (covers Jamaica routes + major international carriers)
 const ICAO_AIRLINES = {
   // Caribbean & Jamaica
@@ -579,9 +595,11 @@ async function fetchAeroDataBox(airport) {
 
     if (!res.ok || res.status === 204) {
       console.log(`[Flights] AeroDataBox ${airport.iata}: HTTP ${res.status}`);
+      updateFlightProviderHealth('aerodatabox', false, `HTTP ${res.status}`);
       return { flights: null, status: res.status };
     }
     const data = await res.json();
+    updateFlightProviderHealth('aerodatabox', true);
     console.log(`[Flights] AeroDataBox ${airport.iata}: ${(data.arrivals || []).length} arrivals, ${(data.departures || []).length} departures`);
 
     const flights = [];
@@ -652,8 +670,12 @@ async function fetchOpenSky() {
     const timer = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(url, { signal: controller.signal, headers });
     clearTimeout(timer);
-    if (!res.ok) return [];
+    if (!res.ok) {
+      updateFlightProviderHealth('opensky', false, `HTTP ${res.status}`);
+      return [];
+    }
     const data = await res.json();
+    updateFlightProviderHealth('opensky', true);
     return (data.states || []).map(s => {
       const callsign = (s[1] || '').trim();
       return {
@@ -672,6 +694,7 @@ async function fetchOpenSky() {
       };
     }).filter(f => f.lat && f.lon);
   } catch (e) {
+    updateFlightProviderHealth('opensky', false, e.message);
     return [];
   }
 }
@@ -860,8 +883,12 @@ async function fetchAdsbLolForAirport(airport) {
     const timer = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
-    if (!res.ok) return [];
+    if (!res.ok) {
+      updateFlightProviderHealth('adsb-lol', false, `HTTP ${res.status}`);
+      return [];
+    }
     const data = await res.json();
+    updateFlightProviderHealth('adsb-lol', true);
     const ac = data.ac || data.aircraft || data.planes || [];
     if (ac.length === 0) return [];
 
@@ -1384,5 +1411,10 @@ router.get('/history', (req, res) => {
   const rows = db.prepare(sql).all(...params);
   res.json({ flights: rows, total: rows.length });
 });
+
+// Expose flight provider health snapshot for /api/health and status board.
+router.getFlightProviderHealth = function getFlightProviderHealth() {
+  return flightProviderHealth;
+};
 
 module.exports = router;

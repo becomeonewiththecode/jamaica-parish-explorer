@@ -60,21 +60,7 @@ if (process.env.WEATHERAPI_KEY || process.env.WEATHER_API_KEY) {
 // Can be overridden with STATUS_REFRESH_MS env var.
 const STATUS_REFRESH_MS = Number(process.env.STATUS_REFRESH_MS || 600000); // default 10 minutes
 
-// Flight provider endpoints (grouped under one external status)
-const FLIGHT_PROVIDER_ENDPOINTS = [
-  {
-    id: 'opensky',
-    label: 'OpenSky (flights)',
-    url: 'https://opensky-network.org/api/states/all?lamin=17.0&lamax=19.0&lomin=-79.0&lomax=-75.0',
-  },
-  {
-    id: 'adsb-lol',
-    label: 'adsb.lol (flights)',
-    url: 'https://api.adsb.lol/v2/lat/18.0/lon/-77.0/dist/50',
-  },
-];
-
-let openSkyRateLimitedUntil = 0;
+// All flight provider statuses are derived from /api/health to avoid extra API calls.
 
 // External provider checks (third-party APIs)
 const EXTERNAL_CHECKS = [
@@ -109,12 +95,13 @@ function fetchPm2Status() {
           ? raw.map((p) => {
               const env = p.pm2_env || {};
               const monit = p.monit || {};
+              const memBytes = typeof monit.memory === 'number' ? monit.memory : null;
               return {
                 name: p.name || env.name || 'unknown',
                 status: env.status || 'unknown',
                 restarts: typeof env.restart_time === 'number' ? env.restart_time : null,
-                cpu: typeof monit.cpu === 'number' ? monit.cpu : null,
-                memory: typeof monit.memory === 'number' ? monit.memory : null,
+                cpu: typeof monit.cpu === 'number' ? monit.cpu + '%' : null,
+                memory: memBytes !== null ? (memBytes / (1024 * 1024)).toFixed(1) + ' MB' : null,
               };
             })
           : [];
@@ -180,8 +167,6 @@ function runServerCheck(target) {
     req.on('error', (err) =>
       resolve({
         ok: false,
-        code: null,
-        unreachable: true,
         error: (err && err.code) || err.message || 'error',
         ms: Date.now() - started,
       })
@@ -190,8 +175,6 @@ function runServerCheck(target) {
       req.destroy();
       resolve({
         ok: false,
-        code: null,
-        unreachable: true,
         error: 'timeout',
         ms: Date.now() - started,
       });
@@ -209,10 +192,6 @@ function runExternalCheck(urlString) {
       return resolve({ ok: false, error: 'invalid url', ms: 0 });
     }
     // Simple 429 backoff for OpenSky to avoid constant red when rate limited
-    if (url.hostname.includes('opensky-network.org') && Date.now() < openSkyRateLimitedUntil) {
-      return resolve({ ok: false, code: 429, error: 'backoff', ms: 0 });
-    }
-
     const lib = url.protocol === 'https:' ? https : http;
     const req = lib.get(
       {
@@ -222,23 +201,7 @@ function runExternalCheck(urlString) {
         timeout: 8000,
       },
       (res) => {
-        const startedAt = started;
-        const base = { ms: Date.now() - startedAt, code: res.statusCode };
-        // For OpenSky, honor X-Rate-Limit-Retry-After-Seconds if present so we don't hammer the API,
-        // and surface that information in the status board error text.
-        if (url.hostname.includes('opensky-network.org') && res.statusCode === 429) {
-          const retryAfter = parseInt(res.headers['x-rate-limit-retry-after-seconds'] || '0', 10);
-          const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
-            ? retryAfter * 1000
-            : 10 * 60 * 1000; // fallback: 10 minutes
-          openSkyRateLimitedUntil = Date.now() + delayMs;
-          const hours = retryAfter > 0 ? (retryAfter / 3600).toFixed(1) : null;
-          const errorText = hours
-            ? `429 (retry after ~${hours}h)`
-            : '429 (rate limited, backoff)';
-          res.resume();
-          return resolve({ ok: false, ...base, error: errorText });
-        }
+        const base = { ms: Date.now() - started, code: res.statusCode };
         const ok = res.statusCode >= 200 && res.statusCode < 300;
         res.resume();
         resolve({ ok, ...base });
@@ -356,23 +319,32 @@ app.get('/status.json', async (req, res) => {
         // Nothing to do here; external['weather-apis'] is populated above.
         return;
       } else if (c.id === 'flight-apis') {
-        // Group flight providers under one status entry
-        const perProvider = await Promise.all(
-          FLIGHT_PROVIDER_ENDPOINTS.map(async (p) => {
-            const r = await runExternalCheck(p.url);
-            return { id: p.id, label: p.label, ...r };
-          })
-        );
-        const anyOk = perProvider.some(p => p.ok);
-        const firstBad = perProvider.find(p => !p.ok);
-        external[c.id] = {
-          // Consider the overall flight providers ONLINE if at least one is OK
-          ok: anyOk,
-          code: anyOk ? 200 : (firstBad && firstBad.code) || 500,
-          ms: perProvider.reduce((max, p) => Math.max(max, p.ms || 0), 0),
-          error: anyOk ? undefined : perProvider.map(p => `${p.label}:${p.ok ? 'OK' : (p.code || p.error || 'FAIL')}`).join(', '),
-          providers: perProvider,
-        };
+        // All flight provider statuses derived from /api/health (no extra API calls)
+        if (apiHealth && apiHealth.body && apiHealth.body.flightProviders) {
+          const fp = apiHealth.body.flightProviders;
+          const FLIGHT_PROVIDER_LABELS = {
+            aerodatabox: 'AeroDataBox / RapidAPI',
+            opensky: 'OpenSky (flights)',
+            'adsb-lol': 'adsb.lol (flights)',
+          };
+          const providerEntries = Object.entries(fp).map(([id, h]) => {
+            const ok = !!h.lastOk;
+            return {
+              id,
+              label: FLIGHT_PROVIDER_LABELS[id] || id,
+              ok,
+              code: ok ? 200 : 500,
+              error: ok ? undefined : h.lastError || 'unhealthy',
+            };
+          });
+          const anyOk = providerEntries.some(p => p.ok);
+          external[c.id] = {
+            ok: anyOk,
+            code: anyOk ? 200 : 500,
+            ms: apiHealth.ms,
+            providers: providerEntries,
+          };
+        }
       } else {
         external[c.id] = await runExternalCheck(c.url);
       }
@@ -401,15 +373,22 @@ app.get('/status.json', async (req, res) => {
     });
   }
 
+  // Build a clean PM2 object for JSON output (strip internal rendering hints)
+  const pm2Json = {
+    ok: pm2.ok,
+    ms: pm2.ms,
+    processes: (pm2.processes || []).map(({ pm2RowNote, pm2RowOkish, ...rest }) => rest),
+  };
+  if (pm2.error) pm2Json.error = pm2.error;
+
   res.json({
     timestamp: new Date().toISOString(),
     host: API_HOST,
     port: API_PORT,
+    servers,
     checks: results,
     external,
-    servers,
-    pm2,
-    statusBoard: { pid: process.pid, underPm2 },
+    pm2: pm2Json,
   });
 });
 
@@ -427,6 +406,7 @@ app.get('/', (req, res) => {
     .name { font-weight:600; margin-bottom:0.35rem; }
     .status { font-weight:600; font-size:0.9rem; margin-bottom:0.15rem; }
     .ok { color:#4ade80; }
+    .warn { color:#fbbf24; }
     .fail { color:#f97373; }
     .meta { font-size:0.8rem; color:#9ca3af; }
     .pill-btn { display:inline-flex; align-items:center; justify-content:center; padding:0.15rem 0.6rem; border-radius:999px; font-size:0.75rem; font-weight:600; margin-right:0.25rem; margin-bottom:0.25rem; }
@@ -486,6 +466,12 @@ app.get('/', (req, res) => {
 
         // Servers card — 3 columns: application (pill) | status | code
         function esc(t) { return String(t == null ? '' : t).replace(/</g, '&lt;'); }
+        // Determine section status: 0 failures = green/ONLINE, 1 = orange/CHECK, 2+ = red/OFFLINE
+        function sectionStatus(failCount) {
+          if (failCount === 0) return { cls: 'ok', label: 'ONLINE' };
+          if (failCount === 1) return { cls: 'warn', label: 'CHECK' };
+          return { cls: 'fail', label: 'OFFLINE' };
+        }
         (function renderServers() {
           function serverAppRow(r) {
             if (!r) return { pill: 'fail', status: 'unknown', code: '—' };
@@ -510,7 +496,7 @@ app.get('/', (req, res) => {
               if (c >= 400 && c < 500) return { pill: 'fail', status: 'client error', code: String(c) };
               if (c >= 500) return { pill: 'fail', status: 'server error', code: String(c) };
             }
-            if (r.unreachable || c == null) {
+            if (c == null) {
               if (r.error === 'timeout') return { pill: 'fail', status: 'timeout', code: '—' };
               return { pill: 'fail', status: 'OFF', code: '—' };
             }
@@ -587,23 +573,23 @@ app.get('/', (req, res) => {
             }
             pm2Html += '</tbody></table>';
           }
+          var serverFails = Object.values(data.servers || {}).filter(s => !s || !s.ok).length;
+          if (!pm2Healthy) serverFails++;
+          var srvSt = sectionStatus(serverFails);
           card.innerHTML =
             '<div class="name">Servers</div>' +
-            '<div class="status ' + ((Object.values(data.servers || {}).every(s => s && s.ok) && pm2Healthy) ? 'ok' : 'fail') + '">' +
-              ((Object.values(data.servers || {}).every(s => s && s.ok) && pm2Healthy) ? 'ONLINE' : 'CHECK') +
-            '</div>' +
+            '<div class="status ' + srvSt.cls + '">' + srvSt.label + '</div>' +
             '<div class="meta">' +
               (rowsHtml || 'No server info') +
               (pm2Html ? pm2Html : '') +
-            '</div>' +
-            '';
+            '</div>';
           gridServers.appendChild(card);
         })();
         // Combined internal services card
         (function renderInternalServices() {
           const card = document.createElement('div');
           card.className = 'card';
-          const allOk = CHECKS.every(function(c) { const r = data.checks[c.id]; return r && r.ok; });
+          var checkFails = CHECKS.filter(function(c) { const r = data.checks[c.id]; return !r || !r.ok; }).length;
           let rowsHtml = '<table class="status-table servers-3col"><thead><tr>' +
             '<th class="col-app">Service</th><th class="col-status">Status</th><th class="col-code">Code</th>' +
             '</tr></thead><tbody>';
@@ -646,11 +632,10 @@ app.get('/', (req, res) => {
               cruiseHtml += '</tbody></table>';
             }
           }
+          var intSt = sectionStatus(checkFails);
           card.innerHTML =
             '<div class="name">Internal Services</div>' +
-            '<div class="status ' + (allOk ? 'ok' : 'fail') + '">' +
-              (allOk ? 'ONLINE' : 'CHECK') +
-            '</div>' +
+            '<div class="status ' + intSt.cls + '">' + intSt.label + '</div>' +
             '<div class="meta">' + rowsHtml + cruiseHtml + '</div>';
           grid.appendChild(card);
         })();
@@ -679,11 +664,11 @@ app.get('/', (req, res) => {
               }
               rowsHtml += '</tbody></table>';
             }
+            var wFails = providers.filter(function(p) { return !p || !p.ok; }).length;
+            var wSt = sectionStatus(wFails);
             card.innerHTML =
               '<div class="name">' + c.label + '</div>' +
-              '<div class="status ' + (ok ? 'ok' : 'fail') + '">' +
-                (ok ? 'ONLINE' : 'OFFLINE') +
-              '</div>' +
+              '<div class="status ' + wSt.cls + '">' + wSt.label + '</div>' +
               '<div class="meta">' +
                 (providers.length ? rowsHtml : (r ? ('code: ' + (r.code || '-') + ' · ' + (r.ms || 0) + ' ms') : 'no data')) +
               '</div>';
@@ -705,11 +690,11 @@ app.get('/', (req, res) => {
               }
               rowsHtml += '</tbody></table>';
             }
+            var fFails = providers.filter(function(p) { return !p || !p.ok; }).length;
+            var fSt = sectionStatus(fFails);
             card.innerHTML =
               '<div class="name">' + c.label + '</div>' +
-              '<div class="status ' + (ok ? 'ok' : 'fail') + '">' +
-                (ok ? 'ONLINE' : 'OFFLINE') +
-              '</div>' +
+              '<div class="status ' + fSt.cls + '">' + fSt.label + '</div>' +
               '<div class="meta">' +
                 (providers.length ? rowsHtml : (r ? ('code: ' + (r.code || '-') + ' · ' + (r.ms || 0) + ' ms') : 'no data')) +
               '</div>';

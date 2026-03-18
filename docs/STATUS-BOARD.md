@@ -4,14 +4,24 @@ The status board is a lightweight dashboard that reports whether key backend ser
 
 ### What it checks
 
+**Internal services** (checked via the API server):
 - **API health**: `GET /api/health` (Express server up, basic info).
 - **Island weather**: `GET /api/weather/island` (multi‑provider aggregate across Open‑Meteo, WeatherAPI, OpenWeather).
 - **Wave data**: `GET /api/weather/waves` (Open‑Meteo Marine).
 - **Flights data**: `GET /api/flights` (scheduled + live flight feed).
 - **Vessel data**: `GET /api/vessels` (AISStream snapshot around Jamaica).
-- **Cruise schedules (Montego Bay)**: `GET /api/ports/montego-bay-cruise-port/cruises` (scraped and cached cruise calls).
+- **Cruise schedules**: `GET /api/ports/{port}/cruises` for Montego Bay, Ocho Rios, and Falmouth (scraped and cached cruise calls, shown as a sub-table).
 
-Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP status code, response time, and any error message.
+**External APIs** (derived from `/api/health` — no extra API calls):
+- **Weather providers**: Open-Meteo, WeatherAPI, OpenWeatherMap — status derived from the main API's cached provider health.
+- **Flight providers**: AeroDataBox/RapidAPI, OpenSky, adsb.lol — status derived from the main API's cached provider health (see below).
+
+**Servers**: API server (3001), Client/Vite (5173), and PM2 process status.
+
+Each section title uses a traffic-light colour scheme:
+- **Green / ONLINE** — all services healthy.
+- **Orange / CHECK** — one service offline.
+- **Red / OFFLINE** — two or more services offline.
 
 ### How to run it
 
@@ -41,10 +51,32 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
      - HTML dashboard: `http://localhost:5555/`
      - JSON: `http://localhost:5555/status.json`
 
+- **PM2 (API + status board together)**  
+  The API on **3001** and the status board on **5555** are **separate processes**. If only the API is running, `http://<your-LAN-IP>:5555` will refuse connections.
+
+  From the **project root**:
+
+  ```bash
+  pm2 start ecosystem.config.js
+  pm2 save   # optional: persist after reboot if pm2 startup is configured
+  ```
+
+  That starts **jamaica-api** and **jamaica-status**. Check:
+
+  ```bash
+  pm2 list
+  sudo lsof -i :5555
+  ```
+
+  To start only the status board: `pm2 start ecosystem.config.js --only jamaica-status`.
+
+  If **jamaica-status** showed many restarts after an old bug, PM2 may still list it as **errored** while you view the board via `npm run dev:status`. The dashboard treats that row specially (amber + note) and does not fail the whole PM2 summary. To fix PM2: `pm2 delete jamaica-status && pm2 start ecosystem.config.js --only jamaica-status`.
+
 - **Configuration**
 
   - **Environment variables** (optional):
     - `STATUS_PORT` (default `5555`) — port for the status board.
+    - `STATUS_HOST` (default `0.0.0.0`) — bind address; use `0.0.0.0` so the board is reachable on your LAN (e.g. `http://10.0.0.205:5555/`).
     - `API_HOST` (default `localhost`) — where the main API is reachable.
     - `API_PORT` (default `3001`) — port for the main API.
     - `STATUS_REFRESH_MS` (default `600000`) — how often the browser UI refreshes `/status.json` (in ms). Use this to throttle how often the board polls the API.
@@ -57,12 +89,13 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
   - Exposes:
     - `GET /status.json` — full JSON snapshot of all checks.
     - `GET /` — minimal HTML UI with auto‑refresh every `STATUS_REFRESH_MS` milliseconds (default 10 minutes).
-  - For **weather providers**, the status board no longer calls OpenWeather (or other weather APIs) directly. Instead it:
+  - For **weather providers** and **flight providers**, the status board does **not** call external APIs directly. Instead it:
     - Calls the main API's `GET /api/health` once per refresh.
-    - Uses the `providers` object in that response to render the "Weather providers" card (Open‑Meteo, WeatherAPI, OpenWeather) so provider health reflects the internal service state and cache.
+    - Uses the `providers` object (weather) and `flightProviders` object (flights) in that response to render the provider cards, so status reflects the internal service state and cache without consuming API quotas or rate limits.
+  - The dashboard UI groups services into cards with 3-column tables (service name with green/red dot indicator, status text, HTTP code).
 
 - **Health endpoint**: `server/index.js`
-  - Adds:
+  - Exposes both weather and flight provider health:
 
     ```js
     app.get('/api/health', (req, res) => {
@@ -70,10 +103,13 @@ Each check is displayed as **ONLINE** (green) or **OFFLINE** (red), with HTTP st
         ok: true,
         uptime: process.uptime(),
         env: process.env.NODE_ENV || 'development',
-        providers, // optional: weather provider health snapshot from routes/weather.js
+        providers,        // weather provider health from routes/weather.js
+        flightProviders,  // flight provider health from routes/flights.js
       });
     });
     ```
+
+  - Flight provider health is tracked in `server/routes/flights.js` via `updateFlightProviderHealth()` and exported via `router.getFlightProviderHealth()`.
 
 ### Admin PM2 restart endpoint (DIY remote control)
 
@@ -191,10 +227,13 @@ With this in place:
 
 > **Containerized / orchestrated environments:** In Docker or Kubernetes you typically do **not** use PM2; instead you run a single Node process per container and let the platform handle restarts and scaling. The status board and `/api/health` work the same either way — PM2 is an optional convenience for standalone VMs or bare-metal servers.
 
-### OpenSky rate limiting behaviour
+### Flight provider status (no extra API calls)
 
-- When the status board pings OpenSky (`/api/states/all`), it:
-  - **Uses OAuth2 bearer tokens** from the main flights code (`OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` in `server/.env`).
-  - If OpenSky returns **HTTP 429 Too Many Requests**, it reads the `X-Rate-Limit-Retry-After-Seconds` header and backs off further checks for that many seconds (converted to milliseconds). During this backoff the “OpenSky (flights)” pill will show **429 / backoff**, but the flights feature continues via `adsb.lol`.
-  - If the header is missing, a conservative default backoff of **10 minutes** is used.
+The status board derives all flight provider health from the main API's `/api/health` endpoint. It does **not** make direct calls to AeroDataBox, OpenSky, or adsb.lol. This avoids:
+
+- Burning RapidAPI quota (AeroDataBox).
+- Triggering OpenSky rate limits (which can impose multi-hour backoffs via `X-Rate-Limit-Retry-After-Seconds`).
+- Unnecessary duplicate calls to adsb.lol.
+
+The main API's flight polling code (`server/routes/flights.js`) tracks provider health internally via `updateFlightProviderHealth()`. Each successful or failed fetch updates the health state, and the status board reads it via the `flightProviders` field in `/api/health`.
 

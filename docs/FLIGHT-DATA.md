@@ -25,8 +25,8 @@ Flight data comes from two external APIs, each covering different airports:
 - **API endpoint:** `https://opensky-network.org/api/states/all?lamin=...&lamax=...&lomin=...&lomax=...`
 - **Fallback role:** If AeroDataBox fails entirely, OpenSky is also used as a Jamaica-wide fallback (bounding box covering the full island)
 - **Rate limiting / 429 handling:**
-  - For **flight data** (in `server/routes/flights.js`), OpenSky is treated as a **secondary source** behind adsb.lol, and all calls include the bearer token. If OpenSky returns **HTTP 429**, the flights code simply treats the response as empty and continues using adsb.lol, so the UI stays live even when OpenSky is temporarily unavailable.
-  - For the **status board** (in `server/status-board.js`), when the OpenSky check returns **429**, the code now reads the `X-Rate-Limit-Retry-After-Seconds` header and backs off further checks for that many seconds. During this period, the "OpenSky (flights)" pill shows an error like `429 (retry after ~20.7h)` to reflect OpenSky’s own retry advice.
+  - For **flight data** (in `server/routes/flights.js`), OpenSky is treated as a **secondary source** behind adsb.lol, and all calls include the bearer token. If OpenSky returns **HTTP 429**, the flights code simply treats the response as empty and continues using adsb.lol, so the UI stays live even when OpenSky is temporarily unavailable. The health state is tracked internally via `updateFlightProviderHealth()`.
+  - The **status board** does **not** call OpenSky directly. It derives OpenSky’s status from the main API’s `/api/health` endpoint (`flightProviders.opensky`), avoiding extra calls that would burn through the rate limit.
 - **Note:** Caribbean ADS-B receiver coverage is sparse — OpenSky may return zero aircraft even when flights are active; adsb.lol is used as the primary live radar source.
 
 ### adsb.lol (Tertiary — Live Radar, Free)
@@ -125,8 +125,10 @@ Scheduled flights (AeroDataBox) are cross-referenced with live radar so the boar
 ### API Usage Estimate
 
 - AeroDataBox: 2 calls per poll × 4 polls/hour × 24 hours = **~192 calls/day**
-- OpenSky: 2 calls per poll (authenticated, no strict rate limit)
-- adsb.lol: 0–2 calls per poll (only when OpenSky returns nothing, no rate limit)
+- OpenSky: 2 calls per poll (authenticated, secondary — used when adsb.lol returns nothing)
+- adsb.lol: up to 6 calls per poll (4 per-airport + 1 Jamaica-wide, no rate limit)
+
+> **Note:** The status board does **not** make any direct calls to AeroDataBox, OpenSky, or adsb.lol. All flight provider status is derived from the main API's `/api/health` endpoint.
 
 ---
 
