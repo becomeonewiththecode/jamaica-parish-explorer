@@ -42,6 +42,10 @@ app.get('/api/health', (req, res) => {
     typeof weatherRoutes.getProviderHealth === 'function'
       ? weatherRoutes.getProviderHealth()
       : undefined;
+  const waveProviders =
+    typeof weatherRoutes.getWaveProviderHealth === 'function'
+      ? weatherRoutes.getWaveProviderHealth()
+      : undefined;
   const flightProviders =
     typeof flightRoutes.getFlightProviderHealth === 'function'
       ? flightRoutes.getFlightProviderHealth()
@@ -51,6 +55,7 @@ app.get('/api/health', (req, res) => {
     uptime: process.uptime(),
     env: process.env.NODE_ENV || 'development',
     providers,
+    waveProviders,
     flightProviders,
   });
 });

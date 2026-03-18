@@ -51,6 +51,18 @@ const providerHealth = {
   openweather: { lastOk: null, lastError: null, lastChecked: null },
 };
 
+const waveProviderHealth = {
+  'open-meteo-marine': { lastOk: null, lastError: null, lastChecked: null },
+};
+
+function updateWaveProviderHealth(ok, error) {
+  waveProviderHealth['open-meteo-marine'] = {
+    lastOk: !!ok,
+    lastError: ok ? null : (error || null),
+    lastChecked: new Date().toISOString(),
+  };
+}
+
 function updateProviderHealth(source, ok, error) {
   if (!providerHealth[source]) return;
   providerHealth[source] = {
@@ -392,10 +404,17 @@ async function fetchMarinePoint({ id, name, lat, lon }) {
     try {
       const res = await fetch(url.toString(), { signal: controller.signal });
       clearTimeout(timeout);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        if (attempt === 1) updateWaveProviderHealth(false, `HTTP ${res.status}`);
+        continue;
+      }
       const data = await res.json();
       const c = data.current;
-      if (c == null) continue;
+      if (c == null) {
+        if (attempt === 1) updateWaveProviderHealth(false, 'no current data');
+        continue;
+      }
+      updateWaveProviderHealth(true);
       return {
         id,
         name,
@@ -407,7 +426,10 @@ async function fetchMarinePoint({ id, name, lat, lon }) {
       };
     } catch (err) {
       clearTimeout(timeout);
-      if (attempt === 1) console.error('Marine fetch error:', err.message);
+      if (attempt === 1) {
+        console.error('Marine fetch error:', err.message);
+        updateWaveProviderHealth(false, err.message);
+      }
     }
   }
   return { id, name, lat, lon, error: true };
@@ -616,6 +638,10 @@ setInterval(refreshWeatherAndWaves, REFRESH_INTERVAL_MS);
 // Expose provider health snapshot for /api/health and status board.
 router.getProviderHealth = function getProviderHealth() {
   return providerHealth;
+};
+
+router.getWaveProviderHealth = function getWaveProviderHealth() {
+  return waveProviderHealth;
 };
 
 module.exports = router;

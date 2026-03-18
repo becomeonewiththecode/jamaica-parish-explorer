@@ -42,6 +42,8 @@ const STATUS_REFRESH_MS = Number(process.env.STATUS_REFRESH_MS || 60000); // def
 const EXTERNAL_CHECKS = [
   // Grouped weather providers (Open-Meteo, WeatherAPI, OpenWeatherMap)
   { id: 'weather-apis', label: 'Weather providers', url: null },
+  // Wave/marine provider (Open-Meteo Marine)
+  { id: 'wave-apis', label: 'Wave providers', url: null },
   // Grouped flight/radar providers
   { id: 'flight-apis', label: 'Flight providers', url: null },
 ];
@@ -288,11 +290,39 @@ app.get('/status.json', async (req, res) => {
     }
   }
 
+  // Derive wave/marine provider status from /api/health waveProviders.
+  if (apiHealth && apiHealth.body && apiHealth.body.waveProviders) {
+    const wp = apiHealth.body.waveProviders;
+    const providerEntries = Object.entries(wp).map(([id, h]) => {
+      const ok = !!h.lastOk;
+      return {
+        id,
+        label: 'Open-Meteo Marine',
+        ok,
+        code: ok ? 200 : 500,
+        error: ok ? undefined : h.lastError || 'not checked yet',
+      };
+    });
+    if (providerEntries.length) {
+      const allOk = providerEntries.every((p) => p.ok);
+      external['wave-apis'] = {
+        ok: allOk,
+        code: allOk ? 200 : 500,
+        ms: apiHealth.ms,
+        providers: providerEntries,
+      };
+    }
+  }
+
   await Promise.all(
     EXTERNAL_CHECKS.map(async (c) => {
       if (c.id === 'weather-apis') {
         // Weather provider status is derived from the main API's /api/health.
         // Nothing to do here; external['weather-apis'] is populated above.
+        return;
+      } else if (c.id === 'wave-apis') {
+        // Wave provider status is derived from the main API's /api/health.
+        // Nothing to do here; external['wave-apis'] is populated above.
         return;
       } else if (c.id === 'flight-apis') {
         // All flight provider statuses derived from /api/health (no extra API calls)
@@ -413,11 +443,13 @@ app.get('/', (req, res) => {
   <header>
     <div>
       <h1>Jamaica Explorer – Status Board</h1>
-      <div class="updated" id="updated"></div>
     </div>
-    <div style="display:flex; align-items:center; gap:0.75rem;">
-      <div class="pill">backend: <span id="api-host"></span></div>
-      <div id="countdown" class="pill" style="min-width:5.5rem; text-align:center;"></div>
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <div class="pill">backend: <span id="api-host"></span></div>
+        <div id="countdown" class="pill" style="min-width:5.5rem; text-align:center;"></div>
+      </div>
+      <div class="updated" id="updated"></div>
     </div>
   </header>
   <h2 style="font-size:1rem; margin-top:1.5rem;">Servers</h2>
@@ -652,6 +684,30 @@ app.get('/', (req, res) => {
               '<div class="meta">' +
                 (providers.length ? rowsHtml : (r ? ('code: ' + (r.code || '-') + ' · ' + (r.ms || 0) + ' ms') : 'no data')) +
               '</div>';
+          } else if (c.id === 'wave-apis') {
+            var waveProviders = (r && r.providers) || [];
+            if (!waveProviders.length) {
+              waveProviders = [{ id: 'open-meteo-marine', label: 'Open-Meteo Marine', ok: !!ok, code: ok ? 200 : 500, error: ok ? undefined : 'not checked yet' }];
+            }
+            let rowsHtml = '<table class="status-table servers-3col"><thead><tr><th class="col-app">API service</th><th class="col-status">Status</th><th class="col-code">Code</th></tr></thead><tbody>';
+            for (const p of waveProviders) {
+              const pok = p && p.ok;
+              const statusText = pok ? 'online' : (p.error || 'offline');
+              const codeText = (p.code !== undefined && p.code !== null) ? p.code : (pok ? 'OK' : '—');
+              rowsHtml +=
+                '<tr>' +
+                  '<td class="col-app"><span class="dot ' + (pok ? 'ok' : 'fail') + '"></span>' + p.label + '</td>' +
+                  '<td class="col-status">' + statusText + '</td>' +
+                  '<td class="col-code">' + codeText + '</td>' +
+                '</tr>';
+            }
+            rowsHtml += '</tbody></table>';
+            var waveFails = waveProviders.filter(function(p) { return !p || !p.ok; }).length;
+            var waveSt = sectionStatus(waveFails);
+            card.innerHTML =
+              '<div class="name">' + c.label + '</div>' +
+              '<div class="status ' + waveSt.cls + '">' + waveSt.label + '</div>' +
+              '<div class="meta">' + rowsHtml + '</div>';
           } else if (c.id === 'flight-apis') {
             const providers = (r && r.providers) || [];
             let rowsHtml = '';
