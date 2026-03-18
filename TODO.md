@@ -7,6 +7,17 @@
   - Add new port metadata entries (names, cities, coordinates if available) and ensure data is persisted in the cruise tables.
   - Update `server/status-board.js` `CRUISE_PORT_ENDPOINTS` so Kingston and Errol Flynn appear as separate pills under "Cruise schedules (all ports)".
 
+- **Reggae Sumfest event on map**
+  - Check reggaesumfest.com website for event details.
+  - Display the event on the map with parish location.
+  - Show performing entertainers/artists.
+
+- **Denbigh Agricultural Show on map**
+  - Reference: https://jis.gov.jm/pod/denbigh/
+  - Check for event details and schedule.
+  - Display the event on the map with parish location (Clarendon).
+  - Show event information and activities.
+
 - **Admin PM2 remote control endpoint**
   - Expose a secure admin endpoint that can trigger PM2 restarts (e.g. `/api/admin/restart` with a strong shared secret).
   - Lock it down with strong auth, and
