@@ -2,7 +2,26 @@ const express = require('express');
 const db = require('../db/connection');
 const router = express.Router();
 
-// GET /api/places/website-image?url=... — extract og:image from a website
+/**
+ * @swagger
+ * /places/website-image:
+ *   get:
+ *     summary: Extract og:image from a URL
+ *     description: Fetches the given URL and extracts the Open Graph or Twitter image meta tag.
+ *     tags: [Places]
+ *     parameters:
+ *       - in: query
+ *         name: url
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Website URL to extract image from
+ *     responses:
+ *       200:
+ *         description: "{ image: string | null }"
+ *       400:
+ *         description: Missing or invalid URL
+ */
 router.get('/website-image', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'url parameter required' });
@@ -55,7 +74,24 @@ router.get('/website-image', async (req, res) => {
   }
 });
 
-// GET /api/places/search?q=... — search places by name
+/**
+ * @swagger
+ * /places/search:
+ *   get:
+ *     summary: Search places by name
+ *     description: Returns up to 10 places matching the query string. Minimum 2 characters required.
+ *     tags: [Places]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Search query (min 2 chars)
+ *     responses:
+ *       200:
+ *         description: Array of matching places with id, name, category, lat, lon, parish_slug, parish_name
+ */
 router.get('/search', (req, res) => {
   const { q } = req.query;
   if (!q || q.trim().length < 2) return res.json([]);
@@ -74,7 +110,17 @@ router.get('/search', (req, res) => {
   res.json(places);
 });
 
-// GET /api/places/categories — list all categories with counts
+/**
+ * @swagger
+ * /places/categories:
+ *   get:
+ *     summary: List place categories
+ *     description: Returns all place categories with their counts, sorted by count descending.
+ *     tags: [Places]
+ *     responses:
+ *       200:
+ *         description: Array of { category, count }
+ */
 router.get('/categories', (req, res) => {
   const categories = db.prepare(`
     SELECT category, COUNT(*) as count FROM places GROUP BY category ORDER BY count DESC
@@ -82,7 +128,23 @@ router.get('/categories', (req, res) => {
   res.json(categories);
 });
 
-// GET /api/places/all — all places (lightweight: id, name, category, lat, lon) for map overlay
+/**
+ * @swagger
+ * /places/all:
+ *   get:
+ *     summary: Get all places
+ *     description: Lightweight list of all places for map overlay. Optionally filter by category.
+ *     tags: [Places]
+ *     parameters:
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: Filter by category (e.g. "restaurant", "hotel")
+ *     responses:
+ *       200:
+ *         description: Array of places with id, name, category, lat, lon
+ */
 router.get('/all', (req, res) => {
   const { category } = req.query;
   let places;
@@ -100,7 +162,31 @@ router.get('/all', (req, res) => {
   res.json(places);
 });
 
-// GET /api/parishes/:slug/places — all places for a parish, optionally filtered by category
+/**
+ * @swagger
+ * /parishes/{slug}/places:
+ *   get:
+ *     summary: Get places for a parish
+ *     description: Returns all places in a parish with full detail. Optionally filter by category.
+ *     tags: [Places]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Parish slug
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: Filter by category
+ *     responses:
+ *       200:
+ *         description: Array of places with full detail (address, phone, website, hours, etc.)
+ *       404:
+ *         description: Parish not found
+ */
 router.get('/:slug/places', (req, res) => {
   const parish = db.prepare('SELECT id FROM parishes WHERE slug = ?').get(req.params.slug);
   if (!parish) {

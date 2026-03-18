@@ -1472,7 +1472,17 @@ function removeCompletedFlightsFromCache() {
   console.log(`[Flights] Cleanup: removed ${raw.length - kept.length} completed live flight(s), ${kept.length} remaining`);
 }
 
-// GET /api/flights — returns cached data with live status confirmation
+/**
+ * @swagger
+ * /flights:
+ *   get:
+ *     summary: Get current flight data
+ *     description: Returns cached scheduled and live flight data for Jamaica. Includes airport list, sources, and poll intervals.
+ *     tags: [Flights]
+ *     responses:
+ *       200:
+ *         description: Flight snapshot with flights array, source, airports, and timing metadata
+ */
 router.get('/', (req, res) => {
   if (flightsCache.data) {
     const flights = flightsCache.data.flights.map(f => {
@@ -1497,7 +1507,35 @@ router.get('/', (req, res) => {
   });
 });
 
-// GET /api/flights/history — query stored flight records
+/**
+ * @swagger
+ * /flights/history:
+ *   get:
+ *     summary: Query flight history
+ *     description: Returns stored flight records from the database. Filter by airport and direction.
+ *     tags: [Flights]
+ *     parameters:
+ *       - in: query
+ *         name: airport
+ *         schema:
+ *           type: string
+ *         description: Filter by airport IATA code
+ *       - in: query
+ *         name: direction
+ *         schema:
+ *           type: string
+ *           enum: [arrival, departure]
+ *         description: Filter by flight direction
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Max results to return
+ *     responses:
+ *       200:
+ *         description: "{ flights: array, total: number }"
+ */
 router.get('/history', (req, res) => {
   const { airport, direction, limit = 100 } = req.query;
   let sql = 'SELECT * FROM flights WHERE 1=1';

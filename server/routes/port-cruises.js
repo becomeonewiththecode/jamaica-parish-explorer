@@ -254,6 +254,27 @@ async function loadPortCruises(portId) {
 }
 
 // GET /api/ports/:id/cruises — upcoming cruise calls for a port
+/**
+ * @swagger
+ * /ports/{id}/cruises:
+ *   get:
+ *     summary: Cruise schedule for a port
+ *     description: Returns upcoming cruise ship calls for a Jamaican port. Data is scraped and cached for 6 hours.
+ *     tags: [Cruises]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [montego-bay-cruise-port, ocho-rios-cruise-port, falmouth-cruise-port]
+ *         description: Port identifier
+ *     responses:
+ *       200:
+ *         description: "{ portId: string, cruises: array }"
+ *       404:
+ *         description: Unknown port id
+ */
 router.get('/:id/cruises', async (req, res) => {
   const portId = req.params.id;
   if (!PRIMARY_PORT_URLS[portId]) {

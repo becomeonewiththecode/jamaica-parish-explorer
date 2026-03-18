@@ -189,7 +189,24 @@ function ensureTrackedShipsStream() {
 // Periodic cleanup
 setInterval(cleanupVessels, 5 * 60 * 1000);
 
-// GET /api/vessels — snapshot of recent vessels near Jamaica (includes tracked ships by MMSI when configured)
+/**
+ * @swagger
+ * /vessels:
+ *   get:
+ *     summary: Vessel positions near Jamaica
+ *     description: Returns AIS vessel positions within Jamaica's bounding box (plus any globally tracked ships). Filter by type.
+ *     tags: [Vessels]
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [all, cruise]
+ *         description: Filter by vessel type (default "all")
+ *     responses:
+ *       200:
+ *         description: "{ vessels: array, count: number, lastUpdate: ISO string }"
+ */
 router.get('/', (req, res) => {
   ensureAisStream();
   ensureTrackedShipsStream();

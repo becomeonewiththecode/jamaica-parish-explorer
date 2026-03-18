@@ -12,10 +12,13 @@ const weatherRoutes = require('./routes/weather');
 const vesselRoutes = require('./routes/vessels');
 const portCruiseRoutes = require('./routes/port-cruises');
 
+const swagger = require('./swagger');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(express.json());
+swagger.setup(app);
 
 // CORS for development (Vite runs on 5173)
 if (process.env.NODE_ENV !== 'production') {
@@ -36,7 +39,17 @@ app.use('/api/weather', weatherRoutes);
 app.use('/api/vessels', vesselRoutes);
 app.use('/api/ports', portCruiseRoutes);
 
-// Simple health endpoint for status board / monitoring
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Server health check
+ *     description: Returns server uptime and provider health snapshots for weather, waves, and flights. Used by the status board.
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Health status with provider details
+ */
 app.get('/api/health', (req, res) => {
   const providers =
     typeof weatherRoutes.getProviderHealth === 'function'
@@ -60,9 +73,37 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Admin endpoint to trigger PM2 restarts (DIY remote control).
-// WARNING: This is powerful and must be protected with a strong secret token.
-// Set ADMIN_RESTART_TOKEN in the server .env and send it via the X-Admin-Token header.
+/**
+ * @swagger
+ * /admin/restart:
+ *   post:
+ *     summary: Trigger PM2 process restart
+ *     description: Restarts API, status board, or all PM2 processes. Requires X-Admin-Token header matching ADMIN_RESTART_TOKEN env var.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: header
+ *         name: X-Admin-Token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Admin secret token
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               target:
+ *                 type: string
+ *                 enum: [api, status, all]
+ *                 default: all
+ *                 description: Which PM2 process to restart
+ *     responses:
+ *       200:
+ *         description: Restart command executed
+ *       403:
+ *         description: Invalid or missing token
+ */
 app.post('/api/admin/restart', (req, res) => {
   const expected = process.env.ADMIN_RESTART_TOKEN;
   const provided = req.headers['x-admin-token'];
