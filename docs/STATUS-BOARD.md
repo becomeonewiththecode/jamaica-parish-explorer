@@ -93,6 +93,7 @@ Each section title uses a traffic-light colour scheme:
     - Calls the main API's `GET /api/health` once per refresh.
     - Uses the `providers` object (weather) and `flightProviders` object (flights) in that response to render the provider cards, so status reflects the internal service state and cache without consuming API quotas or rate limits.
   - The dashboard UI groups services into cards with 3-column tables (service name with green/red dot indicator, status text, HTTP code).
+  - When a provider is unhealthy, the status column shows the **actual error message** (e.g. "HTTP 401", "Network timeout") rather than a generic label. If the provider hasn't been polled yet, it shows "not checked yet".
 
 - **Health endpoint**: `server/index.js`
   - Exposes both weather and flight provider health:

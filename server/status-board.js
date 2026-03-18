@@ -274,7 +274,7 @@ app.get('/status.json', async (req, res) => {
         label,
         ok,
         code: ok ? 200 : 500,
-        error: ok ? undefined : h.lastError || 'unhealthy',
+        error: ok ? undefined : h.lastError || 'not checked yet',
       };
     });
     if (providerEntries.length) {
@@ -310,7 +310,7 @@ app.get('/status.json', async (req, res) => {
               label: FLIGHT_PROVIDER_LABELS[id] || id,
               ok,
               code: ok ? 200 : 500,
-              error: ok ? undefined : h.lastError || 'unhealthy',
+              error: ok ? undefined : h.lastError || 'not checked yet',
             };
           });
           const anyOk = providerEntries.some(p => p.ok);

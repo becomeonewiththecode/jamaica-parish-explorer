@@ -127,7 +127,7 @@ function SearchBar({ onSelectPlace, onSelectParish, liveDataOn }) {
         <input
           type="text"
           className="search-input"
-          placeholder={liveDataOn ? "Search parishes and places..." : "Select a parish or place..."}
+          placeholder={liveDataOn ? "Search parishes and places..." : "Select a parish or place or search ..."}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => (results.length > 0 || matchingParishes.length > 0) && setOpen(true)}
