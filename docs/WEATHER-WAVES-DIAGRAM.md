@@ -21,11 +21,13 @@ flowchart LR
     subgraph WeatherCache["In-memory weather caches"]
       PointCache["cache (single point)<br/>key: lat/lon or parish slug<br/>TTL: 10 min"]
       IslandCache["islandCache<br/>14 parishes<br/>TTL: 20 min"]
-      WaveCache["waveCache<br/>coastal points<br/>TTL: 30 min"]
+      WaveCache["waveCache<br/>15 coastal points<br/>TTL: 30 min"]
     end
 
+    DiskCache[("server/.weather-cache.json<br/>(disk persistence)")]
+
     subgraph WeatherJobs["Background refresh"]
-      RefreshTask["refreshWeatherAndWaves()<br/>every 20 min"]
+      RefreshTask["refreshWeatherAndWaves()<br/>every 20 min<br/>skipped on startup if cache fresh"]
     end
   end
 
@@ -70,6 +72,11 @@ flowchart LR
   RefreshTask -->|"update islandCache"| IslandCache
   RefreshTask -->|"fetchWavesData()"| WeatherRoutes
   RefreshTask -->|"update waveCache"| WaveCache
+
+  %% Disk persistence: written after each refresh, restored on startup
+  RefreshTask -->|"persistCache()"| DiskCache
+  DiskCache -->|"restore on startup<br/>if within TTL"| IslandCache
+  DiskCache -->|"restore on startup<br/>if within TTL"| WaveCache
 
   %% Data back to frontend map
   IslandEndpoint -->|"JSON list of 14 parishes<br/>{ slug, lat, lon, temperature, humidity, description, wind, cloudCover, sources }"| WeatherApiClient

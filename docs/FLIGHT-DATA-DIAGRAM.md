@@ -16,12 +16,17 @@ flowchart LR
     FlightsRoute["Flights route<br/>server/routes/flights.js"]
     FlightsEndpoint["GET /api/flights"]
 
-    subgraph FlightCache["In-memory flight cache"]
-      FlightCacheStore["cached snapshot<br/>scheduled + live state<br/>TTL / refresh interval"]
+    subgraph FlightCache["In-memory flight caches"]
+      ScheduledCache["cachedScheduledByAirport<br/>per-airport scheduled flights<br/>poll: 15 min"]
+      LiveCache["flightsCache<br/>merged scheduled + live<br/>poll: 30 sec"]
+      RouteCache["routeCache (Map)<br/>callsign → origin/dest ICAO<br/>TTL: 2 hours"]
     end
 
-    subgraph FlightJobs["Background refresh"]
-      RefreshFlights["refreshFlights()<br/>periodic task"]
+    DiskCache[("server/.flight-cache.json<br/>(disk persistence)")]
+
+    subgraph FlightJobs["Background polling"]
+      ScheduledPoll["fetchScheduledFlights()<br/>every 15 min<br/>skipped on startup if cache fresh"]
+      LivePoll["fetchLiveRadar()<br/>every 30 sec"]
     end
   end
 
@@ -37,14 +42,24 @@ flowchart LR
   FlightsApiClient -->|"GET /api/flights"| FlightsEndpoint
 
   %% Endpoint uses cache
-  FlightsEndpoint -->|"read snapshot"| FlightCacheStore
+  FlightsEndpoint -->|"read snapshot"| LiveCache
   FlightsEndpoint --> FlightsRoute
 
-  %% Background refresh populates cache
-  RefreshFlights --> FlightsRoute
-  FlightsRoute -->|"fetch scheduled flights"| Sched
-  FlightsRoute -->|"fetch live positions"| Radar
-  FlightsRoute -->|"merge + normalize<br/>(by flight/icao callsign)"| FlightCacheStore
+  %% Scheduled poll fetches from AeroDataBox (paid API)
+  ScheduledPoll --> FlightsRoute
+  FlightsRoute -->|"fetch scheduled flights<br/>(KIN, MBJ — 1.1s delay)"| Sched
+  FlightsRoute -->|"update per-airport cache"| ScheduledCache
+
+  %% Live poll fetches from free radar APIs
+  LivePoll --> FlightsRoute
+  FlightsRoute -->|"fetch live positions<br/>(per-airport + Jamaica-wide)"| Radar
+  FlightsRoute -->|"enrich via route lookup<br/>(adsb.lol routeset, OpenSky, hexdb)"| RouteCache
+  FlightsRoute -->|"merge scheduled + live"| LiveCache
+
+  %% Disk persistence: scheduled + routes written after each scheduled fetch and every 5 min
+  ScheduledPoll -->|"persistFlightCache()"| DiskCache
+  DiskCache -->|"restore on startup<br/>if scheduled &lt; 15 min old"| ScheduledCache
+  DiskCache -->|"restore on startup<br/>if route within 2hr TTL"| RouteCache
 
   %% Data back to frontend
   FlightsEndpoint -->|"JSON list of flights<br/>{ id, callsign, origin, destination, eta, alt, lat, lon, source }"| FlightsApiClient
