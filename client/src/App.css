@@ -444,6 +444,33 @@
   grid-template-columns: minmax(140px, auto) auto minmax(340px, auto) minmax(220px, 300px);
 }
 
+.admin-login-link {
+  position: fixed;
+  top: 18px;
+  right: 16px;
+  z-index: 1155; /* above .map-top-strip (1100), below popup modals (1200+) */
+  background: rgba(10, 22, 40, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #1e3a5f;
+  border-radius: 20px;
+  padding: 8px 12px;
+  color: #7a9cc6;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.admin-login-link:hover {
+  border-color: #f0c040;
+  color: #f0c040;
+  background: rgba(240, 192, 64, 0.10);
+}
+
 .map-top-cell {
   min-width: 0;
 }
@@ -3437,6 +3464,12 @@
 
 /* Touch-friendly: ensure minimum tap targets where hover is poor */
 @media (hover: none) and (pointer: coarse) {
+  .zoom-level-control {
+    /* Avoid extra height from the wrapper border; other controls rely on their own button border only. */
+    border: 0;
+    min-height: 44px;
+  }
+
   .zoom-level-btn {
     min-width: 44px;
     min-height: 44px;
@@ -3459,5 +3492,12 @@
 
   .search-input-wrap {
     min-height: 44px;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .admin-login-link {
+    min-height: 44px;
+    padding: 10px 14px;
   }
 }

@@ -6,6 +6,8 @@ import SearchBar from './components/SearchBar';
 import './App.css';
 
 function App() {
+  const adminLoginUrl = `${window.location.protocol}//${window.location.hostname}:5556/login`;
+
   const [selectedSlug, setSelectedSlug] = useState(null);
   const [selectedAirport, setSelectedAirport] = useState(null);
   const [showFlights, setShowFlights] = useState(false);
@@ -59,6 +61,9 @@ function App() {
 
   return (
     <div className="app">
+      <a className="admin-login-link" href={adminLoginUrl} target="_blank" rel="noreferrer">
+        Login
+      </a>
       <MapSection
         activeSlug={selectedSlug}
         onSelect={handleParishSelect}

@@ -24,6 +24,32 @@ function makeToken(username) {
   return crypto.createHmac('sha256', COOKIE_SECRET).update(username).digest('hex');
 }
 
+// --- Login brute-force protection (dependency-light) ---
+// We keep it in-memory (per admin process). This is fine for typical single-node setups.
+const LOGIN_WINDOW_MS = Number(process.env.ADMIN_LOGIN_WINDOW_MS) || 15 * 60 * 1000; // 15m
+const LOGIN_MAX_FAILURES = Number(process.env.ADMIN_LOGIN_MAX_FAILURES) || 10; // 10 failures
+const LOGIN_LOCKOUT_MS = Number(process.env.ADMIN_LOGIN_LOCKOUT_MS) || 10 * 60 * 1000; // 10m lock
+
+// key -> { failures: number[], lockUntil: number }
+const loginFailuresByIp = new Map();
+
+function getClientKey(req) {
+  // Express' req.ip respects trust proxy config; fall back to socket remote address.
+  return req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
+}
+
+function cleanupLoginFailures(now = Date.now()) {
+  for (const [key, entry] of loginFailuresByIp.entries()) {
+    const failures = Array.isArray(entry.failures) ? entry.failures : [];
+    const stillInWindow = failures.some((t) => now - t <= LOGIN_WINDOW_MS);
+    const locked = typeof entry.lockUntil === 'number' && entry.lockUntil > now;
+    if (!locked && !stillInWindow) loginFailuresByIp.delete(key);
+  }
+}
+
+// Periodic cleanup to avoid unbounded memory growth.
+setInterval(() => cleanupLoginFailures(), LOGIN_WINDOW_MS).unref();
+
 function parseCookies(req) {
   const raw = req.headers.cookie || '';
   const cookies = {};
@@ -88,13 +114,34 @@ app.use(express.urlencoded({ extended: false }));
 
 // --- Login routes ---
 app.get('/login', (req, res) => {
-  const error = parseCookies(req).login_error ? '<div class="error">Invalid username or password</div>' : '';
-  res.type('html').send(loginPage(error));
+  const loginError = parseCookies(req).login_error;
+  let errorHtml = '';
+  if (loginError === 'locked') {
+    errorHtml = '<div class="error">Too many failed attempts. Please try again later.</div>';
+  } else if (loginError) {
+    errorHtml = '<div class="error">Invalid username or password</div>';
+  }
+  res.type('html').send(loginPage(errorHtml));
 });
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body || {};
+
+  const now = Date.now();
+  const ipKey = getClientKey(req);
+  cleanupLoginFailures(now);
+
+  const entry = loginFailuresByIp.get(ipKey);
+  if (entry && typeof entry.lockUntil === 'number' && entry.lockUntil > now) {
+    res.writeHead(302, {
+      'Set-Cookie': 'login_error=locked; HttpOnly; Path=/; Max-Age=30',
+      Location: '/login',
+    });
+    return res.end();
+  }
+
   if (username === ADMIN_USER && password === ADMIN_PASSWORD) {
+    loginFailuresByIp.delete(ipKey); // successful login clears failures for that IP
     res.writeHead(302, {
       'Set-Cookie': [
         `admin_token=${makeToken(ADMIN_USER)}; HttpOnly; Path=/; SameSite=Strict; Max-Age=86400`,
@@ -104,8 +151,20 @@ app.post('/login', (req, res) => {
     });
     return res.end();
   }
+
+  // Record failure in sliding window and lock if needed.
+  const prevFailures = (entry && Array.isArray(entry.failures) ? entry.failures : []).filter((t) => now - t <= LOGIN_WINDOW_MS);
+  prevFailures.push(now);
+  let lockUntil = entry && typeof entry.lockUntil === 'number' ? entry.lockUntil : 0;
+  if (prevFailures.length >= LOGIN_MAX_FAILURES) {
+    lockUntil = now + LOGIN_LOCKOUT_MS;
+    prevFailures.length = 0; // reset after lock triggers
+  }
+  loginFailuresByIp.set(ipKey, { failures: prevFailures, lockUntil });
+
+  const lockedJustNow = lockUntil > now;
   res.writeHead(302, {
-    'Set-Cookie': 'login_error=1; HttpOnly; Path=/; Max-Age=5',
+    'Set-Cookie': `login_error=${lockedJustNow ? 'locked' : 'invalid'}; HttpOnly; Path=/; Max-Age=30`,
     Location: '/login',
   });
   res.end();

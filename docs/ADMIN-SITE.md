@@ -29,6 +29,15 @@ cd server && node admin.js
 
 The admin site starts on `http://localhost:5556` by default.
 
+## Client Login Link (Map Page)
+
+The main map UI includes a fixed-position `Login` link that points to the admin site’s `/login` endpoint on the admin port (default `5556`).
+
+By default, the client builds the URL using the current page’s hostname:
+- `http://<current-hostname>:5556/login`
+
+If you run behind a reverse proxy where the “visible” host/port differs, ensure `:<ADMIN_PORT>` routes correctly to the `jamaica-admin` process.
+
 ### PM2 (production)
 
 The admin site is included in `ecosystem.config.js` as `jamaica-admin`:
@@ -78,6 +87,33 @@ Copy the output into `server/.env` as `ADMIN_PASSWORD=...`.
 
 ---
 
+## Login Brute-Force Protection
+
+The admin site includes dependency-light protection against credential stuffing/brute-force attempts against `POST /login`.
+
+Mechanism (in-memory per `jamaica-admin` process):
+- The server tracks failed login attempts per client IP (using `req.ip`).
+- Failed attempts are stored in a sliding time window.
+- After `ADMIN_LOGIN_MAX_FAILURES` failures within `ADMIN_LOGIN_WINDOW_MS`, the client IP is temporarily locked out for `ADMIN_LOGIN_LOCKOUT_MS`.
+
+Config (all optional; defaults shown):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ADMIN_LOGIN_WINDOW_MS` | `900000` | Sliding window duration (default: 15 minutes) |
+| `ADMIN_LOGIN_MAX_FAILURES` | `10` | Max failures within the window before lockout |
+| `ADMIN_LOGIN_LOCKOUT_MS` | `600000` | Lockout duration (default: 10 minutes) |
+
+Behavior:
+- While locked out, `POST /login` redirects back to `/login` with a message ("Too many failed attempts").
+- On successful login, failure history for that IP is cleared.
+
+Notes:
+- This protection is in-memory and resets if the admin process restarts.
+- For multi-node deployments, use a shared store (e.g. Redis) at the infrastructure layer.
+
+---
+
 ## Routes
 
 | Route | Auth | Method | Purpose |
@@ -118,7 +154,7 @@ When restarting `admin`, the response may not reach the browser since the proces
 
 ## Security considerations
 
-- The admin site should only be exposed on trusted networks. For internet-facing deployments, put it behind HTTPS (e.g. Nginx reverse proxy with TLS) and consider rate-limiting the login endpoint.
+- The admin site should only be exposed on trusted networks. For internet-facing deployments, put it behind HTTPS (e.g. Nginx reverse proxy with TLS) and consider external (infrastructure-level) rate limiting even though the admin server includes in-memory lockout for `POST /login`.
 - The `HttpOnly` and `SameSite=Strict` cookie flags prevent XSS-based cookie theft and CSRF attacks.
 - Restart commands are double-gated: the admin site requires login, and the API server requires the `X-Admin-Token` header.
 - "Restart All" requires a browser confirmation dialog before executing.

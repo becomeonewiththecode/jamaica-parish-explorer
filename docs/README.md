@@ -22,6 +22,7 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 ### Admin site
 
 - [`ADMIN-SITE.md`](./ADMIN-SITE.md) — authenticated admin dashboard for monitoring PM2 processes, restarting services, and accessing Swagger/Status Board. Runs on port 5556.
+- [`ADMIN-SITE-DIAGRAM.md`](./ADMIN-SITE-DIAGRAM.md) — Mermaid diagram of the admin login flow, including rate limiting and lockout behavior.
 
 ### Status board and monitoring
 
