@@ -1134,32 +1134,33 @@
 .zoom-level-control {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
+  gap: 2px;
+  padding: 1px 4px;
   background: rgba(10, 22, 40, 0.85);
   backdrop-filter: blur(8px);
   border: 1px solid #1e3a5f;
-  border-radius: 20px;
-  font-size: 0.66rem;
+  border-radius: 16px;
+  font-size: 0.6rem;
   font-family: inherit;
 }
 
 .zoom-level-label {
   color: #5a7a9a;
   font-weight: 600;
+  font-size: 0.6rem;
 }
 
 .zoom-level-value {
   color: #f0c040;
   font-weight: 700;
-  min-width: 14px;
+  min-width: 12px;
   text-align: center;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
 }
 
 .zoom-level-btn {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1167,7 +1168,7 @@
   border: 1px solid #1e3a5f;
   border-radius: 50%;
   color: #b0c4de;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
