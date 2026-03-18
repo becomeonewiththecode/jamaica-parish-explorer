@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment, cloneElement, Children } from 'react';
 import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -896,7 +896,9 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
 
           {/* Cell 4: Search bar */}
           <div className="map-top-cell search-cell">
-            {children}
+            {Children.map(children, child =>
+              child ? cloneElement(child, { liveDataOn }) : null
+            )}
           </div>
         </div>
       </div>

@@ -30,7 +30,7 @@ const PARISHES = [
 const MAX_PARISH_RESULTS = 4;
 const MAX_PLACE_RESULTS = 6;
 
-function SearchBar({ onSelectPlace, onSelectParish }) {
+function SearchBar({ onSelectPlace, onSelectParish, liveDataOn }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -127,7 +127,7 @@ function SearchBar({ onSelectPlace, onSelectParish }) {
         <input
           type="text"
           className="search-input"
-          placeholder="Select a parish..."
+          placeholder={liveDataOn ? "Search parishes and places..." : "Select a parish or place..."}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => (results.length > 0 || matchingParishes.length > 0) && setOpen(true)}
