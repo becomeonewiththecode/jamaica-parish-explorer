@@ -37,7 +37,7 @@ flowchart LR
   end
 
   %% Frontend calls backend
-  Map -->|"needs Live Flights layer (showFlights / Live Data → flight layer)"| FlightsApiClient
+  Map -->|"needs ✈ Flights switch in Live Data dropdown (default OFF)"| FlightsApiClient
   AirportViews -->|"needs flight board"| FlightsApiClient
   FlightsApiClient -->|"GET /api/flights"| FlightsEndpoint
 

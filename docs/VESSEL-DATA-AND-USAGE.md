@@ -189,7 +189,7 @@ The client always receives the server snapshot and lets the map decide how to re
 
 #### Top bar toggle
 
-Vessels are controlled by the app's global `✈ Live Data` toggle (the same control that also enables/disables flights, weather, and waves):
+Vessels are controlled by the 🛳 **Vessels** switch inside the **✈ Live Data** dropdown (also affected by the **✈ Live Data (All)** master switch):
 
 - **States:**
   - `OFF` — no vessel markers drawn; polling stopped.

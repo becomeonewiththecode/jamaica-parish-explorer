@@ -151,9 +151,10 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 
 ## How the Data Is Displayed
 
-### Map — Weather layer (shown when Live Data is ON)
+### Map — Weather layer (shown when ☀ Weather is ON)
 
-- **When:** Weather layer is enabled by the app's global Live Data toggle and map zoom is between 9 and 11 (inclusive).
+- **When:** ☀ Weather is ON in the **✈ Live Data** dropdown (also affected by **✈ Live Data (All)**), and map zoom is between 9 and 11 (inclusive).
+- **Initial state:** Weather starts **ON by default** (☀ Weather switch is ON) while Live Flights start OFF.
 - **Data:** `GET /api/weather/island`. The client fetches when the layer is active and **refetches every 20 minutes** while the layer stays on (see **Client refresh** above).
 - **Icon positions** (offsets from parish centre so icons do not overlap): temperature at **parish centre** (over land); cloud **north**; wind **south-east**; rain **north-east** (slightly offset from cloud); sun **north-west** (clear sky only). Wave markers are rendered at their coastal marine coordinates when the Waves layer is on.
 - **Per parish (14 total):**
@@ -170,9 +171,10 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
   - **If data is unavailable (`error: true`):**  
     A single “—°” marker (grey style) at the temperature position with tooltip: “Weather unavailable · Next refresh within 20 min”. This ensures every parish (including e.g. St. Thomas, St. Elizabeth) always has at least one weather-related marker.
 
-### Map — Wave layer (shown when Live Data is ON)
+### Map — Wave layer (shown when 🌊 Waves is ON)
 
-- **When:** Waves layer is enabled by the app's global Live Data toggle and map zoom is between 9 and 11 (inclusive).
+- **When:** 🌊 Waves is ON in the **✈ Live Data** dropdown (also affected by **✈ Live Data (All)**), and map zoom is between 9 and 11 (inclusive).
+- **Initial state:** Waves start **ON by default** (🌊 Waves switch is ON) while Live Flights start OFF.
 - **Data:** `GET /api/weather/waves`. The client fetches when the layer is active and **refetches every 20 minutes** while the layer stays on (see **Client refresh** above).
 - **Per coastal point:** A wave icon (SVG wave symbol) is placed **directly at the marine API coordinate** for that coastal sample point, so each glyph lines up with the actual wave measurement location in its parish (e.g. Lucea for Hanover, Alligator Pond for Manchester).
 - The icon is rotated to show the direction waves are moving; the label shows significant wave height in metres (e.g. `1.2m`). Tooltip includes name, wave height, period, and a note that the arrow is direction of wave movement.

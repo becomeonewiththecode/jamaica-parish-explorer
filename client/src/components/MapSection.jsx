@@ -468,19 +468,30 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [showVessels, setShowVessels] = useState(true);
   const [vessels, setVessels] = useState([]);
   const liveDataOn = showFlights || showWeatherView || showWavesView || showVessels;
-  const toggleAllLiveData = () => {
-    if (liveDataOn) {
-      setShowFlights(false);
-      setShowWeatherView(false);
-      setShowWavesView(false);
-      setShowVessels(false);
-    } else {
-      setShowFlights(true);
-      setShowWeatherView(true);
-      setShowWavesView(true);
-      setShowVessels(true);
+  const allLiveDataOn = showFlights && showWeatherView && showWavesView && showVessels;
+
+  const [liveDataMenuOpen, setLiveDataMenuOpen] = useState(false);
+  const liveDataMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!liveDataMenuOpen) return;
+    function handleClickOutside(e) {
+      if (!liveDataMenuRef.current) return;
+      if (!liveDataMenuRef.current.contains(e.target)) {
+        setLiveDataMenuOpen(false);
+      }
     }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [liveDataMenuOpen]);
+
+  const setAllLiveData = (on) => {
+    setShowFlights(on);
+    setShowWeatherView(on);
+    setShowWavesView(on);
+    setShowVessels(on);
   };
+
   // Base map layer: one of standard OSM, or Thunderforest Transport / Landscape / Neighbourhood
   const [baseLayer, setBaseLayer] = useState('standard');
   const [portCruisesById, setPortCruisesById] = useState({});
@@ -870,13 +881,75 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
 
           {/* Cell 3: Flight, Weather, Waves, Map layer */}
           <div className="map-top-cell toggles-cell">
-            <button
-              className={`flight-toggle-btn${liveDataOn ? ' flight-toggle-active' : ''}`}
-              onClick={toggleAllLiveData}
-              title={liveDataOn ? 'Hide all live data (flights, weather, waves, vessels)' : 'Show all live data (flights, weather, waves, vessels)'}
-            >
-              ✈ Live Data <span className="toggle-value">{liveDataOn ? 'ON' : 'OFF'}</span>
-            </button>
+            <div className="live-data-dropdown-wrap" ref={liveDataMenuRef}>
+              <button
+                className={`flight-toggle-btn${liveDataOn ? ' flight-toggle-active' : ''}`}
+                onClick={() => setLiveDataMenuOpen((v) => !v)}
+                title="Live Data layers"
+              >
+                ✈ Live Data <span className="toggle-value">{liveDataOn ? 'ON' : 'OFF'}</span>
+              </button>
+              {liveDataMenuOpen && (
+                <div className="live-data-dropdown" role="menu" aria-label="Live Data layers">
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">✈ Live Data (All)</div>
+                    <label className="live-data-switch" title="Turn all live layers on/off">
+                      <input
+                        type="checkbox"
+                        checked={allLiveDataOn}
+                        onChange={(e) => setAllLiveData(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                  <div className="live-data-divider" />
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">✈ Flights</div>
+                    <label className="live-data-switch">
+                      <input
+                        type="checkbox"
+                        checked={showFlights}
+                        onChange={(e) => setShowFlights(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">☀ Weather</div>
+                    <label className="live-data-switch">
+                      <input
+                        type="checkbox"
+                        checked={showWeatherView}
+                        onChange={(e) => setShowWeatherView(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">🌊 Waves</div>
+                    <label className="live-data-switch">
+                      <input
+                        type="checkbox"
+                        checked={showWavesView}
+                        onChange={(e) => setShowWavesView(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">🛳 Vessels</div>
+                    <label className="live-data-switch">
+                      <input
+                        type="checkbox"
+                        checked={showVessels}
+                        onChange={(e) => setShowVessels(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
             {hasThunderforestKey ? (
               <select
                 className="base-layer-select parish-select-dropdown"

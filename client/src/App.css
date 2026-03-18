@@ -860,6 +860,93 @@
   color: #f0c040;
 }
 
+/* Live Data layers dropdown (flights / weather / waves / vessels) */
+.live-data-dropdown-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.live-data-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  min-width: 240px;
+  background: rgba(10, 22, 40, 0.96);
+  backdrop-filter: blur(10px);
+  border: 1px solid #1e3a5f;
+  border-radius: 12px;
+  padding: 10px;
+  z-index: 1150;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+.live-data-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 6px;
+  color: #c0d8c0;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.live-data-menu-label {
+  color: #5a7a9a;
+  white-space: nowrap;
+}
+
+.live-data-divider {
+  height: 1px;
+  background: rgba(30, 58, 95, 0.7);
+  margin: 6px 0;
+}
+
+.live-data-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.live-data-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.live-data-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: rgba(11, 16, 32, 0.9);
+  border: 1px solid #1e3a5f;
+  border-radius: 999px;
+  transition: all 0.15s ease;
+}
+
+.live-data-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  top: 2px;
+  background: #5a7a9a;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+
+.live-data-switch input:checked + .live-data-slider {
+  background: rgba(240, 192, 64, 0.18);
+  border-color: #f0c040;
+}
+
+.live-data-switch input:checked + .live-data-slider::before {
+  transform: translateX(20px);
+  background: #f0c040;
+}
+
 /* Flight arrival/departure icon colors */
 .flight-icon-arrival {
   color: #4caf50;
