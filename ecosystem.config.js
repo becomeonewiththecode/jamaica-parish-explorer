@@ -22,6 +22,18 @@ module.exports = {
         STATUS_PORT: '5555',
       },
     },
+    {
+      name: 'jamaica-admin',
+      cwd: './server',
+      script: 'admin.js',
+      node_args: [],
+      watch: false,
+      env: {
+        NODE_ENV: 'production',
+        ADMIN_HOST: '0.0.0.0',
+        ADMIN_PORT: '5556',
+      },
+    },
   ],
 };
 
