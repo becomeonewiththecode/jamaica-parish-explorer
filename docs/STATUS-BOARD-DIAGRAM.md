@@ -5,21 +5,29 @@ The diagram below shows how the status board queries internal services and deriv
 ```mermaid
 flowchart LR
   subgraph Client["Browser (Status Board UI)"]
-    SB["Status Board HTML/JS<br/>(http://localhost:5555)"]
+    SB["Status Board HTML/JS<br/>(http://localhost:5555)<br/>auto-refresh every 1 min<br/>countdown timer"]
   end
 
   subgraph StatusServer["Status Board Server<br/>server/status-board.js"]
     ST["GET /status.json"]
+    PM2["PM2 process status<br/>(pm2 jlist)"]
   end
 
-  subgraph ApiServer["Main API Server<br/>server/index.js"]
+  subgraph ApiServer["Main API Server<br/>server/index.js (port 3001)"]
     H["GET /api/health<br/>{ ok, uptime, providers, flightProviders }"]
     WIsland["GET /api/weather/island"]
     WWaves["GET /api/weather/waves"]
     FApi["GET /api/flights"]
     VApi["GET /api/vessels"]
+    CApi["GET /api/ports/{port}/cruises<br/>(Montego Bay, Ocho Rios, Falmouth)"]
     WRoutes["Weather routes<br/>server/routes/weather.js"]
     FRoutes["Flight routes<br/>server/routes/flights.js"]
+    VRoutes["Vessel routes<br/>server/routes/vessels.js"]
+  end
+
+  subgraph Servers["Server Checks"]
+    API["API server (3001)"]
+    Vite["Client / Vite (5173)"]
   end
 
   subgraph ExternalWeather["External Weather Providers<br/>(called only by API)"]
@@ -35,19 +43,31 @@ flowchart LR
     ADSB["adsb.lol"]
   end
 
+  subgraph ExternalVessels["External Vessel Provider<br/>(called only by API)"]
+    AIS["AISStream.io"]
+  end
+
   %% Browser talks only to status board
-  SB -->|"auto-refresh"| ST
+  SB -->|"auto-refresh<br/>(1 min countdown)"| ST
 
   %% Status board internal checks (API endpoints)
-  ST -->|"internal checks"| WIsland
-  ST -->|"internal checks"| WWaves
-  ST -->|"internal checks"| FApi
-  ST -->|"internal checks"| VApi
+  ST -->|"internal check"| WIsland
+  ST -->|"internal check"| WWaves
+  ST -->|"internal check"| FApi
+  ST -->|"internal check"| VApi
+  ST -->|"internal check<br/>(3 ports)"| CApi
 
   %% Health endpoint provides weather + flight provider status
   ST -->|"GET /api/health"| H
   H -->|"providers (weather)"| ST
   H -->|"flightProviders (flights)"| ST
+
+  %% Server reachability checks
+  ST -->|"TCP check"| API
+  ST -->|"TCP check"| Vite
+
+  %% PM2 process status
+  ST --> PM2
 
   %% Weather routes call external providers and maintain providerHealth
   WRoutes -->|"fetchAllProvidersCurrent"| OM
@@ -60,11 +80,13 @@ flowchart LR
   FRoutes -->|"live radar (secondary)"| OS
   FRoutes -->|"live radar (primary)"| ADSB
 
+  %% Vessel routes call external provider
+  VRoutes --> AIS
+
   %% Legend
   classDef internal fill:#0b1020,stroke:#1f2937,color:#f9fafb;
   classDef external fill:#111827,stroke:#4b5563,color:#e5e7eb;
 
   class StatusServer,ApiServer internal;
-  class ExternalWeather,ExternalFlights external;
+  class ExternalWeather,ExternalFlights,ExternalVessels,Servers external;
 ```
-

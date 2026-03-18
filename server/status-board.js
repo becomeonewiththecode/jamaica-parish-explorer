@@ -32,30 +32,6 @@ const CRUISE_PORT_ENDPOINTS = [
   { id: 'falmouth', label: 'Falmouth', path: '/api/ports/falmouth-cruise-port/cruises' },
 ];
 
-// Weather provider endpoints (grouped under one external status)
-const WEATHER_PROVIDER_ENDPOINTS = [
-  {
-    id: 'open-meteo',
-    label: 'Open-Meteo weather',
-    url: 'https://api.open-meteo.com/v1/forecast?latitude=18.0&longitude=-77.0&current=temperature_2m',
-  },
-  {
-    id: 'open-meteo-marine',
-    label: 'Open-Meteo marine',
-    url: 'https://marine-api.open-meteo.com/v1/marine?latitude=18.0&longitude=-77.0&current=wave_height',
-  },
-];
-
-if (process.env.WEATHERAPI_KEY || process.env.WEATHER_API_KEY) {
-  WEATHER_PROVIDER_ENDPOINTS.push({
-    id: 'weatherapi',
-    label: 'WeatherAPI',
-    url:
-      'https://api.weatherapi.com/v1/current.json?q=18.0,-77.0&key=' +
-      encodeURIComponent(process.env.WEATHERAPI_KEY || process.env.WEATHER_API_KEY),
-  });
-}
-
 // Default refresh interval for status board front-end (ms).
 // Can be overridden with STATUS_REFRESH_MS env var.
 const STATUS_REFRESH_MS = Number(process.env.STATUS_REFRESH_MS || 60000); // default 1 minute
