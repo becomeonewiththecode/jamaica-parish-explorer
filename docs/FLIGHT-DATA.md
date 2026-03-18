@@ -73,7 +73,8 @@ OPENSKY_CLIENT_SECRET=<your-opensky-client-secret>
 ### Polling Schedule
 
 - **Scheduled flights (AeroDataBox):** Polled every **15 minutes** for KIN and MBJ.
-- **Live radar (adsb.lol, OpenSky):** Polled every **30 seconds** for all Jamaica airports (per-airport radius plus Jamaica-wide). The first fetch of each type runs on server boot.
+- **Live radar (adsb.lol, OpenSky):** Polled every **30 seconds** for all Jamaica airports (per-airport radius plus Jamaica-wide).
+- **Startup behaviour:** On server boot, the server checks for a persisted cache file (`server/.flight-cache.json`). If fresh scheduled flight data exists (less than 15 minutes old), it is restored into memory and the startup AeroDataBox fetch is **skipped** to avoid unnecessary paid API calls. Route cache entries still within their 2-hour TTL are also restored. If the cache is stale or missing, the first fetch runs immediately as before.
 
 ### Fetch Sequence (per poll cycle)
 
@@ -89,9 +90,13 @@ OPENSKY_CLIENT_SECRET=<your-opensky-client-secret>
 **Cache cleanup (every 2 min):**  
 A scheduled job removes **live** landed arrivals and departed departures from the cache once they are more than **45 minutes** past their completed time (from radar). **Scheduled** (AeroDataBox) flights are never removed by the server — they often have past scheduled times and would otherwise be wiped; the client hides completed scheduled flights after 45 minutes.
 
-**Key intervals (in code):**  
-- Scheduled poll: 15 min. Live radar poll: 30 s. Cleanup: every 2 min.  
-- Completed flights hidden after **45 min** (client and server cleanup for live only).  
+**Cache persistence:** After each scheduled fetch and every 5 minutes for route data, the server writes both the per-airport scheduled flights and the route lookup cache to `server/.flight-cache.json`. This file is restored on startup so server restarts within the poll interval do not trigger redundant AeroDataBox (paid) or route lookup API calls.
+
+**Provider health on restart:** When the scheduled flight cache is restored from disk, the AeroDataBox and RapidAPI provider health snapshots are pre-populated with `lastOk: true` and the timestamp of the cached data. This ensures the status board shows these providers as online immediately after a restart, rather than "not checked yet" until the next scheduled poll (up to 15 minutes).
+
+**Key intervals (in code):**
+- Scheduled poll: 15 min. Live radar poll: 30 s. Cleanup: every 2 min. Cache persist: every 5 min (routes).
+- Completed flights hidden after **45 min** (client and server cleanup for live only).
 - No radar contact: scheduled flight marked Landed/Departed **15 min** after scheduled time.
 
 ### Live Radar Flight Classification
@@ -241,7 +246,8 @@ Parishes containing airports (Kingston, St. James, St. Mary) include an **Airpor
 
 | File | Purpose |
 |------|---------|
-| `server/routes/flights.js` | API routes, data fetching, polling, OAuth, DB storage; contains `classifyLiveFlight()`, `getCallsignMatchKeys()`, `confirmFlightStatuses()`, `removeCompletedFlightsFromCache()` |
+| `server/routes/flights.js` | API routes, data fetching, polling, OAuth, DB storage, disk-persistence; contains `classifyLiveFlight()`, `getCallsignMatchKeys()`, `confirmFlightStatuses()`, `removeCompletedFlightsFromCache()` |
+| `server/.flight-cache.json` | Auto-generated persisted cache (scheduled flights + route lookups); restored on startup to avoid redundant API calls. Git-ignored |
 | `server/db/schema.sql` | Database schema including `flights` table |
 | `server/.env` | API credentials (gitignored) |
 | `client/src/data/aircraftTypeDesignators.js` | Typecode → icon category (ICAO + TCCA Standard 421.40) |

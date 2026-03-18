@@ -1,6 +1,31 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 const db = require('../db/connection');
+
+// --- Persistent weather/wave cache (survives server restarts) ---
+const CACHE_FILE = path.join(__dirname, '..', '.weather-cache.json');
+
+function loadPersistedCache() {
+  try {
+    const raw = fs.readFileSync(CACHE_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function persistCache(island, wave) {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify({
+      island: { ts: island.ts, data: island.data },
+      wave: { ts: wave.ts, data: wave.data },
+    }), 'utf8');
+  } catch (e) {
+    console.error('[Weather] Failed to persist cache:', e.message);
+  }
+}
 
 // --- Configuration for weather sources (Open-Meteo, WeatherAPI, OpenWeatherMap) ---
 const WEATHER_SOURCE = (process.env.WEATHER_SOURCE || 'open-meteo').toLowerCase();
@@ -43,6 +68,7 @@ let cache = { key: null, data: null, ts: 0 };
 let islandCache = { ts: 0, data: null };
 let openMeteoRateLimitedUntil = 0;
 
+// Restore island and wave caches from disk so a restart doesn't trigger unnecessary API calls.
 // In-memory provider health snapshot for status/monitoring.
 // Updated opportunistically whenever we call a provider.
 const providerHealth = {
@@ -54,6 +80,19 @@ const providerHealth = {
 const waveProviderHealth = {
   'open-meteo-marine': { lastOk: null, lastError: null, lastChecked: null },
 };
+
+const _persisted = loadPersistedCache();
+if (_persisted) {
+  if (_persisted.island && _persisted.island.data && Date.now() - _persisted.island.ts < ISLAND_CACHE_MS) {
+    islandCache = { ts: _persisted.island.ts, data: _persisted.island.data };
+    console.log('[Weather] Restored island cache from disk (' + islandCache.data.length + ' parishes, age ' + Math.round((Date.now() - islandCache.ts) / 1000) + 's)');
+    // Mark weather providers as ok since the cached data was fetched successfully before restart
+    const restoredTs = new Date(_persisted.island.ts).toISOString();
+    for (const key of Object.keys(providerHealth)) {
+      providerHealth[key] = { lastOk: true, lastError: null, lastChecked: restoredTs };
+    }
+  }
+}
 
 function updateWaveProviderHealth(ok, error) {
   waveProviderHealth['open-meteo-marine'] = {
@@ -295,6 +334,34 @@ function aggregateCurrent(list) {
 }
 
 // GET /api/weather?lat=18&lon=-77
+/**
+ * @swagger
+ * /weather:
+ *   get:
+ *     summary: Weather at coordinates
+ *     description: Returns aggregated current weather from multiple providers for the given lat/lon.
+ *     tags: [Weather]
+ *     parameters:
+ *       - in: query
+ *         name: lat
+ *         required: true
+ *         schema:
+ *           type: number
+ *         description: Latitude
+ *       - in: query
+ *         name: lon
+ *         required: true
+ *         schema:
+ *           type: number
+ *         description: Longitude
+ *     responses:
+ *       200:
+ *         description: Aggregated weather data
+ *       400:
+ *         description: Missing or invalid lat/lon
+ *       502:
+ *         description: Weather service unavailable
+ */
 router.get('/', async (req, res) => {
   const lat = parseFloat(req.query.lat);
   const lon = parseFloat(req.query.lon);
@@ -314,7 +381,28 @@ router.get('/', async (req, res) => {
   res.json(out);
 });
 
-// GET /api/weather/parish/:slug
+/**
+ * @swagger
+ * /weather/parish/{slug}:
+ *   get:
+ *     summary: Weather for a parish
+ *     description: Returns current weather for a parish using its capital city coordinates.
+ *     tags: [Weather]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Parish slug (e.g. "st-james", "kingston")
+ *     responses:
+ *       200:
+ *         description: Aggregated weather data
+ *       404:
+ *         description: Unknown parish
+ *       502:
+ *         description: Weather service unavailable
+ */
 router.get('/parish/:slug', async (req, res) => {
   let slug = (req.params.slug || '').toLowerCase().trim();
   slug = PARISH_SLUG_ALIASES[slug] || slug;
@@ -355,7 +443,17 @@ async function fetchIslandWeather() {
   return results; // include all parishes so client can show every parish (rain/sun/wind or unavailable)
 }
 
-// GET /api/weather/island — weather for all parishes (for map layer at zoom 9–12)
+/**
+ * @swagger
+ * /weather/island:
+ *   get:
+ *     summary: Island-wide weather
+ *     description: Returns weather for all 14 parishes. Used by the map weather layer. Cached for 10 minutes.
+ *     tags: [Weather]
+ *     responses:
+ *       200:
+ *         description: Array of parish weather objects (one per parish, includes slug, lat, lon)
+ */
 router.get('/island', async (req, res) => {
   if (islandCache.data && Date.now() - islandCache.ts < ISLAND_CACHE_MS) {
     return res.json(islandCache.data);
@@ -369,6 +467,13 @@ router.get('/island', async (req, res) => {
 const MARINE_API = 'https://marine-api.open-meteo.com/v1/marine';
 const WAVE_CACHE_MS = 30 * 60 * 1000; // 30 minutes
 let waveCache = { ts: 0, data: null };
+
+// Restore wave cache from disk
+if (_persisted && _persisted.wave && _persisted.wave.data && Date.now() - _persisted.wave.ts < WAVE_CACHE_MS) {
+  waveCache = { ts: _persisted.wave.ts, data: _persisted.wave.data };
+  waveProviderHealth['open-meteo-marine'] = { lastOk: true, lastError: null, lastChecked: new Date(_persisted.wave.ts).toISOString() };
+  console.log('[Weather] Restored wave cache from disk (' + waveCache.data.length + ' points, age ' + Math.round((Date.now() - waveCache.ts) / 1000) + 's)');
+}
 
 // Coastal points around Jamaica for wave data (name, lat, lon)
 // Manchester has a short south-facing coastline; Alligator Pond represents its marine point.
@@ -441,6 +546,17 @@ async function fetchWavesData() {
   return results.filter(r => !r.error);
 }
 
+/**
+ * @swagger
+ * /weather/waves:
+ *   get:
+ *     summary: Wave conditions
+ *     description: Returns wave height, period, and direction at coastal points around Jamaica. Sourced from Open-Meteo Marine.
+ *     tags: [Weather]
+ *     responses:
+ *       200:
+ *         description: Array of coastal point wave data
+ */
 router.get('/waves', async (req, res) => {
   if (waveCache.data && Date.now() - waveCache.ts < WAVE_CACHE_MS) {
     return res.json(waveCache.data);
@@ -450,7 +566,28 @@ router.get('/waves', async (req, res) => {
   res.json(list);
 });
 
-// GET /api/weather/events — list active / upcoming bad-weather events
+/**
+ * @swagger
+ * /weather/events:
+ *   get:
+ *     summary: Weather events
+ *     description: Returns active and upcoming bad-weather events (storms, warnings, etc.). Filterable by type and parish.
+ *     tags: [Weather]
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *         description: Filter by event type
+ *       - in: query
+ *         name: parish
+ *         schema:
+ *           type: string
+ *         description: Filter by parish slug
+ *     responses:
+ *       200:
+ *         description: Array of weather event objects
+ */
 router.get('/events', (req, res) => {
   const { type, parish } = req.query;
   let where = '1=1';
@@ -629,10 +766,16 @@ async function refreshWeatherAndWaves() {
   } catch (e) {
     console.error('[Weather] Wave refresh failed:', e.message);
   }
+  persistCache(islandCache, waveCache);
 }
 
-// Run on load and every hour
-refreshWeatherAndWaves();
+// On startup, only fetch if caches are stale or empty to avoid unnecessary API calls on restart.
+if (!islandCache.data || Date.now() - islandCache.ts >= REFRESH_INTERVAL_MS ||
+    !waveCache.data || Date.now() - waveCache.ts >= REFRESH_INTERVAL_MS) {
+  refreshWeatherAndWaves();
+} else {
+  console.log('[Weather] Caches still fresh, skipping startup fetch');
+}
 setInterval(refreshWeatherAndWaves, REFRESH_INTERVAL_MS);
 
 // Expose provider health snapshot for /api/health and status board.

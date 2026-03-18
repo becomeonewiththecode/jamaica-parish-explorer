@@ -2,6 +2,14 @@
 
 This folder contains reference and architecture docs for the Jamaica Parish Explorer backend, status board, and data integrations.
 
+### API reference
+
+- `API-REFERENCE.md` — complete reference for all 24 API endpoints with parameters, responses, and usage. Interactive Swagger docs are served at `/api/docs`.
+
+### Admin site
+
+- `ADMIN-SITE.md` — authenticated admin dashboard for monitoring PM2 processes, restarting services, and accessing Swagger/Status Board. Runs on port 5556.
+
 ### Status board and monitoring
 
 - `STATUS-BOARD.md` — how the status board works, what it checks, how to run it, and how weather provider health is derived from `/api/health`.

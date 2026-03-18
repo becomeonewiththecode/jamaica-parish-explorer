@@ -1,6 +1,40 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 const db = require('../db/connection');
+
+// --- Persistent flight cache (survives server restarts) ---
+const FLIGHT_CACHE_FILE = path.join(__dirname, '..', '.flight-cache.json');
+
+function loadPersistedFlightCache() {
+  try {
+    const raw = fs.readFileSync(FLIGHT_CACHE_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function persistFlightCache(scheduledByAirport, routes) {
+  try {
+    // Only persist route entries that are still within TTL
+    const now = Date.now();
+    const routeEntries = [];
+    for (const [key, val] of routes) {
+      if (val && now - val.time < ROUTE_CACHE_TTL) {
+        routeEntries.push([key, val]);
+      }
+    }
+    fs.writeFileSync(FLIGHT_CACHE_FILE, JSON.stringify({
+      ts: now,
+      scheduledByAirport,
+      routes: routeEntries,
+    }), 'utf8');
+  } catch (e) {
+    console.error('[Flights] Failed to persist cache:', e.message);
+  }
+}
 
 // Load API keys from environment
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '';
@@ -239,6 +273,43 @@ let cachedScheduledByAirport = {};
 // TTL: 2 hours (routes don't change mid-flight)
 const routeCache = new Map();
 const ROUTE_CACHE_TTL = 2 * 60 * 60 * 1000;
+
+// Restore scheduled flights and route cache from disk to avoid unnecessary API calls on restart.
+const _persistedFlights = loadPersistedFlightCache();
+if (_persistedFlights && _persistedFlights.ts) {
+  const age = Date.now() - _persistedFlights.ts;
+  // Restore scheduled flights if less than 15 min old (one poll interval)
+  if (_persistedFlights.scheduledByAirport && age < SCHEDULED_POLL_INTERVAL) {
+    cachedScheduledByAirport = _persistedFlights.scheduledByAirport;
+    let flights = [];
+    for (const list of Object.values(cachedScheduledByAirport)) {
+      if (Array.isArray(list)) flights.push(...list);
+    }
+    for (const f of flights) { f.dataSource = 'scheduled'; }
+    cachedScheduledFlights = flights;
+    cachedScheduledSources = ['aerodatabox'];
+    // Mark AeroDataBox and RapidAPI as ok since cached data was fetched successfully before restart
+    const restoredTs = new Date(_persistedFlights.ts).toISOString();
+    flightProviderHealth.aerodatabox = { lastOk: true, lastError: null, lastChecked: restoredTs };
+    flightProviderHealth.rapidapi = { lastOk: true, lastError: null, lastChecked: restoredTs };
+    const byAirport = Object.entries(cachedScheduledByAirport).map(([iata, list]) => `${iata}:${(list || []).length}`).join(', ');
+    console.log(`[Flights] Restored scheduled cache from disk (${flights.length} flights, ${byAirport}, age ${Math.round(age / 1000)}s)`);
+  }
+  // Restore route cache entries still within TTL
+  if (Array.isArray(_persistedFlights.routes)) {
+    const now = Date.now();
+    let restored = 0;
+    for (const [key, val] of _persistedFlights.routes) {
+      if (val && now - val.time < ROUTE_CACHE_TTL) {
+        routeCache.set(key, val);
+        restored++;
+      }
+    }
+    if (restored > 0) {
+      console.log(`[Flights] Restored ${restored} route cache entries from disk`);
+    }
+  }
+}
 
 // Normalize callsign for cache/API (OpenSky expects no spaces, e.g. "UPS1234")
 function normalizeCallsign(callsign) {
@@ -1147,6 +1218,7 @@ async function fetchScheduledFlights() {
   cachedScheduledSources = sources.length ? [...new Set(sources)] : [];
   const byAirport = Object.entries(cachedScheduledByAirport).map(([iata, list]) => `${iata}:${(list || []).length}`).join(', ');
   console.log(`[Flights] Scheduled: ${flights.length} flights (${byAirport || 'none'}) from ${cachedScheduledSources.join(', ') || 'none'}`);
+  persistFlightCache(cachedScheduledByAirport, routeCache);
 }
 
 // --- Fetch live radar: adsb.lol (per-airport 25nm + Jamaica-wide) + OpenSky fallback; polled every LIVE_POLL_INTERVAL (30s) ---
@@ -1273,14 +1345,20 @@ const completedAtByCallsign = new Map();
 const COMPLETED_FLIGHT_HIDE_AFTER_MS = 45 * 60 * 1000; // 45 min
 const COMPLETED_FLIGHT_CLEANUP_INTERVAL_MS = 2 * 60 * 1000; // run cleanup every 2 min
 
-// Start background polling on server boot
+// Start background polling on server boot — skip scheduled fetch if restored from disk
 (async () => {
-  await fetchScheduledFlights();  // Get scheduled flights first
-  await fetchLiveRadar();         // Then live radar
+  if (cachedScheduledFlights.length > 0) {
+    console.log('[Flights] Skipping startup scheduled fetch — cache restored from disk');
+  } else {
+    await fetchScheduledFlights();
+  }
+  await fetchLiveRadar();
 })();
 setInterval(fetchScheduledFlights, SCHEDULED_POLL_INTERVAL);  // Every 15 min
 setInterval(fetchLiveRadar, LIVE_POLL_INTERVAL);               // Every 30 sec
 setInterval(removeCompletedFlightsFromCache, COMPLETED_FLIGHT_CLEANUP_INTERVAL_MS); // Remove Landed/Departed after 45 min
+// Persist route cache to disk every 5 min so route lookups survive restarts
+setInterval(() => persistFlightCache(cachedScheduledByAirport, routeCache), 5 * 60 * 1000);
 
 // True if status from schedule or live indicates the flight is not yet completed (impending)
 function isImpendingStatus(status) {
@@ -1398,7 +1476,17 @@ function removeCompletedFlightsFromCache() {
   console.log(`[Flights] Cleanup: removed ${raw.length - kept.length} completed live flight(s), ${kept.length} remaining`);
 }
 
-// GET /api/flights — returns cached data with live status confirmation
+/**
+ * @swagger
+ * /flights:
+ *   get:
+ *     summary: Get current flight data
+ *     description: Returns cached scheduled and live flight data for Jamaica. Includes airport list, sources, and poll intervals.
+ *     tags: [Flights]
+ *     responses:
+ *       200:
+ *         description: Flight snapshot with flights array, source, airports, and timing metadata
+ */
 router.get('/', (req, res) => {
   if (flightsCache.data) {
     const flights = flightsCache.data.flights.map(f => {
@@ -1423,7 +1511,35 @@ router.get('/', (req, res) => {
   });
 });
 
-// GET /api/flights/history — query stored flight records
+/**
+ * @swagger
+ * /flights/history:
+ *   get:
+ *     summary: Query flight history
+ *     description: Returns stored flight records from the database. Filter by airport and direction.
+ *     tags: [Flights]
+ *     parameters:
+ *       - in: query
+ *         name: airport
+ *         schema:
+ *           type: string
+ *         description: Filter by airport IATA code
+ *       - in: query
+ *         name: direction
+ *         schema:
+ *           type: string
+ *           enum: [arrival, departure]
+ *         description: Filter by flight direction
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Max results to return
+ *     responses:
+ *       200:
+ *         description: "{ flights: array, total: number }"
+ */
 router.get('/history', (req, res) => {
   const { airport, direction, limit = 100 } = req.query;
   let sql = 'SELECT * FROM flights WHERE 1=1';

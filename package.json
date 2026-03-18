@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:status": "cd server && node status-board.js",
+    "dev:admin": "cd server && node admin.js",
     "dev:client": "cd client && npm run dev",
     "dev:server": "cd server && node --watch index.js",
     "build": "cd client && npm run build",

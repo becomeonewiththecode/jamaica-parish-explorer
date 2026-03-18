@@ -14,7 +14,7 @@ flowchart LR
   end
 
   subgraph ApiServer["Main API Server<br/>server/index.js (port 3001)"]
-    H["GET /api/health<br/>{ ok, uptime, providers, flightProviders }"]
+    H["GET /api/health<br/>{ ok, uptime, providers,<br/>waveProviders, flightProviders }"]
     WIsland["GET /api/weather/island"]
     WWaves["GET /api/weather/waves"]
     FApi["GET /api/flights"]
@@ -57,9 +57,10 @@ flowchart LR
   ST -->|"internal check"| VApi
   ST -->|"internal check<br/>(3 ports)"| CApi
 
-  %% Health endpoint provides weather + flight provider status
+  %% Health endpoint provides weather, wave, + flight provider status
   ST -->|"GET /api/health"| H
   H -->|"providers (weather)"| ST
+  H -->|"waveProviders (waves)"| ST
   H -->|"flightProviders (flights)"| ST
 
   %% Server reachability checks
