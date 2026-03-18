@@ -299,7 +299,8 @@ app.get('/status.json', async (req, res) => {
         if (apiHealth && apiHealth.body && apiHealth.body.flightProviders) {
           const fp = apiHealth.body.flightProviders;
           const FLIGHT_PROVIDER_LABELS = {
-            aerodatabox: 'AeroDataBox / RapidAPI',
+            aerodatabox: 'AeroDataBox',
+            rapidapi: 'RapidAPI',
             opensky: 'OpenSky (flights)',
             'adsb-lol': 'adsb.lol (flights)',
           };

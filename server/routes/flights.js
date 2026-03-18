@@ -10,6 +10,7 @@ const OPENSKY_CLIENT_SECRET = process.env.OPENSKY_CLIENT_SECRET || '';
 // In-memory flight provider health snapshot for status/monitoring.
 const flightProviderHealth = {
   aerodatabox: { lastOk: null, lastError: null, lastChecked: null },
+  rapidapi: { lastOk: null, lastError: null, lastChecked: null },
   opensky: { lastOk: null, lastError: null, lastChecked: null },
   'adsb-lol': { lastOk: null, lastError: null, lastChecked: null },
 };
@@ -576,7 +577,11 @@ async function enrichFlightsWithRoutes(flights) {
 // --- AeroDataBox (primary) ---
 // Returns { flights, status } so caller can retry on 429. flights is null on failure; status is HTTP status when failed.
 async function fetchAeroDataBox(airport) {
-  if (!RAPIDAPI_KEY) return { flights: null, status: 0 };
+  if (!RAPIDAPI_KEY) {
+    updateFlightProviderHealth('rapidapi', false, 'RAPIDAPI_KEY not set');
+    updateFlightProviderHealth('aerodatabox', false, 'no API key');
+    return { flights: null, status: 0 };
+  }
 
   const url = `https://aerodatabox.p.rapidapi.com/flights/airports/icao/${airport.icao}?withLeg=false&direction=Both&withCancelled=false&withCodeshared=false&withCargo=false&withPrivate=false`;
 
@@ -594,11 +599,27 @@ async function fetchAeroDataBox(airport) {
     clearTimeout(timer);
 
     if (!res.ok || res.status === 204) {
-      console.log(`[Flights] AeroDataBox ${airport.iata}: HTTP ${res.status}`);
-      updateFlightProviderHealth('aerodatabox', false, `HTTP ${res.status}`);
-      return { flights: null, status: res.status };
+      const code = res.status;
+      console.log(`[Flights] AeroDataBox ${airport.iata}: HTTP ${code}`);
+      // RapidAPI gateway errors: 401/403 (auth), 429 (rate limit), 502/503 (gateway)
+      if (code === 401 || code === 403) {
+        updateFlightProviderHealth('rapidapi', false, `HTTP ${code} (auth failed)`);
+        updateFlightProviderHealth('aerodatabox', false, 'unreachable (RapidAPI auth)');
+      } else if (code === 429) {
+        updateFlightProviderHealth('rapidapi', false, `HTTP 429 (rate limited)`);
+        updateFlightProviderHealth('aerodatabox', false, 'unreachable (RapidAPI rate limit)');
+      } else if (code === 502 || code === 503) {
+        updateFlightProviderHealth('rapidapi', false, `HTTP ${code} (gateway error)`);
+        updateFlightProviderHealth('aerodatabox', false, 'unreachable (RapidAPI down)');
+      } else {
+        // 204, 404, 500 etc. — RapidAPI gateway worked, AeroDataBox returned error
+        updateFlightProviderHealth('rapidapi', true);
+        updateFlightProviderHealth('aerodatabox', false, `HTTP ${code}`);
+      }
+      return { flights: null, status: code };
     }
     const data = await res.json();
+    updateFlightProviderHealth('rapidapi', true);
     updateFlightProviderHealth('aerodatabox', true);
     console.log(`[Flights] AeroDataBox ${airport.iata}: ${(data.arrivals || []).length} arrivals, ${(data.departures || []).length} departures`);
 
@@ -655,6 +676,9 @@ async function fetchAeroDataBox(airport) {
     return { flights, status: res.status };
   } catch (e) {
     console.error(`[Flights] AeroDataBox ${airport.iata} error:`, e.message);
+    // Network/timeout errors — can't reach RapidAPI gateway
+    updateFlightProviderHealth('rapidapi', false, e.name === 'AbortError' ? 'timeout' : e.message);
+    updateFlightProviderHealth('aerodatabox', false, 'unreachable (network error)');
     return { flights: null, status: 0 };
   }
 }
