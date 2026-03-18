@@ -432,7 +432,7 @@
 .map-top-grid {
   display: grid;
   grid-template-columns: auto minmax(380px, auto) minmax(220px, 320px);
-  gap: 12px;
+  gap: 8px;
   align-items: center;
   justify-content: center;
   width: 100%;

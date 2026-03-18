@@ -854,9 +854,9 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   return (
     <>
       <div className="map-top-strip">
-        <div className={`map-top-grid${activeSlug ? ' has-parish' : ''}`}>
-          {/* Cell 1: Back + title (when parish selected) */}
-          {activeSlug && (
+        <div className={`map-top-grid has-parish`}>
+          {/* Cell 1: Back + title (when parish selected) or invisible placeholder. */}
+          {activeSlug ? (
             <div className="map-top-cell parish-cell parish-zoom-header">
               <button className="zoom-back-btn" onClick={() => onSelect(null)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -869,6 +869,8 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
               </h2>
               <span className="zoom-place-count">{parishPlaces ? parishPlaces.length : 0} places</span>
             </div>
+          ) : (
+            <div className="map-top-cell parish-cell" style={{ visibility: 'hidden' }} aria-hidden="true" />
           )}
 
           {/* Cell 2: Zoom */}
