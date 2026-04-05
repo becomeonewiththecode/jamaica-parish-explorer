@@ -872,11 +872,13 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
           )}
 
           {/* Cell 2: Zoom */}
-          <div className="map-top-cell zoom-cell zoom-level-control">
-            <span className="zoom-level-label">Zoom</span>
-            <span className="zoom-level-value">{currentZoom}</span>
-            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
-            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
+          <div className="map-top-cell zoom-cell">
+            <div className="zoom-level-control">
+              <span className="zoom-level-label">Zoom</span>
+              <span className="zoom-level-value">{currentZoom}</span>
+              <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
+              <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
+            </div>
           </div>
 
           {/* Cell 3: Flight, Weather, Waves, Map layer */}
