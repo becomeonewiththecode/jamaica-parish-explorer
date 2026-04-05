@@ -1,5 +1,5 @@
 const express = require('express');
-const db = require('../db/connection');
+const { query } = require('../db/pg-query');
 const router = express.Router();
 
 /**
@@ -13,14 +13,20 @@ const router = express.Router();
  *       200:
  *         description: Array of airport objects
  */
-router.get('/', (req, res) => {
-  const airports = db.prepare('SELECT * FROM airports ORDER BY code').all();
-  // Parse historical_facts JSON for each airport
-  const result = airports.map(a => ({
-    ...a,
-    historical_facts: JSON.parse(a.historical_facts),
-  }));
-  res.json(result);
+router.get('/', async (req, res, next) => {
+  try {
+    const { rows: airports } = await query('SELECT * FROM airports ORDER BY code');
+    const result = airports.map((a) => ({
+      ...a,
+      historical_facts:
+        typeof a.historical_facts === 'string'
+          ? JSON.parse(a.historical_facts)
+          : a.historical_facts,
+    }));
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
 });
 
 /**
@@ -43,11 +49,21 @@ router.get('/', (req, res) => {
  *       404:
  *         description: Airport not found
  */
-router.get('/:code', (req, res) => {
-  const airport = db.prepare('SELECT * FROM airports WHERE code = ?').get(req.params.code.toUpperCase());
-  if (!airport) return res.status(404).json({ error: 'Airport not found' });
-  airport.historical_facts = JSON.parse(airport.historical_facts);
-  res.json(airport);
+router.get('/:code', async (req, res, next) => {
+  try {
+    const { rows } = await query('SELECT * FROM airports WHERE code = $1', [
+      req.params.code.toUpperCase(),
+    ]);
+    const airport = rows[0];
+    if (!airport) return res.status(404).json({ error: 'Airport not found' });
+    airport.historical_facts =
+      typeof airport.historical_facts === 'string'
+        ? JSON.parse(airport.historical_facts)
+        : airport.historical_facts;
+    res.json(airport);
+  } catch (e) {
+    next(e);
+  }
 });
 
 module.exports = router;

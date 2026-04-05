@@ -12,7 +12,7 @@ flowchart TD
     B1["COPY project files into image"]
     B2["rm -rf node_modules (strip host binaries)"]
     B3["npm install (root deps)"]
-    B4["cd server && npm install\n(compiles better-sqlite3 for Alpine/musl)"]
+    B4["cd server && npm install\n(includes pg client)"]
     B5["cd client && npm install"]
     B6["npm run build → client/dist/\n(Vite bundles React + bakes VITE_* env vars)"]
     B1 --> B2 --> B3 --> B4 --> B5 --> B6
@@ -20,7 +20,7 @@ flowchart TD
 
   subgraph Runtime["Stage 2 — runtime (node:20-alpine)"]
     R1["Fresh Alpine image\n(no build tools)"]
-    R2["apk add sqlite\nnpm install -g pm2"]
+    R2["apk add postgresql-client\n(pg_dump/psql for admin DB tools)\nnpm install -g pm2"]
     R3["COPY --from=build /app /app\n(compiled node_modules + client/dist/)"]
     R4["pm2-runtime ecosystem.config.js"]
     R1 --> R2 --> R3 --> R4
@@ -34,19 +34,24 @@ flowchart TD
     P3["jamaica-admin\nserver/admin.js · port 5556\nAPI_HOST=127.0.0.1"]
   end
 
-  subgraph Volume["Named volume — jamaica_data"]
-    V1["jamaica.db\n.flight-cache.json\n.weather-cache.json"]
+  subgraph VolCaches["Bind mount ./data/jamaica → /data"]
+    V1[".flight-cache.json\n.weather-cache.json"]
+  end
+
+  subgraph VolPg["Bind mount ./data/postgres"]
+    PG["PostgreSQL data dir"]
   end
 
   R4 --> Processes
-  P1 -->|"JAMAICA_DATA_DIR=/data"| Volume
+  P1 -->|"JAMAICA_DATA_DIR=/data"| VolCaches
+  P1 -->|"DATABASE_URL"| VolPg
 
   classDef stage fill:#0b1020,stroke:#1f2937,color:#f9fafb;
   classDef proc fill:#111827,stroke:#4b5563,color:#e5e7eb;
   classDef vol fill:#020617,stroke:#6b7280,color:#e5e7eb;
   class Build,Runtime stage;
   class Processes proc;
-  class Volume vol;
+  class VolCaches,VolPg vol;
 ```
 
 ---
@@ -107,8 +112,8 @@ flowchart LR
 
   subgraph API["jamaica-api\nserver/index.js"]
     Static["client/dist/ (static files)"]
-    Routes["API routes\n/api/*"]
-    DB[("jamaica.db\n(JAMAICA_DATA_DIR)")]
+    Routes["API routes\n/api/*\n(admin DB: pg_dump / psql)"]
+    DB[("PostgreSQL\n(DATABASE_URL)")]
     FC[(".flight-cache.json")]
     WC[(".weather-cache.json")]
   end
@@ -118,7 +123,7 @@ flowchart LR
   end
 
   subgraph Admin["jamaica-admin\nserver/admin.js"]
-    AH["GET / — dashboard\nPOST /api/restart"]
+    AH["Dashboard · POST /api/restart\nGET/POST /api/database/*\n→ proxies to API + token"]
   end
 
   Browser -->|"app UI"| P3001
@@ -135,7 +140,7 @@ flowchart LR
   Routes --> WC
 
   Status -->|"HTTP probes\n(API_HOST:3001)"| Routes
-  Admin -->|"proxy restart\n(API_HOST:3001)"| Routes
+  Admin -->|"proxy restart,\nDB backup / restore\n(API_HOST:3001)"| Routes
 
   classDef browser fill:#0b1020,stroke:#1f2937,color:#f9fafb;
   classDef api fill:#111827,stroke:#4b5563,color:#e5e7eb;
@@ -163,18 +168,16 @@ flowchart TD
   Env -->|"no"| Default["path.join(__dirname)\n= server/ directory"]
 
   subgraph Files["Files written there"]
-    F1["jamaica.db"]
-    F2[".flight-cache.json"]
-    F3[".weather-cache.json"]
+    F1[".flight-cache.json"]
+    F2[".weather-cache.json"]
   end
 
   Custom --> Files
   Default --> Files
 
   subgraph Callers["Modules that call getDataDir()"]
-    C1["server/db/connection.js\n(opens SQLite)"]
-    C2["server/routes/flights.js\n(flight cache)"]
-    C3["server/routes/weather.js\n(weather cache)"]
+    C1["server/routes/flights.js\n(flight cache)"]
+    C2["server/routes/weather.js\n(weather cache)"]
   end
 
   Files -.->|"used by"| Callers

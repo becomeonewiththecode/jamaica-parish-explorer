@@ -7,7 +7,7 @@ sudo apt-get update
 sudo apt-get install -y \
   curl \
   git \
-  sqlite3 \
+  postgresql-client \
   build-essential
 
 # Install Node.js (LTS) via NodeSource

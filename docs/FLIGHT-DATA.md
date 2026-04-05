@@ -141,11 +141,11 @@ Scheduled flights (AeroDataBox) are cross-referenced with live radar so the boar
 
 ### Database Table
 
-Flight records are stored in SQLite (`jamaica.db`) in the `flights` table:
+Flight records are stored in PostgreSQL (`flights` table, `DATABASE_URL`):
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | INTEGER | Auto-increment primary key |
+| `id` | BIGSERIAL | Primary key |
 | `flight_number` | TEXT | Airline flight code (e.g. AA 1986) |
 | `airport` | TEXT | Jamaica airport IATA code (KIN, MBJ, OCJ, KTP) |
 | `status` | TEXT | Flight status (Arrived, Expected, Departed, Approaching, etc.) |

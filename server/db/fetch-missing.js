@@ -1,4 +1,4 @@
-const db = require('./connection');
+const { query, closePool } = require('./pg-query');
 const fs = require('fs');
 const path = require('path');
 
@@ -6,13 +6,20 @@ const geojsonPath = path.join(__dirname, '..', '..', 'client', 'public', 'jamaic
 const geojson = JSON.parse(fs.readFileSync(geojsonPath, 'utf8'));
 
 const nameToSlug = {
-  "Hanover": "hanover", "Westmoreland": "westmoreland",
-  "Saint James": "st-james", "Trelawny": "trelawny",
-  "Saint Ann": "st-ann", "Saint Elizabeth": "st-elizabeth",
-  "Manchester": "manchester", "Clarendon": "clarendon",
-  "Saint Mary": "st-mary", "Saint Catherine": "st-catherine",
-  "Saint Andrew": "st-andrew", "Kingston": "kingston",
-  "Saint Thomas": "st-thomas", "Portland": "portland",
+  Hanover: 'hanover',
+  Westmoreland: 'westmoreland',
+  'Saint James': 'st-james',
+  Trelawny: 'trelawny',
+  'Saint Ann': 'st-ann',
+  'Saint Elizabeth': 'st-elizabeth',
+  Manchester: 'manchester',
+  Clarendon: 'clarendon',
+  'Saint Mary': 'st-mary',
+  'Saint Catherine': 'st-catherine',
+  'Saint Andrew': 'st-andrew',
+  Kingston: 'kingston',
+  'Saint Thomas': 'st-thomas',
+  Portland: 'portland',
 };
 
 function pointInPolygon(lat, lon, polygon) {
@@ -21,7 +28,7 @@ function pointInPolygon(lat, lon, polygon) {
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i];
     const [xj, yj] = ring[j];
-    if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+    if (((yi > lat) !== (yj > lat)) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
       inside = !inside;
     }
   }
@@ -53,11 +60,11 @@ const missing = [
   { category: 'park', query: '"leisure"="park"' },
 ];
 
-const insertPlace = db.prepare(`
-  INSERT OR IGNORE INTO places (parish_id, osm_id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-const getParishId = db.prepare('SELECT id FROM parishes WHERE slug = ?');
+const INSERT_PLACE = `
+  INSERT INTO places (parish_id, osm_id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+  ON CONFLICT (osm_id) DO NOTHING
+`;
 
 async function main() {
   for (const q of missing) {
@@ -68,10 +75,14 @@ async function main() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'data=' + encodeURIComponent(overpassQuery),
     });
-    if (!res.ok) { console.log(`  Failed: ${res.status}`); await new Promise(r => setTimeout(r, 5000)); continue; }
+    if (!res.ok) {
+      console.log(`  Failed: ${res.status}`);
+      await new Promise((r) => setTimeout(r, 5000));
+      continue;
+    }
     const data = await res.json();
     let inserted = 0;
-    for (const el of (data.elements || [])) {
+    for (const el of data.elements || []) {
       const lat = el.lat || (el.center && el.center.lat);
       const lon = el.lon || (el.center && el.center.lon);
       const tags = el.tags || {};
@@ -79,26 +90,34 @@ async function main() {
       if (!lat || !lon || !name) continue;
       const slug = findParishForPoint(lat, lon);
       if (!slug) continue;
-      const parish = getParishId.get(slug);
+      const pr = await query('SELECT id FROM parishes WHERE slug = $1', [slug]);
+      const parish = pr.rows[0];
       if (!parish) continue;
       const osmId = `${el.type}/${el.id}`;
       const address = [tags['addr:street'], tags['addr:city']].filter(Boolean).join(', ') || null;
-      try {
-        insertPlace.run(parish.id, osmId, name, q.category, lat, lon, address,
-          tags.phone || tags['contact:phone'] || null,
-          tags.website || tags['contact:website'] || null,
-          tags.opening_hours || null, tags.cuisine || null,
-          tags.stars ? parseInt(tags.stars) : null);
-        inserted++;
-      } catch (e) {}
+      const r = await query(INSERT_PLACE, [
+        parish.id,
+        osmId,
+        name,
+        q.category,
+        lat,
+        lon,
+        address,
+        tags.phone || tags['contact:phone'] || null,
+        tags.website || tags['contact:website'] || null,
+        tags.opening_hours || null,
+        tags.cuisine || null,
+        tags.stars ? parseInt(tags.stars, 10) : null,
+      ]);
+      if (r.rowCount > 0) inserted++;
     }
     console.log(`  ${data.elements?.length || 0} found, ${inserted} inserted`);
-    await new Promise(r => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, 5000));
   }
 
-  const total = db.prepare('SELECT COUNT(*) as c FROM places').get().c;
-  console.log(`\nTotal places in database: ${total}`);
-  db.close();
+  const tc = await query('SELECT COUNT(*)::bigint AS c FROM places');
+  console.log(`\nTotal places in database: ${tc.rows[0].c}`);
+  await closePool();
 }
 
 main().catch(console.error);

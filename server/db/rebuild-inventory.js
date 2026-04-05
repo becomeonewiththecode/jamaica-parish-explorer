@@ -1,3 +1,4 @@
+const { query } = require('./pg-query');
 const { applySchema, seedParishes } = require('./init');
 const { ensurePlacesTable, ingestPlacesFromOsm, queries } = require('./places-from-osm');
 const { seedAirportsStatic } = require('./seed-airports');
@@ -78,9 +79,8 @@ function makeOsmProgressHandler(includeAirports) {
 
 /**
  * Full rebuild: schema, parishes, clear places, OSM ingest, optional static airports.
- * Uses the shared DB handle — do not call db.close() after this.
  */
-async function rebuildInventory(db, options = {}) {
+async function rebuildInventory(options = {}) {
   const onLog = options.onLog || ((m) => console.log(`[rebuild-inventory] ${m}`));
   const includeAirports = Boolean(options.includeAirports);
   state.sections = initSectionRows();
@@ -91,20 +91,20 @@ async function rebuildInventory(db, options = {}) {
   state.progressPercent = 2;
   state.currentStepLabel = 'Applying schema';
   onLog('Applying SQL schema…');
-  applySchema(db);
+  await applySchema();
 
   state.phase = 'parishes';
   state.progressPercent = 4;
   state.currentStepLabel = 'Seeding parishes';
   onLog('Ensuring parish seed data…');
-  seedParishes(db);
-  ensurePlacesTable(db);
+  await seedParishes();
+  await ensurePlacesTable();
 
   if (options.clearPlaces !== false) {
     state.phase = 'clear';
     state.progressPercent = 5;
     state.currentStepLabel = 'Clearing places';
-    db.prepare('DELETE FROM places').run();
+    await query('DELETE FROM places');
     onLog('Cleared places table.');
   }
 
@@ -112,7 +112,7 @@ async function rebuildInventory(db, options = {}) {
   state.progressPercent = osmPercent(0, queries.length, includeAirports);
   state.currentStepLabel = 'OpenStreetMap ingest';
   onLog('Ingesting places from OpenStreetMap (this takes several minutes)…');
-  const osm = await ingestPlacesFromOsm(db, {
+  const osm = await ingestPlacesFromOsm({
     onLog,
     onProgress: onOsmProgress,
     ...(options.delayBetweenCategoriesMs != null
@@ -126,8 +126,9 @@ async function rebuildInventory(db, options = {}) {
     state.progressPercent = 97;
     state.currentStepLabel = 'Seeding airports (static)';
     onLog('Seeding airports (metadata only, no image crawl)…');
-    seedAirportsStatic(db);
-    airportCount = db.prepare('SELECT COUNT(*) as c FROM airports').get().c;
+    await seedAirportsStatic();
+    const ac = await query('SELECT COUNT(*)::bigint AS c FROM airports');
+    airportCount = Number(ac.rows[0].c);
   }
 
   state.phase = 'done';
@@ -146,10 +147,21 @@ async function rebuildInventory(db, options = {}) {
 
 /**
  * Fire-and-forget background job (HTTP should respond immediately).
+ * @param {object} [legacyDb] Ignored (PostgreSQL uses pool).
+ * @param {object} options
+ * @param {function} callback
  */
-function startRebuildInventory(db, options, callback) {
+function startRebuildInventory(legacyDb, options, callback) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const cb =
+    typeof callback === 'function'
+      ? callback
+      : typeof options === 'function'
+        ? options
+        : () => {};
+
   if (state.inProgress) {
-    if (typeof callback === 'function') callback(new Error('A rebuild is already in progress'));
+    if (typeof cb === 'function') cb(new Error('A rebuild is already in progress'));
     return false;
   }
 
@@ -162,19 +174,19 @@ function startRebuildInventory(db, options, callback) {
   state.progressPercent = 1;
   state.currentStepLabel = 'Starting…';
 
-  rebuildInventory(db, options || {})
+  rebuildInventory(opts)
     .then((summary) => {
       state.lastSummary = summary;
       state.lastError = null;
       state.lastFinishedAt = new Date().toISOString();
-      callback(null, summary);
+      cb(null, summary);
     })
     .catch((err) => {
       state.lastError = err && err.message ? err.message : String(err);
       state.lastSummary = null;
       state.lastFinishedAt = new Date().toISOString();
       state.phase = 'error';
-      callback(err, null);
+      cb(err, null);
     })
     .finally(() => {
       state.inProgress = false;

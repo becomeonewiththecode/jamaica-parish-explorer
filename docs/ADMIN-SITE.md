@@ -9,6 +9,7 @@ The admin site is an authenticated dashboard for managing the Jamaica Parish Exp
 - **Quick links** to Swagger API docs, Status Board, Client App, and the Health endpoint (open in new tabs). The **Client App** link is resolved dynamically: it points to the Vite dev server (`CLIENT_PORT`, default 5173) when that server is reachable, and falls back to the production app URL (served by Express on `API_PORT`) when Vite is offline.
 - **PM2 process table** showing all managed processes with status, CPU, memory, restarts, and uptime. Auto-refreshes every 30 seconds.
 - **Restart controls** — buttons to restart the API server, Status Board, Admin site, or all PM2 processes. Proxies to the API server's `POST /api/admin/restart` endpoint with the `X-Admin-Token` header.
+- **Database backup & restore** — download a PostgreSQL **`.sql`** dump (`pg_dump` via `GET /api/database/backup` → API `GET /api/admin/database/backup`), or upload a backup with a **`RESTORE`** confirmation field (`POST /api/database/restore` → API `POST /api/admin/database/restore`). Requires **`ADMIN_RESTART_TOKEN`** on both admin and API; the API image should include **`postgresql-client`**. Restore overwrites existing database objects (destructive).
 - **Map data rebuild** — same dashboard card as **Restart Controls** (below the PM2 restart buttons): clears the `places` table and refetches POIs from OpenStreetMap (runs in the **background** on the API; often **10+ minutes** with polite Overpass pacing and automatic **retry rounds** for failed categories). Optional checkbox to re-seed airport rows from static data (no image crawl). The UI shows a **progress bar**, **percent**, **current step**, and a **per-category list** (pending / running / ok / error with HTTP status). While a job is running, status is polled about every **1.5s**; when idle, about every **4s** (`GET /api/rebuild-inventory/status` via the admin proxy — requires session cookie + matching `ADMIN_RESTART_TOKEN` to the API). **Unauthenticated ops view:** the same rebuild snapshot is also on **`GET /api/health`** as **`mapDataRebuild`**. CLI equivalent: `npm run db:rebuild` or `npm run db:rebuild:all` from the project root. For Overpass env vars, retry behaviour, and data sources, see [Database and map data](./DATABASE-AND-MAP-DATA.md) and the [Admin site diagram](./ADMIN-SITE-DIAGRAM.md) (map rebuild flow).
 - **Inline Status Board** — collapsible iframe embedding the status board for quick reference without leaving the admin page.
 
@@ -132,6 +133,8 @@ Notes:
 | `/api/pm2` | Yes | GET | Returns PM2 process list as JSON |
 | `/api/client-url` | Yes | GET | Probes the Vite dev server and returns the correct client URL |
 | `/api/restart` | Yes | POST | Restart a PM2 process (proxies to API server or self-restarts) |
+| `/api/database/backup` | Yes | GET | Download PostgreSQL dump (proxies to `GET /api/admin/database/backup` with `X-Admin-Token`) |
+| `/api/database/restore` | Yes | POST | Multipart restore: field `backup` (file), `confirm` = `RESTORE` (proxies to `POST /api/admin/database/restore`) |
 
 ### Restart targets
 
@@ -156,7 +159,7 @@ When restarting `admin`, the response may not reach the browser since the proces
 ## Implementation details
 
 - **Server file:** `server/admin.js` — single-file Express app following the same pattern as `status-board.js` (inline HTML, no templates, no build step).
-- **No new npm dependencies** — uses Express (already installed), Node's `crypto` for HMAC tokens, and `http` for proxying restart requests.
+- **Dependencies:** Express, **`multer`** (multipart restore proxy), Node's `crypto` for HMAC session tokens, and `http` / `fetch` for proxying restart and database routes to the API.
 - **PM2 status** is fetched by running `pm2 jlist --silent` and parsing the JSON output (same approach as the status board).
 - **Dark theme** matches the status board's color palette (`#050816` background, `#0b1020` cards, `#1f2937` borders).
 
@@ -166,7 +169,7 @@ When restarting `admin`, the response may not reach the browser since the proces
 
 - The admin site should only be exposed on trusted networks. For internet-facing deployments, put it behind HTTPS (e.g. Nginx reverse proxy with TLS) and consider external (infrastructure-level) rate limiting even though the admin server includes in-memory lockout for `POST /login`.
 - The `HttpOnly` and `SameSite=Strict` cookie flags prevent XSS-based cookie theft and CSRF attacks.
-- Restart commands are double-gated: the admin site requires login, and the API server requires the `X-Admin-Token` header.
+- Restart commands and **database backup/restore** are double-gated: the admin site requires login, and the API server requires the `X-Admin-Token` header (`ADMIN_RESTART_TOKEN`). Restore is destructive; limit oversized uploads via **`ADMIN_DB_RESTORE_MAX_BYTES`** on the API.
 - "Restart All" requires a browser confirmation dialog before executing.
 
 ---

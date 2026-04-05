@@ -1,12 +1,6 @@
-const db = require('./connection');
+const { query, closePool } = require('./pg-query');
 
-// Ensure columns exist
-try { db.exec('ALTER TABLE places ADD COLUMN description TEXT'); } catch (e) {}
-try { db.exec('ALTER TABLE places ADD COLUMN image_url TEXT'); } catch (e) {}
-try { db.exec('ALTER TABLE places ADD COLUMN tiktok_url TEXT'); } catch (e) {}
-try { db.exec('ALTER TABLE places ADD COLUMN menu_url TEXT'); } catch (e) {}
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // --- Wikipedia description (Jamaica-prioritized, 2-sentence max) ---
 async function fetchDescription(name) {
@@ -151,16 +145,27 @@ async function tryWebsiteImage(url) {
   return null;
 }
 
-// --- Main enrichment ---
-const updateStmt = db.prepare(`
+async function applyEnrichUpdates(placeId, updates) {
+  await query(
+    `
   UPDATE places SET
-    description = CASE WHEN ?1 IS NOT NULL THEN ?1 ELSE description END,
-    website = CASE WHEN ?2 IS NOT NULL THEN ?2 ELSE website END,
-    image_url = CASE WHEN ?3 IS NOT NULL THEN ?3 ELSE image_url END,
-    menu_url = CASE WHEN ?4 IS NOT NULL THEN ?4 ELSE menu_url END,
-    tiktok_url = CASE WHEN ?5 IS NOT NULL THEN ?5 ELSE tiktok_url END
-  WHERE id = ?6
-`);
+    description = COALESCE($1, description),
+    website = COALESCE($2, website),
+    image_url = COALESCE($3, image_url),
+    menu_url = COALESCE($4, menu_url),
+    tiktok_url = COALESCE($5, tiktok_url)
+  WHERE id = $6
+`,
+    [
+      updates.description ?? null,
+      updates.website ?? null,
+      updates.image_url ?? null,
+      updates.menu_url ?? null,
+      updates.tiktok_url ?? null,
+      placeId,
+    ]
+  );
+}
 
 async function enrichPlace(place) {
   const updates = {};
@@ -215,7 +220,7 @@ async function enrichPlace(place) {
 async function main() {
   const mode = process.argv[2]; // 'all' or default (only missing)
 
-  const places = db.prepare(`
+  const pr = await query(`
     SELECT id, name, category, lat, lon, description, website, image_url, menu_url, tiktok_url
     FROM places
     ORDER BY
@@ -227,7 +232,8 @@ async function main() {
         ELSE 20
       END,
       name
-  `).all();
+  `);
+  const places = pr.rows;
 
   // Filter to those needing work
   const needsWork = mode === 'all' ? places : places.filter(p =>
@@ -245,14 +251,13 @@ async function main() {
       const updates = await enrichPlace(place);
 
       if (Object.keys(updates).length > 0) {
-        updateStmt.run(
-          updates.description || null,
-          updates.website || null,
-          updates.image_url || null,
-          updates.menu_url || null,
-          updates.tiktok_url || null,
-          place.id
-        );
+        await applyEnrichUpdates(place.id, {
+          description: updates.description || null,
+          website: updates.website || null,
+          image_url: updates.image_url || null,
+          menu_url: updates.menu_url || null,
+          tiktok_url: updates.tiktok_url || null,
+        });
         for (const key of Object.keys(updates)) {
           if (stats[key] !== undefined) stats[key]++;
         }
@@ -268,16 +273,18 @@ async function main() {
   }
 
   // Final summary
-  const total = db.prepare('SELECT COUNT(*) as c FROM places').get().c;
-  const summary = db.prepare(`
+  const tc = await query('SELECT COUNT(*)::bigint AS c FROM places');
+  const total = Number(tc.rows[0].c);
+  const sumr = await query(`
     SELECT
-      SUM(CASE WHEN description IS NOT NULL AND description != '' THEN 1 ELSE 0 END) as descs,
-      SUM(CASE WHEN website IS NOT NULL AND website != '' THEN 1 ELSE 0 END) as sites,
-      SUM(CASE WHEN image_url IS NOT NULL AND image_url != '' THEN 1 ELSE 0 END) as imgs,
-      SUM(CASE WHEN menu_url IS NOT NULL AND menu_url != '' THEN 1 ELSE 0 END) as menus,
-      SUM(CASE WHEN tiktok_url IS NOT NULL AND tiktok_url != '' THEN 1 ELSE 0 END) as tiktoks
+      SUM(CASE WHEN description IS NOT NULL AND description != '' THEN 1 ELSE 0 END)::bigint AS descs,
+      SUM(CASE WHEN website IS NOT NULL AND website != '' THEN 1 ELSE 0 END)::bigint AS sites,
+      SUM(CASE WHEN image_url IS NOT NULL AND image_url != '' THEN 1 ELSE 0 END)::bigint AS imgs,
+      SUM(CASE WHEN menu_url IS NOT NULL AND menu_url != '' THEN 1 ELSE 0 END)::bigint AS menus,
+      SUM(CASE WHEN tiktok_url IS NOT NULL AND tiktok_url != '' THEN 1 ELSE 0 END)::bigint AS tiktoks
     FROM places
-  `).get();
+  `);
+  const summary = sumr.rows[0];
 
   console.log(`\nDone! Added: +${stats.description} descriptions, +${stats.website} websites, +${stats.image_url} images, +${stats.menu_url} menus, +${stats.tiktok_url} TikTok links`);
   console.log(`\nDatabase totals (${total} places):`);
@@ -287,7 +294,7 @@ async function main() {
   console.log(`  Menus: ${summary.menus}`);
   console.log(`  TikTok: ${summary.tiktoks}`);
 
-  db.close();
+  await closePool();
 }
 
 main().catch(err => {

@@ -300,5 +300,5 @@ This keeps the map readable when viewing ships, while still allowing users to ov
 
 - If `/api/vessels` returns `vessels: []`, AISStream is connected but no AIS `PositionReport` messages are currently within the Jamaica bounding box (or the stream is temporarily quiet).
 - Keeping the app open with **Vessels ON** will automatically update markers as ships enter or leave the area or start/stop transmitting AIS (client polls `/api/vessels` every 60 seconds).
-- AIS messages are still held in-memory for map rendering, but cruise schedules scraped from CruiseDig / CruiseMapper are now also **persisted** to the SQLite database (`cruise_ports` and `cruise_calls` tables) when `/api/ports/:id/cruises` is requested. This allows future features (reports, history, AIS‑linked arrival tracking) to reuse the same stored cruise schedule data.
+- AIS messages are still held in-memory for map rendering, but cruise schedules scraped from CruiseDig / CruiseMapper are now also **persisted** to PostgreSQL (`cruise_ports` and `cruise_calls` tables) when `/api/ports/:id/cruises` is requested. This allows future features (reports, history, AIS‑linked arrival tracking) to reuse the same stored cruise schedule data.
 

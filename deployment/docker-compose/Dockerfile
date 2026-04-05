@@ -2,7 +2,7 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Install build tools needed for native modules (e.g. better-sqlite3)
+# Build tools for npm packages that compile during install (if any)
 RUN apk add --no-cache python3 make g++ git
 
 # Copy full repo (docker-compose will set context to project root)
@@ -18,7 +18,7 @@ FROM node:20-alpine AS runtime
 
 WORKDIR /app
 
-RUN apk add --no-cache sqlite && npm install -g pm2
+RUN apk add --no-cache postgresql-client && npm install -g pm2
 
 # Copy only what is needed at runtime
 COPY --from=build /app /app

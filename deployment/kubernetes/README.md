@@ -5,7 +5,7 @@ This option runs the app on a Kubernetes cluster using a Deployment, Service, an
 ### Files
 
 - `Dockerfile` — builds a production image suitable for Kubernetes
-- `pvc.yaml` — `PersistentVolumeClaim` for the SQLite database and cache files
+- `pvc.yaml` — `PersistentVolumeClaim` for JSON caches under `/data` (PostgreSQL is external or separate)
 - `deployment.yaml` — `Deployment` with 2 replicas and health probes
 - `service.yaml` — `ClusterIP` service exposing the app on port 80 inside the cluster
 - `ingress.yaml` — example `Ingress` routing HTTP traffic to the service
@@ -43,6 +43,8 @@ kubectl apply -f ingress.yaml
 
 ### Persistent data
 
-The SQLite database (`jamaica.db`) and JSON caches are written to `/data` inside the container via `JAMAICA_DATA_DIR=/data`. A `PersistentVolumeClaim` (`pvc.yaml`) backs that path. Adjust `storageClassName` and `storage` size in `pvc.yaml` for your cluster.
+Run **PostgreSQL** as a managed service or a separate StatefulSet in the cluster; set **`DATABASE_URL`** on the app Deployment to point at it. A `PersistentVolumeClaim` (`pvc.yaml`) can still mount **`/data`** for **JSON caches** via **`JAMAICA_DATA_DIR=/data`**. Adjust `storageClassName` and `storage` size in `pvc.yaml` for your cluster.
 
-> **Important:** SQLite does not support concurrent writes from multiple pods. Keep `replicas: 1` if pods share the same PVC, or use `replicas: 2` only if the PVC's storage class supports `ReadWriteMany` and you accept that only reads are truly concurrent. For multi-replica write support, migrate to a proper database (PostgreSQL, etc.).
+> **Important:** Multiple API replicas are safe for reads/writes when they all use the same PostgreSQL server. Size the database tier for your expected concurrency.
+
+See [`docs/DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](../../docs/DATA-MIGRATION-SQLITE-TO-POSTGRES.md) if upgrading from SQLite-era deployments.

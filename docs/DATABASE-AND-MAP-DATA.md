@@ -1,24 +1,36 @@
 # Database and map data (repopulation guide)
 
-This document describes **what** lives in the SQLite database for the map and explorer UI, **where** that data comes from, and **how** to repopulate it after a fresh server, empty volume, or corrupted `jamaica.db`.
+This document describes **what** lives in the **PostgreSQL** database for the map and explorer UI, **where** that data comes from, and **how** to repopulate it after a fresh server or empty database. Legacy SQLite (`jamaica.db`) is no longer used by the app; see [`DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](./DATA-MIGRATION-SQLITE-TO-POSTGRES.md) if you need to import an old file.
 
 ---
 
-## Database file location
+## Connection and data directory
 
-- **Default (local / PM2):** `server/jamaica.db` (and optional WAL files next to it).
-- **Docker Compose:** set `JAMAICA_DATA_DIR=/data` and mount a volume on `/data` so the DB and JSON caches persist; see [`deployment/docker-compose/README.md`](../deployment/docker-compose/README.md) and [`BUILD-PROCESS.md`](./BUILD-PROCESS.md).
+- **PostgreSQL:** set **`DATABASE_URL`** (e.g. `postgresql://user:pass@host:5432/jamaica`) in `server/.env`. The API uses the `pg` pool from `server/db/pg-query.js`.
+- **Docker Compose:** a `postgres` service and `DATABASE_URL` pointing at it are defined in the compose files under `deployment/docker-compose/`.
+- **`JAMAICA_DATA_DIR`:** optional directory for **JSON caches only** (not the primary database):
 
-Other persisted files in the same data directory (when using `JAMAICA_DATA_DIR`):
+  - `.flight-cache.json` — flight provider cache (not “map POIs”).
+  - `.weather-cache.json` — weather/wave cache.
 
-- `.flight-cache.json` — flight provider cache (not “map POIs”).
-- `.weather-cache.json` — weather/wave cache.
+See [`deployment/docker-compose/README.md`](../deployment/docker-compose/README.md) and [`BUILD-PROCESS.md`](./BUILD-PROCESS.md).
+
+---
+
+## Backup and restore (PostgreSQL)
+
+- **Admin UI (recommended when the stack is up):** log in to the admin dashboard (default port **5556**) → **Database backup & restore**. Download produces a plain **`.sql`** file (`pg_dump` with `--clean --if-exists --no-owner --no-acl`). Upload restore requires typing **`RESTORE`** in the confirmation field; it runs **`psql`** with `ON_ERROR_STOP` and can **overwrite or drop** existing objects — treat backups as sensitive and test restores on a copy first.
+- **API (automation):** `GET /api/admin/database/backup` and `POST /api/admin/database/restore` with header **`X-Admin-Token`** matching **`ADMIN_RESTART_TOKEN`** (same secret as restart/rebuild). Max upload size defaults to **512 MiB**; set **`ADMIN_DB_RESTORE_MAX_BYTES`** to override.
+- **Prerequisites:** the API process host must have **`pg_dump`** and **`psql`** on `PATH` (Docker images install **`postgresql-client`**). If tools are missing, the API returns **503** for backup.
+- **CLI alternative:** `pg_dump` / `psql` from any machine that can reach Postgres — see [Startup guide](./STARTUP-GUIDE.md) (Docker section).
+
+Full request/response details: [`API-REFERENCE.md`](./API-REFERENCE.md). UX and proxy paths: [`ADMIN-SITE.md`](./ADMIN-SITE.md).
 
 ---
 
 ## What the map and “items” use
 
-| Data | SQLite tables | Role on the map / app |
+| Data | Tables | Role on the map / app |
 |------|-----------------|------------------------|
 | Parish boundaries & copy | `parishes`, `features` | GeoJSON on the client comes from static assets; DB holds parish metadata (names, descriptions, colours, feature lists). |
 | Points of interest | `places` | Hotels, restaurants, beaches, attractions, etc. — loaded via `/api/places/...`. |
@@ -45,20 +57,20 @@ Other persisted files in the same data directory (when using `JAMAICA_DATA_DIR`)
 - **Implementation:** `server/db/places-from-osm.js` — categories include tourist attractions, landmarks, restaurants, cafés, hotels, guest houses, hospitals, schools, beaches, worship, banks, fuel, parks, stadiums, nightlife, shopping, car rental, etc., within a Jamaica bounding box.
 - **Parish assignment:** `client/public/jamaica-parishes.geojson` — point-in-polygon to map each OSM feature to a parish slug.
 - **Applied by:**
-  - **Incremental:** `npm run fetch:places` — `INSERT OR IGNORE` (does not wipe existing rows).
+  - **Incremental:** `npm run fetch:places` — `INSERT … ON CONFLICT (osm_id) DO NOTHING` (does not overwrite existing rows).
   - **Full replace of POIs:** Admin **Rebuild map data** or `npm run db:rebuild` — **deletes all `places` rows** then ingests again.
 - **Pacing and resilience (public Overpass):**
   - **Between categories (main pass):** default **12 seconds** (`OVERPASS_CATEGORY_DELAY_MS`). Older docs mentioned ~2s; that was too aggressive and caused **HTTP 429** (rate limit) and **504** (timeouts).
   - **Per request:** failed calls with **429**, **502**, **503**, **504**, or network errors are retried with backoff and mirror rotation, up to `OVERPASS_MAX_ATTEMPTS` (default **12**).
   - **After the main pass:** steps that failed with a **retriable** status (not **400** bad query) are queued for **delayed retry round(s)** only for those indices — default **one** round after **120s** (`OVERPASS_FAILED_ROUND_DELAY_MS`), with **35s** between retries (`OVERPASS_RETRY_CATEGORY_DELAY_MS`) and extra attempts (`OVERPASS_RETRY_ROUND_MAX_ATTEMPTS`). Set `OVERPASS_FAILED_RETRY_ROUNDS=0` to disable, or `2`–`4` for more waves (cooldown grows each wave).
-- **Schema on API boot:** `server/index.js` runs `applySchema` + `seedParishes` at startup so `places` enrichment columns and the `airports` table exist **before** any rebuild — avoids `SqliteError: no such column/table` on fresh volumes.
+- **Schema on API boot:** `server/index.js` runs `applySchema` + `seedParishes` at startup so `places` enrichment columns and the `airports` table exist **before** any rebuild (`server/db/schema.postgresql.sql` + idempotent column checks in `init.js`).
 
 ### 3. Airports (static metadata in repo)
 
 - **Source:** Curated list in `server/db/seed-airports.js` (`AIRPORTS`).
 - **Applied by:**
   - **With image crawling (slow, CLI):** `npm run seed:airports` — fetches og:image / Bing fallbacks per airport.
-  - **Metadata only (fast):** optional checkbox on admin **Rebuild map data**, or `npm run db:rebuild:all` — `seedAirportsStatic` uses `INSERT OR REPLACE` with `image_url` null.
+  - **Metadata only (fast):** optional checkbox on admin **Rebuild map data**, or `npm run db:rebuild:all` — `seedAirportsStatic` uses `INSERT … ON CONFLICT (code) DO UPDATE` with `image_url` preserved where appropriate.
 
 ### 4. Optional enrichment (descriptions, links)
 
@@ -85,7 +97,7 @@ npm run seed:airports   # optional; or use static airport seed via rebuild with 
 
 ### Full repopulation of map POIs (wipe `places` then OSM)
 
-**When to use:** New server, new Docker volume, or you need a clean resync from OSM.
+**When to use:** New server, empty Compose `data/` directories, or you need a clean resync from OSM.
 
 1. **Admin (recommended if the API is up):** open the admin dashboard → **Rebuild map data** (see [Admin site](./ADMIN-SITE.md)). Optionally check **Include airports**. Confirm the dialog — the job runs **in the background**; watch the status panel and API logs.
 2. **CLI:**
@@ -107,7 +119,7 @@ New OSM IDs are inserted; existing `osm_id` rows are left as-is (`INSERT OR IGNO
 
 ### Check admin / API prerequisites
 
-- **`ADMIN_RESTART_TOKEN`** in `server/.env` must match between processes that call protected endpoints (admin UI → API proxy uses this for rebuild and restart).
+- **`ADMIN_RESTART_TOKEN`** in `server/.env` must match between processes that call protected endpoints (admin UI → API proxy uses this for rebuild, restart, and **database backup/restore**).
 - The rebuild endpoint is documented alongside other admin routes in the running API; see Swagger at `/api/docs` if enabled.
 
 ### Overpass-related environment variables (optional)
@@ -169,7 +181,8 @@ flowchart TD
 | Incremental fetch CLI | `server/db/fetch-places.js` |
 | Airports | `server/db/seed-airports.js` |
 | Enrichment | `server/db/enrich-places.js` |
-| Admin trigger | Proxies to `POST /api/admin/rebuild-inventory` (see `server/index.js`, `server/admin.js`) |
+| Admin trigger (map rebuild) | Proxies to `POST /api/admin/rebuild-inventory` (see `server/index.js`, `server/admin.js`) |
+| Admin DB backup/restore | API: `server/routes/admin-database.js` — `GET/POST /api/admin/database/*`; admin proxy: `GET/POST /api/database/*` in `server/admin.js` |
 
 ---
 
@@ -181,5 +194,6 @@ flowchart TD
 - **Airports:** repo static list; optional fast seed during rebuild or `npm run seed:airports` for images.
 - **Rich text/links on places:** `npm run enrich:places` (separate step, external Wikipedia / DuckDuckGo).
 - **Observability:** **`GET /api/health`** → **`mapDataRebuild`** for live rebuild progress without the admin token.
+- **Backups:** admin **Database backup & restore** or direct `pg_dump` — see [Backup and restore](#backup-and-restore-postgresql) above.
 
 For operations-focused setup (ports, PM2, Docker), see [Startup guide](./STARTUP-GUIDE.md).

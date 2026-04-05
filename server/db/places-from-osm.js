@@ -1,37 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const PLACES_DDL = `
-CREATE TABLE IF NOT EXISTS places (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    parish_id   INTEGER NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
-    osm_id      TEXT UNIQUE,
-    name        TEXT NOT NULL,
-    category    TEXT NOT NULL,
-    lat         REAL NOT NULL,
-    lon         REAL NOT NULL,
-    address     TEXT,
-    phone       TEXT,
-    website     TEXT,
-    opening_hours TEXT,
-    cuisine     TEXT,
-    stars       INTEGER,
-    description   TEXT,
-    image_url     TEXT,
-    menu_url      TEXT,
-    tiktok_url    TEXT,
-    instagram_url TEXT,
-    booking_url   TEXT,
-    tripadvisor_url TEXT,
-    fetched_at  TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_places_parish ON places(parish_id);
-CREATE INDEX IF NOT EXISTS idx_places_category ON places(category);
-CREATE INDEX IF NOT EXISTS idx_places_osm ON places(osm_id);
-`;
+const { query } = require('./pg-query');
 
-function ensurePlacesTable(db) {
-  db.exec(PLACES_DDL);
+/** Places table is created by applySchema (schema.postgresql.sql). */
+async function ensurePlacesTable() {
+  /* no-op */
 }
 
 let _geojsonCache;
@@ -285,7 +259,18 @@ async function fetchCategory(queryDef, onLog, fetchOpts = {}) {
   return { elements: [], httpStatus: lastStatus, fetchOk: false, error: lastError };
 }
 
-function insertElementsIntoPlaces(elements, queryDef, geojson, insertPlace, getParishId) {
+const INSERT_PLACE = `
+INSERT INTO places (parish_id, osm_id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (osm_id) DO NOTHING
+`;
+
+async function getParishIdBySlug(slug) {
+  const r = await query('SELECT id FROM parishes WHERE slug = $1', [slug]);
+  return r.rows[0] || null;
+}
+
+async function insertElementsIntoPlaces(elements, queryDef, geojson) {
   let inserted = 0;
   for (const el of elements) {
     const lat = el.lat || (el.center && el.center.lat);
@@ -298,31 +283,27 @@ function insertElementsIntoPlaces(elements, queryDef, geojson, insertPlace, getP
     const slug = findParishForPoint(lat, lon, geojson);
     if (!slug) continue;
 
-    const parish = getParishId.get(slug);
+    const parish = await getParishIdBySlug(slug);
     if (!parish) continue;
 
     const osmId = `${el.type}/${el.id}`;
     const address = [tags['addr:street'], tags['addr:city']].filter(Boolean).join(', ') || null;
 
-    try {
-      insertPlace.run(
-        parish.id,
-        osmId,
-        name,
-        queryDef.category,
-        lat,
-        lon,
-        address,
-        tags.phone || tags['contact:phone'] || null,
-        tags.website || tags['contact:website'] || null,
-        tags.opening_hours || null,
-        tags.cuisine || null,
-        tags.stars ? parseInt(tags.stars, 10) : null
-      );
-      inserted++;
-    } catch {
-      // duplicate osm_id
-    }
+    const r = await query(INSERT_PLACE, [
+      parish.id,
+      osmId,
+      name,
+      queryDef.category,
+      lat,
+      lon,
+      address,
+      tags.phone || tags['contact:phone'] || null,
+      tags.website || tags['contact:website'] || null,
+      tags.opening_hours || null,
+      tags.cuisine || null,
+      tags.stars ? parseInt(tags.stars, 10) : null,
+    ]);
+    if (r.rowCount > 0) inserted++;
   }
   return inserted;
 }
@@ -337,8 +318,6 @@ async function runOneOsmCategory(i, queryDef, ctx) {
     retryIndex,
     retryTotal,
     geojson,
-    insertPlace,
-    getParishId,
   } = ctx;
 
   const prefix = retryRound ? `  [retry ${retryIndex}/${retryTotal}] ` : '  ';
@@ -355,7 +334,7 @@ async function runOneOsmCategory(i, queryDef, ctx) {
 
   const fetchResult = await fetchCategory(queryDef, onLog, fetchOpts || {});
   const elements = fetchResult.elements || [];
-  const inserted = insertElementsIntoPlaces(elements, queryDef, geojson, insertPlace, getParishId);
+  const inserted = await insertElementsIntoPlaces(elements, queryDef, geojson);
 
   onLog(`${prefix}${queryDef.category}: ${elements.length} found, ${inserted} new rows attempted`);
 
@@ -377,25 +356,18 @@ async function runOneOsmCategory(i, queryDef, ctx) {
   return { inserted, fetchResult };
 }
 
-/** Insert OSM POIs into places (INSERT OR IGNORE per osm_id). */
-async function ingestPlacesFromOsm(db, opts = {}) {
+/** Insert OSM POIs into places (ON CONFLICT osm_id DO NOTHING). */
+async function ingestPlacesFromOsm(opts = {}) {
   const onLog = opts.onLog || ((s) => console.log(s));
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
   const delayMs = opts.delayBetweenCategoriesMs ?? defaultCategoryDelayMs();
   const retryRounds =
     opts.failedRetryRounds != null ? opts.failedRetryRounds : failedRetryRoundsMax();
 
-  ensurePlacesTable(db);
+  await ensurePlacesTable();
   const geojson = loadGeojson();
 
-  const insertPlace = db.prepare(`
-  INSERT OR IGNORE INTO places (parish_id, osm_id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-
-  const getParishId = db.prepare('SELECT id FROM parishes WHERE slug = ?');
-
-  const ctxBase = { geojson, insertPlace, getParishId };
+  const ctxBase = { geojson };
 
   let totalInserted = 0;
   const total = queries.length;
@@ -472,7 +444,8 @@ async function ingestPlacesFromOsm(db, opts = {}) {
     );
   }
 
-  const totalPlaces = db.prepare('SELECT COUNT(*) as c FROM places').get().c;
+  const tc = await query('SELECT COUNT(*)::bigint AS c FROM places');
+  const totalPlaces = Number(tc.rows[0].c);
   onLog(`Done. Total rows in places: ${totalPlaces} (this run attempted ~${totalInserted} inserts).`);
 
   return {

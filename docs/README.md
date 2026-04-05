@@ -6,6 +6,7 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 
 - [Startup guide](./STARTUP-GUIDE.md)
 - [Database and map data](./DATABASE-AND-MAP-DATA.md)
+- [SQLite → PostgreSQL migration](./DATA-MIGRATION-SQLITE-TO-POSTGRES.md)
 - [Build process](./BUILD-PROCESS.md)
 - [Build process diagram](./BUILD-PROCESS-DIAGRAM.md)
 - [API reference](./API-REFERENCE.md)
@@ -23,17 +24,18 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 
 - [`STARTUP-GUIDE.md`](./STARTUP-GUIDE.md) — how to run the app in every mode: dev (Vite HMR), PM2 production, Docker Compose, and bare `npm start`. Includes port reference and common troubleshooting.
 - [`BUILD-PROCESS.md`](./BUILD-PROCESS.md) — how the client (Vite), server (native deps), database (init scripts), and Docker image (multi-stage) are built. Covers `JAMAICA_DATA_DIR`, `pmx: 'false'`, and layer caching.
-- [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) — Mermaid diagrams: Docker multi-stage build flow, runtime port/process architecture, and `JAMAICA_DATA_DIR` resolution.
-- [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md) — SQLite layout for map data (`parishes`, `places`, `airports`), **data sources** (OSM/Overpass, static seeds, Wikipedia/DDG enrichment), **how to repopulate**, **Overpass env vars** (pacing, mirrors, delayed retry of failed categories), **schema-on-startup**, and a **Mermaid ingest-flow diagram**.
+- [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) — Mermaid diagrams: Docker multi-stage build flow, runtime port/process architecture (including admin → API **database backup/restore**), and `JAMAICA_DATA_DIR` resolution.
+- [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md) — PostgreSQL tables for map data (`parishes`, `places`, `airports`), **data sources** (OSM/Overpass, static seeds, Wikipedia/DDG enrichment), **how to repopulate**, **Overpass env vars** (pacing, mirrors, delayed retry of failed categories), **schema-on-startup**, and a **Mermaid ingest-flow diagram**.
+- [`DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](./DATA-MIGRATION-SQLITE-TO-POSTGRES.md) — moving an old SQLite `jamaica.db` into PostgreSQL (pgloader, dump, or custom export).
 
 ### API reference
 
-- [`API-REFERENCE.md`](./API-REFERENCE.md) — complete reference for all 24 API endpoints with parameters, responses, and usage. Interactive Swagger docs are served at `/api/docs`.
+- [`API-REFERENCE.md`](./API-REFERENCE.md) — reference for public REST routes, health, and admin endpoints (restart, rebuild, **database backup/restore**), with parameters and responses. Interactive Swagger docs are served at `/api/docs` when enabled.
 
 ### Admin site
 
-- [`ADMIN-SITE.md`](./ADMIN-SITE.md) — authenticated admin dashboard for monitoring PM2 processes, restarting services, and accessing Swagger/Status Board. Runs on port 5556.
-- [`ADMIN-SITE-DIAGRAM.md`](./ADMIN-SITE-DIAGRAM.md) — Mermaid diagrams: client-app link resolution, login flow, PM2 restart proxy, and **map data rebuild** (background OSM ingest, retries, health snapshot).
+- [`ADMIN-SITE.md`](./ADMIN-SITE.md) — authenticated admin dashboard for monitoring PM2 processes, restarting services, **PostgreSQL backup/restore**, rebuild map data, and accessing Swagger/Status Board. Runs on port 5556.
+- [`ADMIN-SITE-DIAGRAM.md`](./ADMIN-SITE-DIAGRAM.md) — Mermaid diagrams: client-app link resolution, login flow, PM2 restart proxy, **database backup/restore** (admin → API → `pg_dump` / `psql`), and **map data rebuild** (background OSM ingest, retries, health snapshot).
 
 ### Status board and monitoring
 

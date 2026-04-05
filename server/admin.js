@@ -3,6 +3,12 @@ const express = require('express');
 const crypto = require('crypto');
 const http = require('http');
 const { exec } = require('child_process');
+const multer = require('multer');
+
+const uploadDbRestore = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: Number(process.env.ADMIN_DB_RESTORE_MAX_BYTES || 536870912) },
+});
 
 function outboundLoopbackHost(raw, fallback = '127.0.0.1') {
   const h = (raw && String(raw).trim()) || fallback;
@@ -353,6 +359,9 @@ function dashboardPage(req) {
     .status-iframe-wrap { margin-top:1rem; }
     .status-iframe-wrap summary { cursor:pointer; font-size:0.85rem; color:#9ca3af; margin-bottom:0.5rem; }
     .status-iframe-wrap iframe { width:100%; height:600px; border:1px solid #1f2937; border-radius:0.5rem; background:#050816; }
+
+    .db-tools-card { margin-top:1rem; }
+    .db-tools-card code { font-size:0.72rem; }
   </style>
 </head>
 <body>
@@ -416,6 +425,28 @@ function dashboardPage(req) {
         <pre id="rebuild-status">…</pre>
       </div>
     </div>
+  </div>
+
+  <div class="card db-tools-card">
+    <div class="card-title">Database backup & restore</div>
+    <p style="font-size:0.8rem; color:#9ca3af; margin:0 0 0.75rem; line-height:1.45;">PostgreSQL. The API runs <code>pg_dump</code> / <code>psql</code> (install <code>postgresql-client</code> on the host or use the project Docker image). Backups include <code>--clean --if-exists</code> for round-trip restore.</p>
+    <div class="restart-group" style="margin-bottom:0.85rem;">
+      <button type="button" class="restart-btn" onclick="downloadDatabaseBackup()">Download backup (.sql)</button>
+    </div>
+    <hr class="restart-console-hr" />
+    <p class="restart-console-sub" style="margin-bottom:0.55rem;"><strong>Restore</strong> replaces objects in the current database from a plain-SQL backup. You will be prompted again before upload.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:0.75rem; align-items:flex-end;">
+      <div>
+        <label for="restore-file" style="display:block; font-size:0.75rem; color:#9ca3af; margin-bottom:0.25rem;">Backup file</label>
+        <input type="file" id="restore-file" accept=".sql,.txt,application/sql,text/plain" style="font-size:0.78rem; max-width:18rem;" />
+      </div>
+      <div>
+        <label for="restore-confirm" style="display:block; font-size:0.75rem; color:#9ca3af; margin-bottom:0.25rem;">Type RESTORE</label>
+        <input type="text" id="restore-confirm" placeholder="RESTORE" autocomplete="off" style="padding:0.45rem 0.5rem; border-radius:0.4rem; border:1px solid #374151; background:#111827; color:#f9fafb; width:9rem;" />
+      </div>
+      <button type="button" class="restart-btn danger" onclick="submitDatabaseRestore()">Restore database</button>
+    </div>
+    <pre id="restore-result" style="margin:0.55rem 0 0; font-size:0.68rem; color:#6b7280; white-space:pre-wrap; max-height:8rem; overflow:auto; border:1px solid #1f2937; border-radius:0.35rem; padding:0.4rem 0.5rem; background:#111827;"></pre>
   </div>
 
   <details class="status-iframe-wrap">
@@ -616,6 +647,72 @@ function dashboardPage(req) {
       if (btn) btn.disabled = false;
     }
 
+    async function downloadDatabaseBackup() {
+      var pre = document.getElementById('restore-result');
+      if (pre) pre.textContent = '';
+      try {
+        var res = await fetch('/api/database/backup');
+        if (!res.ok) {
+          var errData = await res.json().catch(function() { return {}; });
+          showToast(errData.error || ('HTTP ' + res.status), false);
+          if (pre) pre.textContent = errData.detail || errData.error || '';
+          return;
+        }
+        var blob = await res.blob();
+        var cd = res.headers.get('Content-Disposition') || '';
+        var name = 'jamaica-db-backup.sql';
+        var m = cd.match(/filename="([^"]+)"/i);
+        if (!m) m = cd.match(/filename=([^;\\s]+)/i);
+        if (m) {
+          name = m[1].trim().replace(/^"|"$/g, '');
+          try { name = decodeURIComponent(name); } catch (e) {}
+        }
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Backup downloaded', true);
+      } catch (e) {
+        showToast('Backup failed: ' + e.message, false);
+      }
+    }
+
+    async function submitDatabaseRestore() {
+      var f = document.getElementById('restore-file');
+      var c = document.getElementById('restore-confirm');
+      var pre = document.getElementById('restore-result');
+      if (pre) pre.textContent = '';
+      if (!f || !f.files || !f.files[0]) {
+        showToast('Choose a backup .sql file', false);
+        return;
+      }
+      if (!c || String(c.value).trim() !== 'RESTORE') {
+        showToast('Type RESTORE in the confirm field', false);
+        return;
+      }
+      if (!confirm('This will run the SQL backup against the live database and replace existing tables/data. Continue?')) return;
+      showToast('Restore running…', true);
+      var fd = new FormData();
+      fd.append('backup', f.files[0]);
+      fd.append('confirm', 'RESTORE');
+      try {
+        var ctrl = new AbortController();
+        var t = setTimeout(function() { ctrl.abort(); }, 30 * 60 * 1000);
+        var res = await fetch('/api/database/restore', { method: 'POST', body: fd, signal: ctrl.signal });
+        clearTimeout(t);
+        var data = await res.json().catch(function() { return {}; });
+        if (pre && data.detail) pre.textContent = String(data.detail);
+        if (data.ok) {
+          showToast('Database restored', true);
+        } else {
+          showToast((data.error || ('HTTP ' + res.status)), false);
+        }
+      } catch (e) {
+        showToast('Restore failed: ' + (e.name === 'AbortError' ? 'timed out (30m)' : e.message), false);
+      }
+    }
+
     refreshClientUrl();
     refreshPm2();
     setInterval(refreshPm2, 30000);
@@ -760,6 +857,79 @@ app.post('/api/rebuild-inventory', authMiddleware, (req, res) => {
   });
   proxyReq.write(postData);
   proxyReq.end();
+});
+
+app.get('/api/database/backup', authMiddleware, (req, res) => {
+  const options = {
+    hostname: API_HOST,
+    port: API_PORT,
+    path: '/api/admin/database/backup',
+    method: 'GET',
+    headers: { 'X-Admin-Token': ADMIN_RESTART_TOKEN },
+  };
+  const proxyReq = http.request(options, (proxyRes) => {
+    res.status(proxyRes.statusCode);
+    const cd = proxyRes.headers['content-disposition'];
+    const ct = proxyRes.headers['content-type'];
+    if (cd) res.setHeader('Content-Disposition', cd);
+    if (ct) res.setHeader('Content-Type', ct);
+    proxyRes.pipe(res);
+  });
+  proxyReq.on('error', (e) => {
+    if (!res.headersSent) {
+      res.status(502).json({ ok: false, error: 'Cannot reach API: ' + (e.message || String(e)) });
+    }
+  });
+  proxyReq.end();
+});
+
+app.post('/api/database/restore', authMiddleware, uploadDbRestore.single('backup'), async (req, res) => {
+  if (req.body && req.body.confirm !== 'RESTORE') {
+    return res.status(400).json({ ok: false, error: 'confirm must be RESTORE' });
+  }
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).json({ ok: false, error: 'Missing backup file (field name: backup)' });
+  }
+  if (!ADMIN_RESTART_TOKEN) {
+    return res.status(503).json({ ok: false, error: 'ADMIN_RESTART_TOKEN is not set on admin/API' });
+  }
+  try {
+    const fd = new FormData();
+    fd.append('backup', new Blob([req.file.buffer]), req.file.originalname || 'backup.sql');
+    fd.append('confirm', 'RESTORE');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30 * 60 * 1000);
+    const r = await fetch(`http://${API_HOST}:${API_PORT}/api/admin/database/restore`, {
+      method: 'POST',
+      headers: { 'X-Admin-Token': ADMIN_RESTART_TOKEN },
+      body: fd,
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    const text = await r.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { ok: false, error: text.slice(0, 500) };
+    }
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(500).json({
+      ok: false,
+      error: e && e.name === 'AbortError' ? 'Restore request timed out (30 minutes)' : e.message || String(e),
+    });
+  }
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ ok: false, error: 'Backup file too large for admin proxy' });
+  }
+  console.error('[Admin]', err);
+  if (!res.headersSent) {
+    res.status(500).json({ ok: false, error: err.message || 'Internal error' });
+  }
 });
 
 app.listen(PORT, HOST, () => {

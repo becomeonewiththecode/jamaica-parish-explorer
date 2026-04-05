@@ -1,20 +1,41 @@
-const db = require('./connection');
+const { query, closePool } = require('./pg-query');
 
-const rows = db.prepare("SELECT id, name, description FROM places WHERE description != '' AND description IS NOT NULL").all();
-let fixed = 0;
-const update = db.prepare('UPDATE places SET description = ? WHERE id = ?');
+async function main() {
+  const { rows } = await query(
+    "SELECT id, name, description FROM places WHERE description != '' AND description IS NOT NULL"
+  );
+  let fixed = 0;
 
-for (const r of rows) {
-  const lower = r.description.toLowerCase();
-  const mentionsJamaica = lower.includes('jamaica') || lower.includes('kingston, jamaica') || lower.includes('caribbean') || lower.includes('west indies');
-  const mentionsOther = lower.includes('united states') || lower.includes('georgia') || lower.includes('england') || lower.includes('australia') || lower.includes('canada') || lower.includes('india') || lower.includes('refer to:') || lower.includes('may refer to') || lower.includes('savannah');
+  for (const r of rows) {
+    const lower = r.description.toLowerCase();
+    const mentionsJamaica =
+      lower.includes('jamaica') ||
+      lower.includes('kingston, jamaica') ||
+      lower.includes('caribbean') ||
+      lower.includes('west indies');
+    const mentionsOther =
+      lower.includes('united states') ||
+      lower.includes('georgia') ||
+      lower.includes('england') ||
+      lower.includes('australia') ||
+      lower.includes('canada') ||
+      lower.includes('india') ||
+      lower.includes('refer to:') ||
+      lower.includes('may refer to') ||
+      lower.includes('savannah');
 
-  if (!mentionsJamaica && mentionsOther) {
-    update.run('', r.id);
-    console.log('Cleared bad description: ' + r.name);
-    fixed++;
+    if (!mentionsJamaica && mentionsOther) {
+      await query('UPDATE places SET description = $1 WHERE id = $2', ['', r.id]);
+      console.log('Cleared bad description: ' + r.name);
+      fixed++;
+    }
   }
+
+  console.log('\nFixed ' + fixed + ' bad descriptions');
+  await closePool();
 }
 
-console.log('\nFixed ' + fixed + ' bad descriptions');
-db.close();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

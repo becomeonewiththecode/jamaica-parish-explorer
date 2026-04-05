@@ -13,22 +13,14 @@ const flightRoutes = require('./routes/flights');
 const weatherRoutes = require('./routes/weather');
 const vesselRoutes = require('./routes/vessels');
 const portCruiseRoutes = require('./routes/port-cruises');
+const adminDatabaseRoutes = require('./routes/admin-database');
 
 const swagger = require('./swagger');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const execAsync = util.promisify(exec);
-const db = require('./db/connection');
 const { applySchema, seedParishes } = require('./db/init');
-
-try {
-  applySchema(db);
-  seedParishes(db);
-} catch (e) {
-  console.error('[api] Database schema/seed failed:', e);
-  process.exit(1);
-}
 
 const { startRebuildInventory, getRebuildInventoryState } = require('./db/rebuild-inventory');
 
@@ -53,6 +45,7 @@ app.use('/api/flights', flightRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/vessels', vesselRoutes);
 app.use('/api/ports', portCruiseRoutes);
+app.use('/api/admin/database', adminDatabaseRoutes);
 
 /**
  * @swagger
@@ -279,7 +272,7 @@ app.post('/api/admin/rebuild-inventory', (req, res) => {
   const clearPlaces = body.clearPlaces !== false;
 
   const started = startRebuildInventory(
-    db,
+    null,
     { includeAirports, clearPlaces, onLog: (m) => console.log(m) },
     (err) => {
       if (err) console.error('[rebuild-inventory]', err);
@@ -302,6 +295,13 @@ app.post('/api/admin/rebuild-inventory', (req, res) => {
   });
 });
 
+// Central handler for async route errors (routes call next(err))
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  console.error('[api]', err);
+  res.status(500).json({ ok: false, error: err.message || 'Internal server error' });
+});
+
 // Production: serve React build
 if (process.env.NODE_ENV === 'production') {
   const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
@@ -314,6 +314,19 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const HOST = process.env.HOST || '0.0.0.0';
-app.listen(PORT, HOST, () => {
-  console.log(`Server running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (external: 0.0.0.0)`);
-});
+
+(async function start() {
+  try {
+    await applySchema();
+    await seedParishes();
+  } catch (e) {
+    console.error('[api] Database schema/seed failed:', e);
+    process.exit(1);
+  }
+
+  app.listen(PORT, HOST, () => {
+    console.log(
+      `Server running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (external: 0.0.0.0)`
+    );
+  });
+})();

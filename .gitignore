@@ -12,3 +12,6 @@ reports/
 server/parish_data.sqlite
 server/.weather-cache.json
 server/.flight-cache.json
+
+# Docker Compose bind mounts (PostgreSQL + JSON caches)
+deployment/docker-compose/data/

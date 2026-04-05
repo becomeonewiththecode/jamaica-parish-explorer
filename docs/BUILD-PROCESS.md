@@ -12,7 +12,7 @@ Explains how the client, server, database, and Docker image are built, and what 
 project_jamaica/
 ├── client/          React app — compiled by Vite into client/dist/
 ├── server/          Node.js/Express — no compile step, runs directly
-├── server/jamaica.db  SQLite — seeded by init scripts, not checked in
+├── server/db/schema.postgresql.sql  DDL applied on boot / db:init (PostgreSQL)
 └── deployment/      Dockerfile(s) for Docker / Kubernetes
 ```
 
@@ -83,19 +83,11 @@ npm run dev:server            # development (node --watch for auto-restart)
 | File | Purpose |
 |------|---------|
 | `server/index.js` | Express entry point — mounts all routes, starts listen |
-| `server/db/connection.js` | Opens SQLite via `better-sqlite3`, enables WAL mode |
-| `server/data-dir.js` | Resolves `JAMAICA_DATA_DIR` env var for DB + cache file paths |
+| `server/db/connection.js` | Re-exports PostgreSQL pool helpers (`pg-query.js`) |
+| `server/data-dir.js` | Resolves `JAMAICA_DATA_DIR` for JSON cache file paths |
 | `server/routes/` | One file per feature group (parishes, places, flights, weather, vessels, ports) |
 | `server/status-board.js` | Standalone Express app on port 5555 |
 | `server/admin.js` | Standalone Express app on port 5556 |
-
-### Native dependency: better-sqlite3
-
-`better-sqlite3` compiles a native `.node` binary during `npm install`. The binary is tied to the exact Node.js ABI version and CPU architecture. This means:
-
-- `npm install` must be run on the **same platform** that will run the code.
-- In Docker, `npm install` runs **inside the Alpine container** during the build stage so the binary targets musl/Alpine, not the host's glibc.
-- Never copy `server/node_modules/` from a Linux host into an Alpine Docker image (or vice versa) — the binary will fail to load.
 
 ### Data directory (`JAMAICA_DATA_DIR`)
 
@@ -112,20 +104,20 @@ function getDataDir() {
 | Scenario | Default path | Override |
 |----------|-------------|---------|
 | Dev / PM2 bare | `server/` | `JAMAICA_DATA_DIR=/some/path` in `server/.env` |
-| Docker Compose | `/data` (volume) | Set in `docker-compose-build.yml` / `docker-compose-prod.yml` env block |
+| Docker Compose | `/data` (bind mount → `deployment/docker-compose/data/jamaica`) | Set in compose env block |
 | Kubernetes | `/data` (PVC mount) | Set in `deployment.yaml` env block |
 
 Files written there:
-- `jamaica.db` — SQLite database
 - `.flight-cache.json` — cached scheduled flight data
 - `.weather-cache.json` — cached island weather data (all 14 parishes)
-- `.wave-cache.json` — cached coastal wave data
+
+PostgreSQL holds all relational tables; configure **`DATABASE_URL`** in `server/.env` (see Docker Compose for a bundled `postgres` service).
 
 ---
 
 ## 3. Database initialisation
 
-The SQLite database is **not included in the repo** and must be seeded before the server can serve parish or place data.
+The PostgreSQL database is **not included in the repo**. Create an empty database, set **`DATABASE_URL`**, then run the scripts below (or start the API once — it applies schema + parish seed on boot).
 
 ### Scripts (run from project root)
 
@@ -136,13 +128,12 @@ npm run enrich:places   # 3. Add Bing images + Wikipedia descriptions (slow, ~20
 npm run seed:airports   # Optional: re-seed airport metadata
 ```
 
-Run these in order on first setup. Steps 2 and 3 can be skipped if you copy in an existing `jamaica.db`.
+Run these in order on first setup. Steps 2 and 3 can be skipped if you restore from `pg_dump` or migrate from SQLite (see [`DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](./DATA-MIGRATION-SQLITE-TO-POSTGRES.md)).
 
-### Where the database ends up
+### Where the database lives
 
-- **Dev/PM2:** `server/jamaica.db`
-- **Docker:** `/data/jamaica.db` (inside the named volume `jamaica_data`)
-- **Kubernetes:** `/data/jamaica.db` (inside the PVC mount)
+- **PostgreSQL server:** wherever `DATABASE_URL` points (local install, Docker `postgres` service, managed RDS, etc.).
+- **Docker Compose:** relational data is under **`deployment/docker-compose/data/postgres`**; JSON caches under **`deployment/docker-compose/data/jamaica`** (mounted at `/data` in the app container).
 
 ---
 
@@ -155,17 +146,17 @@ Both the Docker Compose and Kubernetes Dockerfiles use the same two-stage patter
 ```dockerfile
 FROM node:20-alpine AS build
 WORKDIR /app
-RUN apk add --no-cache python3 make g++ git   # native module build tools
+RUN apk add --no-cache python3 make g++ git   # optional native deps for some npm packages
 COPY . .
 RUN rm -rf node_modules client/node_modules server/node_modules  # strip host binaries
 RUN npm install && cd server && npm install && cd ../client && npm install && cd .. && npm run build
 ```
 
 What happens:
-1. Build tools (python3, make, g++) are installed — required by `better-sqlite3` to compile its native addon.
-2. Any `node_modules/` that arrived via `COPY` are deleted — prevents glibc host binaries leaking into the musl Alpine image.
+1. Build tools (python3, make, g++) are installed if a dependency needs them during `npm install`.
+2. Any `node_modules/` that arrived via `COPY` are deleted — prevents host binaries leaking into the musl Alpine image.
 3. `npm install` installs root deps (just `concurrently`).
-4. `cd server && npm install` installs server deps including `better-sqlite3`, compiled fresh for Alpine.
+4. `cd server && npm install` installs server deps including `pg`.
 5. `npm run build` runs Vite (`cd client && npm run build`) to produce `client/dist/`.
 
 ### Stage 2: `runtime` (node:20-alpine)
@@ -173,7 +164,7 @@ What happens:
 ```dockerfile
 FROM node:20-alpine AS runtime
 WORKDIR /app
-RUN apk add --no-cache sqlite && npm install -g pm2   # Docker Compose variant
+RUN apk add --no-cache postgresql-client && npm install -g pm2   # pg_dump/psql for admin backup/restore + optional debugging
 COPY --from=build /app /app
 ENV NODE_ENV=production PORT=3001
 EXPOSE 3001 5555 5556
@@ -183,7 +174,7 @@ CMD ["pm2-runtime", "ecosystem.config.js"]   # Docker Compose
 
 What happens:
 1. A fresh Alpine image is used — no build tools, smaller image.
-2. `sqlite` CLI is installed (useful for `docker exec` database inspection).
+2. `postgresql-client` supplies **`pg_dump`** and **`psql`** for **admin database backup/restore** (`/api/admin/database/*`) and optional manual debugging against `DATABASE_URL`.
 3. PM2 is installed globally (Docker Compose variant only).
 4. Everything from the build stage is copied in — compiled `node_modules` and `client/dist/`.
 5. The container starts via `pm2-runtime` (Compose) or `npm start` (Kubernetes).

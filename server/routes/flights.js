@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
-const db = require('../db/connection');
+const { query, withTransaction, clientQuery } = require('../db/pg-query');
 const { getDataDir } = require('../data-dir');
 
 // --- Persistent flight cache (survives server restarts) ---
@@ -1138,32 +1138,31 @@ async function fetchAdsbLolJamaicaWide() {
 }
 
 // --- Store flights in database ---
-function storeFlights(flights) {
+async function storeFlights(flights) {
   try {
-    const insert = db.prepare(`
+    const sql = `
       INSERT INTO flights (flight_number, airport, status, direction, airline, aircraft, aircraft_reg, route, route_iata, route_country, scheduled_time, callsign)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const insertMany = db.transaction((list) => {
-      for (const f of list) {
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `;
+    await withTransaction(async (client) => {
+      for (const f of flights) {
         const isArrival = f.type === 'arrival';
-        insert.run(
+        await clientQuery(client, sql, [
           f.flightNumber || '',
-          isArrival ? (f.destIata || '') : (f.originIata || ''),
+          isArrival ? f.destIata || '' : f.originIata || '',
           f.status || '',
           f.type,
           f.airline || '',
           f.aircraft || '',
           f.aircraftReg || '',
-          isArrival ? (f.from || '') : (f.to || ''),
-          isArrival ? (f.fromIata || '') : (f.toIata || ''),
-          isArrival ? (f.fromCountry || '') : (f.toCountry || ''),
+          isArrival ? f.from || '' : f.to || '',
+          isArrival ? f.fromIata || '' : f.toIata || '',
+          isArrival ? f.fromCountry || '' : f.toCountry || '',
           f.scheduledTime || '',
-          f.callsign || ''
-        );
+          f.callsign || '',
+        ]);
       }
     });
-    insertMany(flights);
     console.log(`[Flights] Stored ${flights.length} flights in database`);
   } catch (e) {
     console.error('[Flights] Failed to store:', e.message);
@@ -1320,7 +1319,7 @@ async function fetchLiveRadar() {
 
   // Store in database (only new live flights worth storing)
   const storable = liveFlights.filter(f => f.type === 'arrival' || f.type === 'departure');
-  if (storable.length > 0) storeFlights(storable);
+  if (storable.length > 0) await storeFlights(storable);
 
   const now = Date.now();
   flightsCache = {
@@ -1541,16 +1540,27 @@ router.get('/', (req, res) => {
  *       200:
  *         description: "{ flights: array, total: number }"
  */
-router.get('/history', (req, res) => {
-  const { airport, direction, limit = 100 } = req.query;
-  let sql = 'SELECT * FROM flights WHERE 1=1';
-  const params = [];
-  if (airport) { sql += ' AND airport = ?'; params.push(airport); }
-  if (direction) { sql += ' AND direction = ?'; params.push(direction); }
-  sql += ' ORDER BY fetched_at DESC, scheduled_time DESC LIMIT ?';
-  params.push(Number(limit));
-  const rows = db.prepare(sql).all(...params);
-  res.json({ flights: rows, total: rows.length });
+router.get('/history', async (req, res, next) => {
+  try {
+    const { airport, direction, limit = 100 } = req.query;
+    let sql = 'SELECT * FROM flights WHERE 1=1';
+    const params = [];
+    let n = 1;
+    if (airport) {
+      sql += ` AND airport = $${n++}`;
+      params.push(airport);
+    }
+    if (direction) {
+      sql += ` AND direction = $${n++}`;
+      params.push(direction);
+    }
+    sql += ` ORDER BY fetched_at DESC, scheduled_time DESC LIMIT $${n}`;
+    params.push(Number(limit));
+    const { rows } = await query(sql, params);
+    res.json({ flights: rows, total: rows.length });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // Expose flight provider health snapshot for /api/health and status board.

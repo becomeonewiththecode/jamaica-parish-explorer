@@ -35,6 +35,22 @@ Returns `403` if token is missing or invalid.
 
 If `target` is `api` or `all`, the API server may rebuild the React client in production (only when it detects that `client/` source files are newer than `client/dist/`). The JSON response includes `clientBuildRebuilt` and (when a rebuild occurs) a truncated `clientBuild` output.
 
+### `GET /api/admin/database/backup`
+
+Downloads a **plain SQL** dump of the PostgreSQL database (`pg_dump` with `--clean --if-exists --no-owner --no-acl`). Requires `X-Admin-Token` matching `ADMIN_RESTART_TOKEN`. The API host must have **`pg_dump`** on `PATH` (e.g. `postgresql-client` in Docker).
+
+**Response:** `200` with `Content-Disposition: attachment` and SQL body, or `403` / `503` (client tools missing) / `500` with JSON on failure before streaming starts.
+
+### `POST /api/admin/database/restore`
+
+Restores from an uploaded **plain SQL** backup. Requires `X-Admin-Token`. **Multipart form:** field **`backup`** (file), field **`confirm`** must be exactly **`RESTORE`**. Runs **`psql`** with `ON_ERROR_STOP` against `DATABASE_URL` / `POSTGRES_*`.
+
+**Limits:** default max upload **512 MiB**; override with **`ADMIN_DB_RESTORE_MAX_BYTES`** on the API server.
+
+**Response:** `200` `{ ok: true, message }` on success, or `400` / `403` / `413` / `500` with `detail` (stderr) on failure.
+
+**Admin site (port 5556):** authenticated session proxies these as **`GET /api/database/backup`** and **`POST /api/database/restore`** (no admin token in the browser — the admin process adds `X-Admin-Token` when calling the API).
+
 ---
 
 ## Parishes

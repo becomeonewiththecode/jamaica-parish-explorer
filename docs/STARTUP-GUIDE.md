@@ -170,20 +170,25 @@ docker compose -f deployment/docker-compose/docker-compose-build.yml logs -f
 docker compose -f deployment/docker-compose/docker-compose-build.yml logs jamaica-parish-explorer
 docker compose -f deployment/docker-compose/docker-compose-build.yml restart
 docker compose -f deployment/docker-compose/docker-compose-build.yml down
-docker compose -f deployment/docker-compose/docker-compose-build.yml down -v    # also deletes data volume
+docker compose -f deployment/docker-compose/docker-compose-build.yml down
+# Reset DB/caches: rm -rf deployment/docker-compose/data/postgres deployment/docker-compose/data/jamaica
 docker compose -f deployment/docker-compose/docker-compose-build.yml up -d --build  # rebuild and restart
 ```
 
 ### Persistent data
 
-The SQLite database (`jamaica.db`) and JSON caches are stored in a named Docker volume (`jamaica_data`) mounted at `/data` inside the container, controlled by `JAMAICA_DATA_DIR=/data`. The application code and compiled `node_modules` live inside the image and are never overwritten by the volume.
+**PostgreSQL** data and **JSON caches** use **bind mounts** under **`deployment/docker-compose/data/`** (paths relative to the compose file): **`data/postgres`** → Postgres, **`data/jamaica`** → **`/data`** (`JAMAICA_DATA_DIR`). Application code and `node_modules` stay in the image.
 
-To inspect or back up the database:
+**Easiest:** use the admin dashboard (**`ADMIN_PORT`**, default **5556**) → **Database backup & restore** (downloads `.sql` or uploads a dump with a **`RESTORE`** confirmation; see [`ADMIN-SITE.md`](./ADMIN-SITE.md)).
+
+**CLI:** back up with `pg_dump` (from the host or a throwaway client container), not by copying Postgres data directories raw. Example if Postgres is reachable on the compose network:
 
 ```bash
 docker exec jamaica-parish-explorer ls /data
-docker cp jamaica-parish-explorer:/data/jamaica.db ./jamaica.db.bak
+# pg_dump — from a client with DATABASE_URL, or: docker compose exec postgres pg_dump -U jamaica jamaica > backup.sql
 ```
+
+See [`DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](./DATA-MIGRATION-SQLITE-TO-POSTGRES.md) if you are moving from an old SQLite `jamaica.db`.
 
 ### Seeding the database inside Docker
 
@@ -196,13 +201,6 @@ docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/enrich-plac
 ```
 
 For a **full repopulation** of map POIs (clear `places` then Overpass ingest), use the admin **Rebuild map data** button (API must be running) or run `node db/rebuild-inventory-cli.js` inside the container from `/app/server`. See [Database and map data](./DATABASE-AND-MAP-DATA.md) for sources and tables.
-
-Or copy in an existing `jamaica.db`:
-
-```bash
-docker cp ./jamaica.db jamaica-parish-explorer:/data/jamaica.db
-docker compose -f deployment/docker-compose/docker-compose-build.yml restart
-```
 
 ### Stopping and switching back to PM2
 
@@ -246,8 +244,8 @@ The API is not running. In PM2 mode run `pm2 status`; in Docker mode run `docker
 ### `ERR_DLOPEN_FAILED` / `libnode.so` on PM2 restart
 PM2 v6's APM module tries to load `libnode.so`, which doesn't exist on nvm-managed Node. Verify `ecosystem.config.js` has `pmx: 'false'` in the `jamaica-api` env block.
 
-### `better-sqlite3` / `ld-linux-x86-64.so.2` in Docker
-The native module compiled on your host (glibc) ended up inside the Alpine (musl) container. Rebuild without cache: `docker compose -f deployment/docker-compose/docker-compose-build.yml build --no-cache && docker compose -f deployment/docker-compose/docker-compose-build.yml up -d`.
+### Database connection errors (`DATABASE_URL`, `ECONNREFUSED` to Postgres)
+Ensure the **`postgres`** service is healthy and **`DATABASE_URL`** in the app container matches the Compose network hostname (usually `postgres`), user, password, and database name. Check logs: `docker compose … logs postgres` and `… logs jamaica-parish-explorer`.
 
 ### Port already in use
 Stop PM2 before starting Docker (or vice versa): `pm2 stop all` before `docker compose … up`.

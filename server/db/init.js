@@ -1,31 +1,52 @@
 const fs = require('fs');
 const path = require('path');
-const { createAirportsTable } = require('./seed-airports');
+const { query } = require('./pg-query');
+const { ensureAirportsTable } = require('./seed-airports');
 
-/** Idempotent fixes for DBs created before newer columns / airports table existed. */
-function ensureSchemaMigrations(db) {
-  const cols = db.prepare('PRAGMA table_info(places)').all();
-  const names = new Set(cols.map((c) => c.name));
-  const addIfMissing = (col, sqlType) => {
+function splitPostgresqlStatements(sql) {
+  return sql
+    .split(';')
+    .map((chunk) =>
+      chunk
+        .split('\n')
+        .filter((line) => !/^\s*--/.test(line))
+        .join('\n')
+        .trim()
+    )
+    .filter((s) => s.length > 0);
+}
+
+/** Apply base DDL from schema.postgresql.sql */
+async function applySchema() {
+  const schemaPath = path.join(__dirname, 'schema.postgresql.sql');
+  const raw = fs.readFileSync(schemaPath, 'utf8');
+  for (const stmt of splitPostgresqlStatements(raw)) {
+    await query(stmt);
+  }
+  await ensureSchemaMigrations();
+}
+
+/** Idempotent column / airports fixes (PostgreSQL). */
+async function ensureSchemaMigrations() {
+  const { rows } = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'places'`
+  );
+  const names = new Set(rows.map((r) => r.column_name));
+  const addIfMissing = async (col, sqlType) => {
     if (!names.has(col)) {
-      db.exec(`ALTER TABLE places ADD COLUMN ${col} ${sqlType}`);
+      await query(`ALTER TABLE places ADD COLUMN IF NOT EXISTS ${col} ${sqlType}`);
       names.add(col);
     }
   };
-  addIfMissing('description', 'TEXT');
-  addIfMissing('image_url', 'TEXT');
-  addIfMissing('menu_url', 'TEXT');
-  addIfMissing('tiktok_url', 'TEXT');
-  addIfMissing('instagram_url', 'TEXT');
-  addIfMissing('booking_url', 'TEXT');
-  addIfMissing('tripadvisor_url', 'TEXT');
-  createAirportsTable(db);
-}
-
-function applySchema(db) {
-  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-  db.exec(schema);
-  ensureSchemaMigrations(db);
+  await addIfMissing('description', 'TEXT');
+  await addIfMissing('image_url', 'TEXT');
+  await addIfMissing('menu_url', 'TEXT');
+  await addIfMissing('tiktok_url', 'TEXT');
+  await addIfMissing('instagram_url', 'TEXT');
+  await addIfMissing('booking_url', 'TEXT');
+  await addIfMissing('tripadvisor_url', 'TEXT');
+  await ensureAirportsTable();
 }
 
 // Seed data — all 14 parishes
@@ -144,43 +165,65 @@ const parishes = [
   }
 ];
 
-function seedParishes(db) {
-  const insertParish = db.prepare(`
-  INSERT OR IGNORE INTO parishes (slug, name, county, population, capital, area, description, fill_color, svg_path)
-  VALUES (@slug, @name, @county, @population, @capital, @area, @description, @fill_color, @svg_path)
-`);
+async function seedParishes() {
+  const { withTransaction, clientQuery } = require('./pg-query');
 
-  const insertFeature = db.prepare(`
-  INSERT INTO features (parish_id, name) VALUES (?, ?)
-`);
-
-  const getParishId = db.prepare(`SELECT id FROM parishes WHERE slug = ?`);
-
-  const seedAll = db.transaction(() => {
+  await withTransaction(async (client) => {
     for (const parish of parishes) {
       const { features, ...parishRow } = parish;
-      insertParish.run(parishRow);
-      const row = getParishId.get(parish.slug);
+      await clientQuery(
+        client,
+        `INSERT INTO parishes (slug, name, county, population, capital, area, description, fill_color, svg_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (slug) DO NOTHING`,
+        [
+          parishRow.slug,
+          parishRow.name,
+          parishRow.county,
+          parishRow.population,
+          parishRow.capital,
+          parishRow.area,
+          parishRow.description,
+          parishRow.fill_color,
+          parishRow.svg_path,
+        ]
+      );
+
+      const r = await clientQuery(client, 'SELECT id FROM parishes WHERE slug = $1', [parish.slug]);
+      const row = r.rows[0];
       if (row) {
-        const existingCount = db.prepare('SELECT COUNT(*) as c FROM features WHERE parish_id = ?').get(row.id).c;
-        if (existingCount === 0) {
+        const c = await clientQuery(
+          client,
+          'SELECT COUNT(*)::int AS c FROM features WHERE parish_id = $1',
+          [row.id]
+        );
+        if (c.rows[0].c === 0) {
           for (const feature of features) {
-            insertFeature.run(row.id, feature);
+            await clientQuery(client, 'INSERT INTO features (parish_id, name) VALUES ($1, $2)', [
+              row.id,
+              feature,
+            ]);
           }
         }
       }
     }
   });
-
-  seedAll();
 }
 
 module.exports = { applySchema, seedParishes, ensureSchemaMigrations };
 
 if (require.main === module) {
-  const db = require('./connection');
-  applySchema(db);
-  seedParishes(db);
-  console.log('Database initialized and seeded successfully.');
-  db.close();
+  const { closePool } = require('./pg-query');
+  (async () => {
+    try {
+      await applySchema();
+      await seedParishes();
+      console.log('Database initialized and seeded successfully.');
+    } finally {
+      await closePool();
+    }
+  })().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
 }

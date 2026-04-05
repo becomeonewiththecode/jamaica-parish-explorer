@@ -93,6 +93,41 @@ flowchart TD
 
 ---
 
+### Database backup and restore
+
+```mermaid
+flowchart TD
+  U[Admin user:\nDownload backup or upload .sql + RESTORE]
+
+  U -->|GET| GB["Browser: GET /api/database/backup\n→ admin :5556"]
+  U -->|POST multipart| RB["Browser: POST /api/database/restore\nfields: backup=file, confirm=RESTORE"]
+
+  GB --> PXB["admin.js proxies:\nGET /api/admin/database/backup\n→ API :3001\nX-Admin-Token"]
+  RB --> PXR["admin.js proxies:\nPOST /api/admin/database/restore\nX-Admin-Token"]
+
+  PXB --> AV{API:\nvalid token?}
+  PXR --> AV
+  AV -->|no| F403["403 → toast / JSON error"]
+  AV -->|yes| DUMP["spawn pg_dump\n--clean --if-exists …\nstream SQL to response"]
+  AV -->|yes| SQL["spawn psql\nON_ERROR_STOP\nstdin = uploaded SQL"]
+
+  DUMP --> PG[(PostgreSQL\nDATABASE_URL)]
+  SQL --> PG
+
+  DUMP -->|200| DL["Browser saves\njamaica-db-*.sql"]
+  SQL -->|200 / 500| TR["JSON ok or\ndetail from stderr"]
+
+  classDef good fill:#064e3b,stroke:#4ade80,color:#f0fdf4;
+  classDef bad fill:#7f1d1d,stroke:#f97373,color:#fef2f2;
+  classDef neutral fill:#0b1020,stroke:#1f2937,color:#f9fafb;
+
+  class DL,TR good;
+  class F403 bad;
+  class U,GB,RB,PXB,PXR,AV,DUMP,SQL,PG neutral;
+```
+
+---
+
 ### Map data rebuild (background OSM ingest)
 
 ```mermaid

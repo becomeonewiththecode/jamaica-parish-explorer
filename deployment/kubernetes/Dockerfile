@@ -16,7 +16,7 @@ FROM node:20-alpine AS runtime
 
 WORKDIR /app
 
-RUN apk add --no-cache sqlite
+RUN apk add --no-cache postgresql-client
 
 COPY --from=build /app /app
 

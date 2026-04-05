@@ -1,5 +1,5 @@
 const express = require('express');
-const db = require('../db/connection');
+const { query } = require('../db/pg-query');
 const router = express.Router();
 
 /**
@@ -39,7 +39,7 @@ router.get('/website-image', async (req, res) => {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; JamaicaParishExplorer/1.0)',
-        'Accept': 'text/html',
+        Accept: 'text/html',
       },
     });
     clearTimeout(timeout);
@@ -92,22 +92,31 @@ router.get('/website-image', async (req, res) => {
  *       200:
  *         description: Array of matching places with id, name, category, lat, lon, parish_slug, parish_name
  */
-router.get('/search', (req, res) => {
-  const { q } = req.query;
-  if (!q || q.trim().length < 2) return res.json([]);
+router.get('/search', async (req, res, next) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim().length < 2) return res.json([]);
 
-  const places = db.prepare(`
+    const like = `%${q.trim()}%`;
+    const prefix = `${q.trim()}%`;
+    const { rows: places } = await query(
+      `
     SELECT p.id, p.name, p.category, p.lat, p.lon, par.slug as parish_slug, par.name as parish_name
     FROM places p
     JOIN parishes par ON p.parish_id = par.id
-    WHERE p.name LIKE ?
+    WHERE p.name ILIKE $1
     ORDER BY
-      CASE WHEN p.name LIKE ? THEN 0 ELSE 1 END,
+      CASE WHEN p.name ILIKE $2 THEN 0 ELSE 1 END,
       p.name
     LIMIT 10
-  `).all(`%${q.trim()}%`, `${q.trim()}%`);
+  `,
+      [like, prefix]
+    );
 
-  res.json(places);
+    res.json(places);
+  } catch (e) {
+    next(e);
+  }
 });
 
 /**
@@ -121,11 +130,15 @@ router.get('/search', (req, res) => {
  *       200:
  *         description: Array of { category, count }
  */
-router.get('/categories', (req, res) => {
-  const categories = db.prepare(`
-    SELECT category, COUNT(*) as count FROM places GROUP BY category ORDER BY count DESC
-  `).all();
-  res.json(categories);
+router.get('/categories', async (req, res, next) => {
+  try {
+    const { rows: categories } = await query(`
+    SELECT category, COUNT(*)::bigint AS count FROM places GROUP BY category ORDER BY count DESC
+  `);
+    res.json(categories);
+  } catch (e) {
+    next(e);
+  }
 });
 
 /**
@@ -145,21 +158,28 @@ router.get('/categories', (req, res) => {
  *       200:
  *         description: Array of places with id, name, category, lat, lon
  */
-router.get('/all', (req, res) => {
-  const { category } = req.query;
-  let places;
-
-  if (category) {
-    places = db.prepare(`
-      SELECT id, name, category, lat, lon FROM places WHERE category = ? ORDER BY name
-    `).all(category);
-  } else {
-    places = db.prepare(`
+router.get('/all', async (req, res, next) => {
+  try {
+    const { category } = req.query;
+    let places;
+    if (category) {
+      const r = await query(
+        `
+      SELECT id, name, category, lat, lon FROM places WHERE category = $1 ORDER BY name
+    `,
+        [category]
+      );
+      places = r.rows;
+    } else {
+      const r = await query(`
       SELECT id, name, category, lat, lon FROM places ORDER BY category, name
-    `).all();
+    `);
+      places = r.rows;
+    }
+    res.json(places);
+  } catch (e) {
+    next(e);
   }
-
-  res.json(places);
 });
 
 /**
@@ -187,28 +207,40 @@ router.get('/all', (req, res) => {
  *       404:
  *         description: Parish not found
  */
-router.get('/:slug/places', (req, res) => {
-  const parish = db.prepare('SELECT id FROM parishes WHERE slug = ?').get(req.params.slug);
-  if (!parish) {
-    return res.status(404).json({ error: 'Parish not found' });
-  }
+router.get('/:slug/places', async (req, res, next) => {
+  try {
+    const pr = await query('SELECT id FROM parishes WHERE slug = $1', [req.params.slug]);
+    const parish = pr.rows[0];
+    if (!parish) {
+      return res.status(404).json({ error: 'Parish not found' });
+    }
 
-  const { category } = req.query;
-  let places;
-
-  if (category) {
-    places = db.prepare(`
+    const { category } = req.query;
+    let places;
+    if (category) {
+      const r = await query(
+        `
       SELECT id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars, description, image_url, menu_url, tiktok_url, instagram_url, booking_url, tripadvisor_url
-      FROM places WHERE parish_id = ? AND category = ? ORDER BY name
-    `).all(parish.id, category);
-  } else {
-    places = db.prepare(`
+      FROM places WHERE parish_id = $1 AND category = $2 ORDER BY name
+    `,
+        [parish.id, category]
+      );
+      places = r.rows;
+    } else {
+      const r = await query(
+        `
       SELECT id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars, description, image_url, menu_url, tiktok_url, instagram_url, booking_url, tripadvisor_url
-      FROM places WHERE parish_id = ? ORDER BY category, name
-    `).all(parish.id);
-  }
+      FROM places WHERE parish_id = $1 ORDER BY category, name
+    `,
+        [parish.id]
+      );
+      places = r.rows;
+    }
 
-  res.json(places);
+    res.json(places);
+  } catch (e) {
+    next(e);
+  }
 });
 
 module.exports = router;

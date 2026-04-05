@@ -1,19 +1,25 @@
-const db = require('./connection');
+const { query, closePool } = require('./pg-query');
 const fs = require('fs');
 const path = require('path');
 
-// Load GeoJSON for parish matching
 const geojsonPath = path.join(__dirname, '..', '..', 'client', 'public', 'jamaica-parishes.geojson');
 const geojson = JSON.parse(fs.readFileSync(geojsonPath, 'utf8'));
 
 const nameToSlug = {
-  "Hanover": "hanover", "Westmoreland": "westmoreland",
-  "Saint James": "st-james", "Trelawny": "trelawny",
-  "Saint Ann": "st-ann", "Saint Elizabeth": "st-elizabeth",
-  "Manchester": "manchester", "Clarendon": "clarendon",
-  "Saint Mary": "st-mary", "Saint Catherine": "st-catherine",
-  "Saint Andrew": "st-andrew", "Kingston": "kingston",
-  "Saint Thomas": "st-thomas", "Portland": "portland",
+  Hanover: 'hanover',
+  Westmoreland: 'westmoreland',
+  'Saint James': 'st-james',
+  Trelawny: 'trelawny',
+  'Saint Ann': 'st-ann',
+  'Saint Elizabeth': 'st-elizabeth',
+  Manchester: 'manchester',
+  Clarendon: 'clarendon',
+  'Saint Mary': 'st-mary',
+  'Saint Catherine': 'st-catherine',
+  'Saint Andrew': 'st-andrew',
+  Kingston: 'kingston',
+  'Saint Thomas': 'st-thomas',
+  Portland: 'portland',
 };
 
 function pointInPolygon(lat, lon, polygon) {
@@ -22,7 +28,7 @@ function pointInPolygon(lat, lon, polygon) {
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i];
     const [xj, yj] = ring[j];
-    if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+    if (((yi > lat) !== (yj > lat)) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
       inside = !inside;
     }
   }
@@ -46,11 +52,11 @@ function findParishForPoint(lat, lon) {
 const BBOX = '17.7,-78.4,18.6,-76.1';
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
-const insertPlace = db.prepare(`
-  INSERT OR IGNORE INTO places (parish_id, osm_id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-const getParishId = db.prepare('SELECT id FROM parishes WHERE slug = ?');
+const INSERT_PLACE = `
+  INSERT INTO places (parish_id, osm_id, name, category, lat, lon, address, phone, website, opening_hours, cuisine, stars)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+  ON CONFLICT (osm_id) DO NOTHING
+`;
 
 async function main() {
   console.log('Fetching car rental places from OpenStreetMap...\n');
@@ -94,72 +100,84 @@ async function main() {
     const slug = findParishForPoint(lat, lon);
     if (!slug) continue;
 
-    const parish = getParishId.get(slug);
+    const pr = await query('SELECT id FROM parishes WHERE slug = $1', [slug]);
+    const parish = pr.rows[0];
     if (!parish) continue;
 
     const osmId = `${el.type}/${el.id}`;
     const address = [tags['addr:street'], tags['addr:city']].filter(Boolean).join(', ') || null;
 
-    try {
-      insertPlace.run(
-        parish.id, osmId, name, 'car_rental', lat, lon,
-        address,
-        tags.phone || tags['contact:phone'] || null,
-        tags.website || tags['contact:website'] || null,
-        tags.opening_hours || null,
-        null, null
-      );
+    const r = await query(INSERT_PLACE, [
+      parish.id,
+      osmId,
+      name,
+      'car_rental',
+      lat,
+      lon,
+      address,
+      tags.phone || tags['contact:phone'] || null,
+      tags.website || tags['contact:website'] || null,
+      tags.opening_hours || null,
+      null,
+      null,
+    ]);
+    if (r.rowCount > 0) {
       inserted++;
       console.log(`  + ${name} (${slug})`);
-    } catch (e) { /* duplicate */ }
+    }
   }
 
   console.log(`\nInserted ${inserted} car rental places.`);
 
-  // Now enrich them with images
   console.log('\nEnriching with images...');
 
-  const places = db.prepare(`
+  const pl = await query(`
     SELECT id, name, website, category FROM places
     WHERE category = 'car_rental' AND (image_url IS NULL OR image_url = '')
-  `).all();
+  `);
+  const places = pl.rows;
 
   if (places.length === 0) {
     console.log('All car rentals already have images.');
-    db.close();
+    await closePool();
     return;
   }
 
-  const update = db.prepare('UPDATE places SET image_url = ?, description = ? WHERE id = ?');
-
   for (const place of places) {
     let image = null;
-
-    // Try Bing image search
-    const query = `${place.name} Jamaica car rental`;
-    const url = 'https://www.bing.com/images/search?q=' + encodeURIComponent(query) + '&first=1';
+    const q = `${place.name} Jamaica car rental`;
+    const url = 'https://www.bing.com/images/search?q=' + encodeURIComponent(q) + '&first=1';
     try {
       const r = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
       });
       if (r.ok) {
         const html = await r.text();
         const m = html.match(/murl&quot;:&quot;(https?:\/\/[^&]+)/);
         if (m) image = m[1];
       }
-    } catch (e) { /* skip */ }
+    } catch (e) {
+      /* skip */
+    }
 
-    update.run(image || '', '', place.id);
+    await query('UPDATE places SET image_url = $1, description = $2 WHERE id = $3', [
+      image || '',
+      '',
+      place.id,
+    ]);
     console.log(`  ${place.name}: ${image ? 'image found' : 'no image'}`);
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 300));
   }
 
-  const count = db.prepare("SELECT COUNT(*) as c FROM places WHERE category = 'car_rental'").get();
-  console.log(`\nTotal car rental places in DB: ${count.c}`);
-  db.close();
+  const count = await query("SELECT COUNT(*)::bigint AS c FROM places WHERE category = 'car_rental'");
+  console.log(`\nTotal car rental places in DB: ${count.rows[0].c}`);
+  await closePool();
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Error:', err);
   process.exit(1);
 });

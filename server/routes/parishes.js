@@ -1,5 +1,5 @@
 const express = require('express');
-const db = require('../db/connection');
+const { query } = require('../db/pg-query');
 const router = express.Router();
 
 /**
@@ -13,11 +13,15 @@ const router = express.Router();
  *       200:
  *         description: Array of parishes with slug, name, county, fill_color, svg_path
  */
-router.get('/', (req, res) => {
-  const parishes = db.prepare(`
+router.get('/', async (req, res, next) => {
+  try {
+    const { rows: parishes } = await query(`
     SELECT slug, name, county, fill_color, svg_path FROM parishes ORDER BY id
-  `).all();
-  res.json(parishes);
+  `);
+    res.json(parishes);
+  } catch (e) {
+    next(e);
+  }
 });
 
 /**
@@ -40,20 +44,24 @@ router.get('/', (req, res) => {
  *       404:
  *         description: Parish not found
  */
-router.get('/:slug', (req, res) => {
-  const parish = db.prepare(`
-    SELECT * FROM parishes WHERE slug = ?
-  `).get(req.params.slug);
+router.get('/:slug', async (req, res, next) => {
+  try {
+    const { rows } = await query(`SELECT * FROM parishes WHERE slug = $1`, [req.params.slug]);
+    const parish = rows[0];
+    if (!parish) {
+      return res.status(404).json({ error: 'Parish not found' });
+    }
 
-  if (!parish) {
-    return res.status(404).json({ error: 'Parish not found' });
+    const { rows: featRows } = await query(
+      `SELECT name FROM features WHERE parish_id = $1 ORDER BY id`,
+      [parish.id]
+    );
+    const features = featRows.map((f) => f.name);
+
+    res.json({ ...parish, features });
+  } catch (e) {
+    next(e);
   }
-
-  const features = db.prepare(`
-    SELECT name FROM features WHERE parish_id = ? ORDER BY id
-  `).all(parish.id).map(f => f.name);
-
-  res.json({ ...parish, features });
 });
 
 module.exports = router;

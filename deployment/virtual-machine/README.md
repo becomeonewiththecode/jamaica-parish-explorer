@@ -4,7 +4,7 @@ This option runs the app directly on a Linux VM (e.g. Ubuntu) using Node.js and 
 
 ### Files
 
-- `setup-server.sh` — installs Node.js, SQLite, and basic build tools on a fresh VM
+- `setup-server.sh` — installs Node.js and basic build tools on a fresh VM (install PostgreSQL separately; set `DATABASE_URL`)
 - `deploy.sh` — clones or updates the repo in `/opt/jamaica-parish-explorer`, builds, and restarts the service
 - `jamaica-parish-explorer.service` — `systemd` unit for keeping the app running
 
@@ -23,6 +23,8 @@ This option runs the app directly on a Linux VM (e.g. Ubuntu) using Node.js and 
    PORT=3001
    HOST=0.0.0.0
 
+   DATABASE_URL=postgresql://user:password@127.0.0.1:5432/jamaica
+
    # Flight and vessel data
    RAPIDAPI_KEY=your_rapidapi_key
    OPENSKY_CLIENT_ID=your_opensky_client_id
@@ -34,7 +36,7 @@ This option runs the app directly on a Linux VM (e.g. Ubuntu) using Node.js and 
    ADMIN_PASSWORD=your_strong_random_password
    ADMIN_RESTART_TOKEN=your_restart_token
 
-   # Optional: store DB + caches outside the repo (e.g. survives re-deploy)
+   # Optional: JSON caches outside the repo (e.g. survives re-deploy)
    # JAMAICA_DATA_DIR=/var/lib/jamaica-parish-explorer
    ```
 
@@ -73,5 +75,7 @@ pm2 start ecosystem.config.js
 pm2 save
 pm2 startup   # follow the printed instructions to register with systemd
 ```
+
+For **admin database backup/restore** (dashboard on port 5556), the **API** process must find **`pg_dump`** and **`psql`** on `PATH` (for example `sudo apt install postgresql-client` on Debian/Ubuntu). Docker images already include `postgresql-client`.
 
 > **Note:** PM2 v6 on nvm-managed Node.js requires `pmx: 'false'` in `ecosystem.config.js` for the API process (already set) to prevent a `libnode.so` load error from its APM module. If you see `ERR_DLOPEN_FAILED` on `jamaica-api`, verify that setting is present.

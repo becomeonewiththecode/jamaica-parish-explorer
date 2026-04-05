@@ -148,11 +148,11 @@ async function loadPortCruises(portId) {
 
   // 1) Prefer data already stored in the database (map reads from DB going forward)
   try {
-    const lastUpdated = getCruiseCallsLastUpdated(portId);
+    const lastUpdated = await getCruiseCallsLastUpdated(portId);
     if (lastUpdated) {
       const ageMs = Date.now() - Date.parse(lastUpdated);
       if (!Number.isNaN(ageMs) && ageMs < SCHEDULE_TTL_MS) {
-        const rows = getCruiseCallsForPort(portId);
+        const rows = await getCruiseCallsForPort(portId);
         if (rows && rows.length) {
           return rows.map((r) => ({
             shipName: r.ship_name,
@@ -211,7 +211,7 @@ async function loadPortCruises(portId) {
       'falmouth-cruise-port': { name: 'Falmouth Cruise Port', city: 'Falmouth' },
     }[portId] || { name: portId, city: null };
 
-    const portRow = upsertCruisePort({
+    const portRow = await upsertCruisePort({
       code: portId,
       name: portMeta.name,
       city: portMeta.city,
@@ -229,7 +229,7 @@ async function loadPortCruises(portId) {
     }, {});
 
     for (const [source, rows] of Object.entries(bySource)) {
-      replaceCruiseCallsForPort(portRow.code, source, rows);
+      await replaceCruiseCallsForPort(portRow.code, source, rows);
     }
 
     return data;
@@ -237,7 +237,7 @@ async function loadPortCruises(portId) {
     console.warn(`[PortCruises] Failed to fetch schedule for ${portId}:`, e.message);
     // If scraping fails and DB has something (even stale), fall back to DB contents
     try {
-      const rows = getCruiseCallsForPort(portId);
+      const rows = await getCruiseCallsForPort(portId);
       if (rows && rows.length) {
         return rows.map((r) => ({
           shipName: r.ship_name,

@@ -25,7 +25,7 @@ flowchart LR
     end
 
     subgraph CruiseData["Cruise schedules"]
-      CruiseTables["cruise_ports + cruise_calls<br/>(SQLite)"]
+      CruiseTables["cruise_ports + cruise_calls<br/>(PostgreSQL)"]
       PortCruiseRoute["server/routes/port-cruises.js"]
     end
   end

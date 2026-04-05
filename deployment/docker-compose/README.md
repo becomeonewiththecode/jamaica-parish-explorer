@@ -63,7 +63,9 @@ Replace `-f docker-compose-build.yml` with `-f docker-compose-prod.yml` dependin
 docker compose -f deployment/docker-compose/docker-compose-build.yml logs -f
 docker compose -f deployment/docker-compose/docker-compose-build.yml restart
 docker compose -f deployment/docker-compose/docker-compose-build.yml down
-docker compose -f deployment/docker-compose/docker-compose-build.yml down -v   # also deletes data volume
+docker compose -f deployment/docker-compose/docker-compose-build.yml down
+# To wipe persisted DB + caches, remove bind-mount dirs next to the compose file:
+# rm -rf deployment/docker-compose/data/postgres deployment/docker-compose/data/jamaica
 docker compose -f deployment/docker-compose/docker-compose-build.yml up -d --build  # rebuild and restart
 ```
 
@@ -81,19 +83,30 @@ Configured via `HOST_PORT` in `.env` (default `80`):
 
 ---
 
-### Persistent data (`jamaica_data` volume)
+### Persistent data (bind mounts)
 
-The named volume is mounted at **`/data`** in the container (not `/app/server`). The API writes **`jamaica.db`**, **`.flight-cache.json`**, and **`.weather-cache.json`** there via **`JAMAICA_DATA_DIR=/data`**.
+Paths are **relative to each compose file** (`deployment/docker-compose/`), so data stays next to the stack definition:
 
-**Why:** Mounting a volume over **`/app/server`** replaced the image's **`node_modules`**, including **`better-sqlite3`** built for **Alpine (musl)**. Keeping code and dependencies in the image and persisting only `/data` avoids that.
+| Host path (created on first start) | Container | Purpose |
+|------------------------------------|-----------|---------|
+| `./data/postgres` | `/var/lib/postgresql/data` | PostgreSQL cluster data |
+| `./data/jamaica` | `/data` | **`JAMAICA_DATA_DIR`** — **`.flight-cache.json`**, **`.weather-cache.json`** only |
 
-**Upgrading from an older compose file** that used `jamaica_data:/app/server`: stop the stack, copy `jamaica.db` (and optional `*.json` caches) out of the old volume, then recreate the volume at `/data` and restart.
+The app still connects to Postgres via **`POSTGRES_HOST=postgres`** (or **`DATABASE_URL`**); credentials match **`POSTGRES_*`** in `.env`.
+
+**Why `/data` on the app container instead of `/app/server`:** mounting over **`/app/server`** would replace the image’s **`node_modules`**.
+
+These directories are listed in **`.gitignore`** at the repo root so database and cache files are not committed.
+
+**Backups:** use the admin UI (**`ADMIN_PORT`**, mapped like the status board) → **Database backup & restore**, or run `pg_dump` against the `postgres` service — see [`docs/DATABASE-AND-MAP-DATA.md`](../../docs/DATABASE-AND-MAP-DATA.md).
+
+**Upgrading from SQLite-era compose** that stored `jamaica.db` on `/data`: migrate data with [`docs/DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](../../docs/DATA-MIGRATION-SQLITE-TO-POSTGRES.md), then rely on Postgres for all relational data.
 
 ---
 
 ### Tips
 
-- **`better-sqlite3` / `ld-linux-x86-64.so.2` errors** after changing Docker files: rebuild without cache:
+- After changing Dockerfiles or dependencies, rebuild without cache if the image looks stale:
   ```bash
   docker compose -f deployment/docker-compose/docker-compose-build.yml build --no-cache
   docker compose -f deployment/docker-compose/docker-compose-build.yml up -d
