@@ -21,6 +21,11 @@ const PUBLIC_API_PORT = Number(process.env.ADMIN_PUBLIC_API_PORT) || API_PORT;
 const STATUS_PORT = process.env.STATUS_PORT || 5555;
 const PUBLIC_STATUS_PORT = Number(process.env.ADMIN_PUBLIC_STATUS_PORT) || Number(STATUS_PORT) || 5555;
 const ADMIN_RESTART_TOKEN = process.env.ADMIN_RESTART_TOKEN || '';
+/** Host/port used to probe whether the Vite dev client is running (loopback). */
+const CLIENT_HOST = outboundLoopbackHost(process.env.CLIENT_HOST);
+const CLIENT_PORT = Number(process.env.CLIENT_PORT) || 5173;
+/** Port in browser URL for the client when Vite is up (in case behind a proxy). */
+const PUBLIC_CLIENT_PORT = Number(process.env.ADMIN_PUBLIC_CLIENT_PORT) || CLIENT_PORT;
 
 if (!ADMIN_PASSWORD) {
   console.error('[Admin] ADMIN_PASSWORD is required in server/.env — refusing to start.');
@@ -117,6 +122,19 @@ function fetchPm2Status() {
   });
 }
 
+/** Probe whether the Vite dev client is reachable. Resolves quickly (1 s timeout). */
+function probeClientAvailable() {
+  return new Promise((resolve) => {
+    const req = http.request(
+      { hostname: CLIENT_HOST, port: CLIENT_PORT, path: '/', method: 'HEAD', timeout: 1000 },
+      () => { req.destroy(); resolve(true); }
+    );
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -191,6 +209,15 @@ app.get('/logout', (req, res) => {
 app.get('/api/pm2', authMiddleware, async (req, res) => {
   const pm2 = await fetchPm2Status();
   res.json(pm2);
+});
+
+app.get('/api/client-url', authMiddleware, async (req, res) => {
+  const publicHost = publicHostname(req);
+  const viteAvailable = await probeClientAvailable();
+  const url = viteAvailable
+    ? `http://${publicHost}:${PUBLIC_CLIENT_PORT}/`
+    : `http://${publicHost}:${PUBLIC_API_PORT}/`;
+  res.json({ url, viteAvailable });
 });
 
 app.get('/', authMiddleware, (req, res) => {
@@ -321,7 +348,7 @@ function dashboardPage(req) {
     <a href="http://${esc(publicHost)}:${PUBLIC_STATUS_PORT}/" target="_blank" class="link-btn">
       <span>&#128200;</span> Status Board
     </a>
-    <a href="http://${esc(publicHost)}:5173/" target="_blank" class="link-btn">
+    <a id="client-app-link" href="#" target="_blank" class="link-btn" style="opacity:0.5;pointer-events:none;">
       <span>&#127758;</span> Client App
     </a>
     <a href="http://${esc(publicHost)}:${PUBLIC_API_PORT}/api/health" target="_blank" class="link-btn">
@@ -436,6 +463,21 @@ function dashboardPage(req) {
       }
     }
 
+    async function refreshClientUrl() {
+      try {
+        var r = await fetch('/api/client-url');
+        var d = await r.json();
+        var link = document.getElementById('client-app-link');
+        link.href = d.url;
+        link.style.opacity = '';
+        link.style.pointerEvents = '';
+        if (!d.viteAvailable) {
+          link.title = 'Vite dev server is offline — linking to production app';
+        }
+      } catch (e) { /* leave link disabled if fetch fails */ }
+    }
+
+    refreshClientUrl();
     refreshPm2();
     setInterval(refreshPm2, 30000);
   </script>

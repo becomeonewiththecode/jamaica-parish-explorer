@@ -6,7 +6,7 @@ The admin site is an authenticated dashboard for managing the Jamaica Parish Exp
 
 ## What it provides
 
-- **Quick links** to Swagger API docs, Status Board, Client App, and the Health endpoint (open in new tabs).
+- **Quick links** to Swagger API docs, Status Board, Client App, and the Health endpoint (open in new tabs). The **Client App** link is resolved dynamically: it points to the Vite dev server (`CLIENT_PORT`, default 5173) when that server is reachable, and falls back to the production app URL (served by Express on `API_PORT`) when Vite is offline.
 - **PM2 process table** showing all managed processes with status, CPU, memory, restarts, and uptime. Auto-refreshes every 30 seconds.
 - **Restart controls** — buttons to restart the API server, Status Board, Admin site, or all PM2 processes. Proxies to the API server's `POST /api/admin/restart` endpoint with the `X-Admin-Token` header.
 - **Inline Status Board** — collapsible iframe embedding the status board for quick reference without leaving the admin page.
@@ -67,6 +67,9 @@ All configuration is via environment variables in `server/.env`:
 | `ADMIN_PUBLIC_API_PORT` | `API_PORT` | Port in those **browser** URLs when the API is published on a different host port (e.g. Docker `HOST_PORT` → container `3001`) |
 | `ADMIN_PUBLIC_STATUS_PORT` | `STATUS_PORT` | Same for the status board URL if its published port differs |
 | `STATUS_PORT` | `5555` | Port of the status board (used for links and iframe) |
+| `CLIENT_HOST` | `127.0.0.1` | Host used to probe whether the Vite dev server is running |
+| `CLIENT_PORT` | `5173` | Port of the Vite dev server (probe + browser URL when Vite is up) |
+| `ADMIN_PUBLIC_CLIENT_PORT` | `CLIENT_PORT` | Port in the browser URL for the client when Vite is up and the published port differs |
 
 ---
 
@@ -126,6 +129,7 @@ Notes:
 | `/logout` | No | GET | Clear session cookie and redirect to login |
 | `/` | Yes | GET | Admin dashboard |
 | `/api/pm2` | Yes | GET | Returns PM2 process list as JSON |
+| `/api/client-url` | Yes | GET | Probes the Vite dev server and returns the correct client URL |
 | `/api/restart` | Yes | POST | Restart a PM2 process (proxies to API server or self-restarts) |
 
 ### Restart targets
