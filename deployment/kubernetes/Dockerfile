@@ -9,8 +9,8 @@ COPY . .
 # Strip any host-side node_modules so native modules compile for Alpine (musl)
 RUN rm -rf node_modules client/node_modules server/node_modules
 
-# Install all dependencies (root + server) and build the client
-RUN npm install && cd server && npm install && cd .. && npm run build
+# Install all dependencies (root + server + client) and build the client
+RUN npm install && cd server && npm install && cd ../client && npm install && cd .. && npm run build
 
 FROM node:20-alpine AS runtime
 

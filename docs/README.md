@@ -4,6 +4,8 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 
 ## Table of Contents
 
+- [Startup guide](./STARTUP-GUIDE.md)
+- [Build process](./BUILD-PROCESS.md)
 - [API reference](./API-REFERENCE.md)
 - [Admin site](./ADMIN-SITE.md)
 - [Status board](./STATUS-BOARD.md)
@@ -14,6 +16,11 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 - [Flight data diagram](./FLIGHT-DATA-DIAGRAM.md)
 - [Vessel data and usage](./VESSEL-DATA-AND-USAGE.md)
 - [Vessel data diagram](./VESSEL-DATA-DIAGRAM.md)
+
+### Setup and operations
+
+- [`STARTUP-GUIDE.md`](./STARTUP-GUIDE.md) — how to run the app in every mode: dev (Vite HMR), PM2 production, Docker Compose, and bare `npm start`. Includes port reference and common troubleshooting.
+- [`BUILD-PROCESS.md`](./BUILD-PROCESS.md) — how the client (Vite), server (native deps), database (init scripts), and Docker image (multi-stage) are built. Covers `JAMAICA_DATA_DIR`, `pmx: 'false'`, and layer caching.
 
 ### API reference
 
