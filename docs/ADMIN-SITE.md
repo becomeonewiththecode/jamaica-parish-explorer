@@ -142,6 +142,8 @@ Send a POST to `/api/restart` with a JSON body:
 When restarting `api` or `all`, the API server may also rebuild the React client in production if it detects that `client/` sources are newer than `client/dist/`.
 This ensures UI changes (title/favicon/etc.) are picked up automatically after the restart.
 
+**Connection reset on API restart:** When the admin proxies a restart command to the API and PM2 kills the API process, the TCP connection drops before a response can be sent (`ECONNRESET` / `EPIPE`). The admin proxy treats these codes as **success** — the connection dying is the expected outcome of a successful restart. The dashboard shows a green "Restarted successfully" toast.
+
 When restarting `admin`, the response may not reach the browser since the process is restarting itself. The dashboard handles this gracefully by showing a message and reloading after 3 seconds.
 
 ---
