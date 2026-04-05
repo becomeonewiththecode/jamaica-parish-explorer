@@ -51,6 +51,48 @@ flowchart TD
 
 ---
 
+### Docker Compose deployment paths
+
+```mermaid
+flowchart TD
+  Dev["Developer machine\n(source code)"]
+
+  subgraph BuildPath["docker-compose-build.yml\n(build from source)"]
+    BP1["docker compose … up -d --build"]
+    BP2["Dockerfile build stage\n(compile native modules,\nbundle React client)"]
+    BP3["Local image\njamaica-explorer:latest"]
+    BP1 --> BP2 --> BP3
+  end
+
+  subgraph ProdPath["docker-compose-prod.yml\n(pull pre-built image)"]
+    PP1["docker compose … up -d"]
+    PP2["Docker Hub\nmaxwayne/jamaica-explorer:1.0"]
+    PP3["Pulled image"]
+    PP1 -->|"docker pull"| PP2 --> PP3
+  end
+
+  Dev -->|"run from project root"| BuildPath
+  Dev -->|"run on server\n(no source needed)"| ProdPath
+
+  subgraph Container["Running container"]
+    C1["pm2-runtime ecosystem.config.js"]
+    C2["jamaica-api · 3001\njamaica-status · 5555\njamaica-admin · 5556"]
+    C1 --> C2
+  end
+
+  BP3 -->|"container started"| Container
+  PP3 -->|"container started"| Container
+
+  classDef path fill:#0b1020,stroke:#1f2937,color:#f9fafb;
+  classDef hub fill:#1c1917,stroke:#78716c,color:#e7e5e4;
+  classDef run fill:#111827,stroke:#4b5563,color:#e5e7eb;
+  class BuildPath,ProdPath path;
+  class PP2 hub;
+  class Container run;
+```
+
+---
+
 ### Runtime architecture (all modes)
 
 ```mermaid

@@ -108,23 +108,44 @@ AISSTREAM_API_KEY=...
 
 Best for: reproducible production builds, or running the full stack without installing Node locally.
 
-### First run
+There are two compose files:
+
+| File | When to use |
+|------|-------------|
+| `docker-compose-build.yml` | Build the image from local source (after code changes) |
+| `docker-compose-prod.yml` | Pull a pre-built image from Docker Hub (`maxwayne/jamaica-explorer:1.0`) |
+
+> **Important:** All `docker compose` commands must be run from the **project root**, not from inside `deployment/docker-compose/`. The build context is `../..` (the repo root).
+
+### Option A — Build locally
 
 ```bash
-cd deployment/docker-compose
-
 # 1. Copy and fill in the environment file (only once)
-cp .env.example .env
+cp deployment/docker-compose/.env.example deployment/docker-compose/.env
 # Edit .env — at minimum set ADMIN_PASSWORD and any API keys you want
 
 # 2. Build the image and start the stack
-docker compose up -d --build
+docker compose -f deployment/docker-compose/docker-compose-build.yml up -d --build
 
 # 3. Follow logs while it initialises
-docker compose logs -f
+docker compose -f deployment/docker-compose/docker-compose-build.yml logs -f
 ```
 
 The build step (compiling native modules + React) typically takes **2–4 minutes** on first run. Subsequent `up --build` calls are faster because Docker caches layers.
+
+### Option B — Pull from Docker Hub
+
+```bash
+# 1. Copy and fill in the environment file (only once)
+cp deployment/docker-compose/.env.example deployment/docker-compose/.env
+# Edit .env — at minimum set ADMIN_PASSWORD and any API keys you want
+
+# 2. Pull the image and start the stack
+docker compose -f deployment/docker-compose/docker-compose-prod.yml up -d
+
+# 3. Follow logs while it initialises
+docker compose -f deployment/docker-compose/docker-compose-prod.yml logs -f
+```
 
 ### Port mapping
 
@@ -138,15 +159,15 @@ Configured via `HOST_PORT` in `.env` (default `80`):
 
 With `HOST_PORT=4001`, the app is at `http://<host>:4001`.
 
-### Day-to-day
+### Day-to-day (build mode)
 
 ```bash
-docker compose logs -f                         # live logs
-docker compose logs jamaica-parish-explorer    # logs for the single service
-docker compose restart                         # restart container
-docker compose down                            # stop and remove container
-docker compose down -v                         # also delete the data volume (destructive)
-docker compose up -d --build                   # rebuild image and restart
+docker compose -f deployment/docker-compose/docker-compose-build.yml logs -f
+docker compose -f deployment/docker-compose/docker-compose-build.yml logs jamaica-parish-explorer
+docker compose -f deployment/docker-compose/docker-compose-build.yml restart
+docker compose -f deployment/docker-compose/docker-compose-build.yml down
+docker compose -f deployment/docker-compose/docker-compose-build.yml down -v    # also deletes data volume
+docker compose -f deployment/docker-compose/docker-compose-build.yml up -d --build  # rebuild and restart
 ```
 
 ### Persistent data
@@ -174,13 +195,13 @@ Or copy in an existing `jamaica.db`:
 
 ```bash
 docker cp ./jamaica.db jamaica-parish-explorer:/data/jamaica.db
-docker compose restart
+docker compose -f deployment/docker-compose/docker-compose-build.yml restart
 ```
 
 ### Stopping and switching back to PM2
 
 ```bash
-docker compose down          # stop container, free ports 3001/5555/5556
+docker compose -f deployment/docker-compose/docker-compose-build.yml down   # free ports 3001/5555/5556
 pm2 start ecosystem.config.js
 ```
 
@@ -214,16 +235,16 @@ App available at `http://localhost:3001`. Pair with a process supervisor (system
 ## Troubleshooting
 
 ### `ECONNREFUSED 127.0.0.1:3001`
-The API is not running. In PM2 mode run `pm2 status`; in Docker mode run `docker compose ps`.
+The API is not running. In PM2 mode run `pm2 status`; in Docker mode run `docker compose -f deployment/docker-compose/docker-compose-build.yml ps`.
 
 ### `ERR_DLOPEN_FAILED` / `libnode.so` on PM2 restart
 PM2 v6's APM module tries to load `libnode.so`, which doesn't exist on nvm-managed Node. Verify `ecosystem.config.js` has `pmx: 'false'` in the `jamaica-api` env block.
 
 ### `better-sqlite3` / `ld-linux-x86-64.so.2` in Docker
-The native module compiled on your host (glibc) ended up inside the Alpine (musl) container. Rebuild without cache: `docker compose build --no-cache && docker compose up -d`.
+The native module compiled on your host (glibc) ended up inside the Alpine (musl) container. Rebuild without cache: `docker compose -f deployment/docker-compose/docker-compose-build.yml build --no-cache && docker compose -f deployment/docker-compose/docker-compose-build.yml up -d`.
 
 ### Port already in use
-Stop PM2 before starting Docker (or vice versa): `pm2 stop all` before `docker compose up`.
+Stop PM2 before starting Docker (or vice versa): `pm2 stop all` before `docker compose … up`.
 
 ### Admin dashboard won't start — "ADMIN_PASSWORD is required"
 Set `ADMIN_PASSWORD` in `server/.env` (PM2/bare) or `deployment/docker-compose/.env` (Docker).

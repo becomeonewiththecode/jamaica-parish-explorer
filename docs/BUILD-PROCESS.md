@@ -50,7 +50,7 @@ Vite reads `client/.env` (or shell env) at build time. Variables prefixed `VITE_
 |----------|---------|
 | `VITE_THUNDERFOREST_API_KEY` | Optional. Enables Thunderforest map tile layers (Transport, Landscape, Neighbourhood). If absent, those layers are hidden. |
 
-> **Docker note:** The Dockerfile `COPY`s the project files and then runs the build inside the image. To bake `VITE_THUNDERFOREST_API_KEY` into a Docker image, set it in `deployment/docker-compose/.env` before running `docker compose up --build`. The Compose file does not pass it as a Docker build arg — if that's needed, add a `build.args` entry to `docker-compose.yml` and a matching `ARG` in the Dockerfile.
+> **Docker note:** The Dockerfile `COPY`s the project files and then runs the build inside the image. To bake `VITE_THUNDERFOREST_API_KEY` into a Docker image, set it in `deployment/docker-compose/.env` before running `docker compose -f deployment/docker-compose/docker-compose-build.yml up --build`. The Compose file does not pass it as a Docker build arg — if that's needed, add a `build.args` entry to `docker-compose-build.yml` and a matching `ARG` in the Dockerfile.
 
 ### How Express serves the built client
 
@@ -112,7 +112,7 @@ function getDataDir() {
 | Scenario | Default path | Override |
 |----------|-------------|---------|
 | Dev / PM2 bare | `server/` | `JAMAICA_DATA_DIR=/some/path` in `server/.env` |
-| Docker Compose | `/data` (volume) | Set in `docker-compose.yml` env block |
+| Docker Compose | `/data` (volume) | Set in `docker-compose-build.yml` / `docker-compose-prod.yml` env block |
 | Kubernetes | `/data` (PVC mount) | Set in `deployment.yaml` env block |
 
 Files written there:
@@ -203,8 +203,8 @@ If you change a source file, only the `COPY . .` layer and everything after it i
 If native modules fail with a shared-library error, force a full rebuild:
 
 ```bash
-docker compose build --no-cache
-docker compose up -d
+docker compose -f deployment/docker-compose/docker-compose-build.yml build --no-cache
+docker compose -f deployment/docker-compose/docker-compose-build.yml up -d
 ```
 
 ---
@@ -216,7 +216,7 @@ Docker Compose uses `pm2-runtime` instead of a bare `node` command. `pm2-runtime
 - Runs in the **foreground** (no daemonise), so Docker tracks the process correctly.
 - Reads `ecosystem.config.js` to launch `jamaica-api`, `jamaica-status`, and `jamaica-admin` as child processes.
 - Forwards signals (`SIGINT`, `SIGTERM`) from Docker to child processes for graceful shutdown.
-- Streams all child process logs to stdout/stderr, visible via `docker compose logs`.
+- Streams all child process logs to stdout/stderr, visible via `docker compose -f … logs`.
 
 The `pmx: 'false'` flag in `ecosystem.config.js` disables PM2's APM/`@pm2/io` hook for `jamaica-api`. This is required because the hook tries to open `libnode.so` (the Node shared library), which does not exist in standard Node builds. Without it, `jamaica-api` crashes immediately on start with `ERR_DLOPEN_FAILED`.
 
@@ -233,7 +233,8 @@ The `pmx: 'false'` flag in `ecosystem.config.js` disables PM2's APM/`@pm2/io` ho
 | Enrich places (Bing/Wiki) | `npm run enrich:places` |
 | Start dev (API + Vite) | `npm run dev` |
 | Start production (PM2) | `pm2 start ecosystem.config.js` |
-| Start production (Docker) | `cd deployment/docker-compose && docker compose up -d --build` |
-| Rebuild Docker (no cache) | `docker compose build --no-cache && docker compose up -d` |
-| Stop Docker | `docker compose down` |
+| Start production (Docker, build) | `docker compose -f deployment/docker-compose/docker-compose-build.yml up -d --build` |
+| Start production (Docker, pull) | `docker compose -f deployment/docker-compose/docker-compose-prod.yml up -d` |
+| Rebuild Docker (no cache) | `docker compose -f deployment/docker-compose/docker-compose-build.yml build --no-cache && … up -d` |
+| Stop Docker | `docker compose -f deployment/docker-compose/docker-compose-build.yml down` |
 | Stop PM2 | `pm2 stop all` |
