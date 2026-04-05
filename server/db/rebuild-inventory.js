@@ -209,8 +209,64 @@ function getRebuildInventoryState() {
   };
 }
 
+/**
+ * Live row counts for admin UI / wipe confirmation. Cheap COUNT(*) queries.
+ * With Docker bind mounts, PostgreSQL data persists until removed or until rebuild deletes places.
+ */
+async function getRebuildInventoryDataSnapshot() {
+  const snapshot = {
+    placesCount: null,
+    placesQueryable: false,
+    placesCountError: null,
+    airportsCount: null,
+    notesCount: null,
+    hasExistingPlacesData: null,
+    wipeWarning: '',
+  };
+
+  try {
+    const r = await query('SELECT COUNT(*)::bigint AS c FROM places');
+    snapshot.placesCount = Number(r.rows[0].c);
+    snapshot.placesQueryable = true;
+    snapshot.hasExistingPlacesData = snapshot.placesCount > 0;
+    snapshot.wipeWarning =
+      snapshot.placesCount > 0
+        ? `Rebuild will DELETE all ${snapshot.placesCount.toLocaleString()} row(s) in places and refetch from OpenStreetMap. PostgreSQL files persist on disk (bind mounts) until you delete them or run this rebuild.`
+        : 'places is empty — rebuild will load POIs from OpenStreetMap from scratch.';
+  } catch (err) {
+    snapshot.placesCount = null;
+    snapshot.placesQueryable = false;
+    snapshot.placesCountError = err && err.message ? err.message : String(err);
+    snapshot.hasExistingPlacesData = null;
+    snapshot.wipeWarning =
+      'Could not read places row count. A full rebuild still runs DELETE FROM places — confirm only if you intend to wipe and repopulate map POIs.';
+  }
+
+  for (const { key, table } of [
+    { key: 'airportsCount', table: 'airports' },
+    { key: 'notesCount', table: 'notes' },
+  ]) {
+    try {
+      const r = await query(`SELECT COUNT(*)::bigint AS c FROM ${table}`);
+      snapshot[key] = Number(r.rows[0].c);
+    } catch {
+      snapshot[key] = null;
+    }
+  }
+
+  return snapshot;
+}
+
+function rebuildWipeRequiresConfirm(snapshot, clearPlaces) {
+  if (clearPlaces === false) return false;
+  if (!snapshot.placesQueryable || snapshot.placesCount === null) return true;
+  return snapshot.placesCount > 0;
+}
+
 module.exports = {
   rebuildInventory,
   startRebuildInventory,
   getRebuildInventoryState,
+  getRebuildInventoryDataSnapshot,
+  rebuildWipeRequiresConfirm,
 };

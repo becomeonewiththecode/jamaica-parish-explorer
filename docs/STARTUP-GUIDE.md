@@ -200,7 +200,7 @@ docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/fetch-place
 docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/enrich-places.js"
 ```
 
-For a **full repopulation** of map POIs (clear `places` then Overpass ingest), use the admin **Rebuild map data** button (API must be running) or run `node db/rebuild-inventory-cli.js` inside the container from `/app/server`. See [Database and map data](./DATABASE-AND-MAP-DATA.md) for sources and tables.
+For a **full repopulation** of map POIs (clear `places` then Overpass ingest), use the admin **Rebuild map data** button (API must be running; the UI shows row counts and sends **`confirmWipe`** when data exists) or run `node db/rebuild-inventory-cli.js` inside the container from `/app/server`. See [Database and map data](./DATABASE-AND-MAP-DATA.md) for sources and tables.
 
 ### Stopping and switching back to PM2
 

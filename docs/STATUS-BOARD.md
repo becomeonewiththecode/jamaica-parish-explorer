@@ -5,7 +5,7 @@ The status board is a lightweight dashboard that reports whether key backend ser
 ### What it checks
 
 **Internal services** (checked via the API server):
-- **API health**: `GET /api/health` (Express server up, basic info, plus embedded **map-data rebuild** state in `mapDataRebuild` for JSON/monitoring — the HTML dashboard does not display that block yet).
+- **API health**: `GET /api/health` (Express server up, basic info, plus embedded **map-data rebuild** state in `mapDataRebuild` for JSON/monitoring — the HTML dashboard does not display that block yet). **`mapDataRebuild`** does not include admin-only **`dataSnapshot`** row counts; use **`GET /api/admin/rebuild-inventory/status`** with `X-Admin-Token` for those.
 - **Island weather**: `GET /api/weather/island` (multi‑provider aggregate across Open‑Meteo, WeatherAPI, OpenWeather).
 - **Wave data**: `GET /api/weather/waves` (Open‑Meteo Marine).
 - **Flights data**: `GET /api/flights` (scheduled + live flight feed).

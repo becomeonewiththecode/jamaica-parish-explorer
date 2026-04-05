@@ -329,6 +329,10 @@ function dashboardPage(req) {
     #rebuild-progress-label { color:#9ca3af; text-align:right; flex:1; min-width:40%; }
     .rebuild-progress-track { height:6px; background:#111827; border-radius:3px; overflow:hidden; border:1px solid #1f2937; }
     .rebuild-progress-bar { height:100%; width:0%; background:linear-gradient(90deg,#4f46e5,#818cf8); transition:width 0.35s ease; }
+    .rebuild-data-banner { font-size:0.72rem; line-height:1.45; margin:0.45rem 0 0.6rem; padding:0.5rem 0.65rem; border-radius:0.4rem; border:1px solid #374151; background:#111827; color:#d1d5db; }
+    .rebuild-data-banner.warn { border-color:#b45309; background:#1c1917; color:#fde68a; }
+    .rebuild-data-banner.ok { border-color:#166534; color:#bbf7d0; }
+    .rebuild-data-banner.err { border-color:#991b1b; color:#fecaca; }
     .rebuild-sections { max-height:10rem; overflow-y:auto; margin:0.35rem 0 0.25rem; padding:0.3rem 0.35rem; background:#111827; border-radius:0.4rem; font-size:0.62rem; line-height:1.35; border:1px solid #1f2937; }
     .rebuild-section-row { display:flex; align-items:center; gap:0.35rem; padding:0.1rem 0; border-bottom:1px solid #1f2937; }
     .rebuild-section-row:last-child { border-bottom:none; }
@@ -406,7 +410,8 @@ function dashboardPage(req) {
         </div>
         <div id="restart-result" style="font-size:0.78rem; color:#9ca3af; min-height:0;"></div>
         <hr class="restart-console-hr" />
-        <p class="restart-console-sub"><strong>Map data</strong> — clears <code>places</code>, refetches OSM (slow). Optional airports (no images). Enrich: <code>npm run enrich:places</code>.</p>
+        <p class="restart-console-sub"><strong>Map data</strong> — clears <code>places</code>, refetches OSM (slow). With bind-mounted Postgres, data persists on disk until you remove it or run this rebuild. Optional airports (no images). Enrich: <code>npm run enrich:places</code>. <strong>Notes</strong> in <code>notes</code> are not deleted.</p>
+        <div id="rebuild-data-banner" class="rebuild-data-banner" style="display:none;" role="status"></div>
         <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#d1d5db; cursor:pointer; margin:0;">
           <input type="checkbox" id="rebuild-include-airports" style="flex-shrink:0;" />
           Airports (static)
@@ -553,6 +558,31 @@ function dashboardPage(req) {
 
     var rebuildPollTimer = null;
     var rebuildPollDelayMs = 4000;
+    var rebuildDataSnapshot = null;
+
+    function updateRebuildDataBanner(snap) {
+      var ban = document.getElementById('rebuild-data-banner');
+      if (!ban) return;
+      if (!snap) {
+        ban.style.display = 'none';
+        ban.innerHTML = '';
+        return;
+      }
+      var lines = [];
+      if (snap.placesQueryable && snap.placesCount != null) {
+        ban.className = 'rebuild-data-banner ' + (snap.placesCount > 0 ? 'warn' : 'ok');
+        lines.push('<strong>places</strong>: ' + esc(String(snap.placesCount.toLocaleString())) + ' row(s)');
+        if (snap.airportsCount != null) lines.push('<strong>airports</strong>: ' + esc(String(snap.airportsCount.toLocaleString())));
+        if (snap.notesCount != null) lines.push('<strong>notes</strong>: ' + esc(String(snap.notesCount.toLocaleString())) + ' (unchanged by rebuild)');
+        lines.push(esc(snap.wipeWarning || ''));
+      } else {
+        ban.className = 'rebuild-data-banner err';
+        lines.push(esc(snap.wipeWarning || 'Could not read database snapshot.'));
+        if (snap.placesCountError) lines.push(esc(snap.placesCountError));
+      }
+      ban.innerHTML = lines.join('<br/>');
+      ban.style.display = 'block';
+    }
     function scheduleRebuildPoll() {
       clearTimeout(rebuildPollTimer);
       rebuildPollTimer = setTimeout(function() { pollRebuildStatus(); }, rebuildPollDelayMs);
@@ -567,6 +597,10 @@ function dashboardPage(req) {
           pre.textContent = 'Forbidden (check ADMIN_RESTART_TOKEN matches API).';
           scheduleRebuildPoll();
           return;
+        }
+        if (d.dataSnapshot) {
+          rebuildDataSnapshot = d.dataSnapshot;
+          updateRebuildDataBanner(d.dataSnapshot);
         }
         rebuildPollDelayMs = d.inProgress ? 1500 : 4000;
 
@@ -624,7 +658,29 @@ function dashboardPage(req) {
     }
 
     async function doRebuildMapData() {
-      if (!confirm('This will DELETE all rows in the places table and refetch from OpenStreetMap. Continue?')) return;
+      var snap = rebuildDataSnapshot;
+      try {
+        var resFresh = await fetch('/api/rebuild-inventory/status');
+        var dFresh = await resFresh.json().catch(function() { return {}; });
+        if (dFresh.ok && dFresh.dataSnapshot) {
+          snap = dFresh.dataSnapshot;
+          rebuildDataSnapshot = snap;
+          updateRebuildDataBanner(snap);
+        }
+      } catch (e) { /* use cached snap */ }
+
+      var n = snap && snap.placesQueryable && typeof snap.placesCount === 'number' ? snap.placesCount : null;
+      var wipeNeedsConfirm = !snap || !snap.placesQueryable || n === null || n > 0;
+      var msg;
+      if (n != null && n > 0) {
+        msg = 'Rebuild will DELETE all ' + n.toLocaleString() + ' rows in the places table and refetch from OpenStreetMap.\\n\\nPostgreSQL files persist on disk (e.g. Docker bind mounts) until you remove them or run this rebuild.\\n\\nContinue?';
+      } else if (snap && snap.placesQueryable && n === 0) {
+        msg = 'The places table is empty. Rebuild will load POIs from OpenStreetMap (slow). Continue?';
+      } else {
+        msg = 'Could not read the places row count. The rebuild still runs DELETE FROM places, then refetches from OSM. Continue only if you intend a full map POI repopulation.';
+      }
+      if (!confirm(msg)) return;
+
       var btn = document.getElementById('rebuild-map-btn');
       var airports = document.getElementById('rebuild-include-airports');
       if (btn) btn.disabled = true;
@@ -632,12 +688,20 @@ function dashboardPage(req) {
         var res = await fetch('/api/rebuild-inventory', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ includeAirports: !!(airports && airports.checked), clearPlaces: true }),
+          body: JSON.stringify({
+            includeAirports: !!(airports && airports.checked),
+            clearPlaces: true,
+            confirmWipe: wipeNeedsConfirm,
+          }),
         });
         var data = await res.json().catch(function() { return {}; });
         if (data.ok) {
           showToast('Rebuild started — watch status below and server logs', true);
         } else {
+          if (data.code === 'CONFIRM_WIPE_REQUIRED' && data.dataSnapshot) {
+            rebuildDataSnapshot = data.dataSnapshot;
+            updateRebuildDataBanner(data.dataSnapshot);
+          }
           showToast((data.error || 'HTTP ' + res.status), false);
         }
         pollRebuildStatus();

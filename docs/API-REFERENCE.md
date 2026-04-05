@@ -20,7 +20,7 @@ Server health check used by the status board. Returns uptime, provider health sn
 | `providers` | Weather provider health (Open-Meteo, WeatherAPI, OpenWeatherMap) |
 | `waveProviders` | Wave/marine provider health |
 | `flightProviders` | Flight provider health (AeroDataBox, RapidAPI, OpenSky, adsb.lol) |
-| `mapDataRebuild` | Snapshot of the background **Rebuild map data** job: `inProgress`, `phase`, `progressPercent`, `currentStepLabel`, `lastStartedAt`, `lastFinishedAt`, `lastError`, `lastSummary` (e.g. `totalPlaces`, `osmStillFailedAfterRetries`), `sections` (per-category `status`, `httpStatus`, `found`, …), `includeAirportsPlanned`. Same data as `GET /api/admin/rebuild-inventory/status` but reachable without admin token for monitoring. |
+| `mapDataRebuild` | Snapshot of the background **Rebuild map data** job: `inProgress`, `phase`, `progressPercent`, `currentStepLabel`, `lastStartedAt`, `lastFinishedAt`, `lastError`, `lastSummary` (e.g. `totalPlaces`, `osmStillFailedAfterRetries`), `sections` (per-category `status`, `httpStatus`, `found`, …), `includeAirportsPlanned`. Same core fields as `GET /api/admin/rebuild-inventory/status` but **without** `dataSnapshot` (admin-only). |
 
 ### `POST /api/admin/restart`
 
@@ -50,6 +50,34 @@ Restores from an uploaded **plain SQL** backup. Requires `X-Admin-Token`. **Mult
 **Response:** `200` `{ ok: true, message }` on success, or `400` / `403` / `413` / `500` with `detail` (stderr) on failure.
 
 **Admin site (port 5556):** authenticated session proxies these as **`GET /api/database/backup`** and **`POST /api/database/restore`** (no admin token in the browser — the admin process adds `X-Admin-Token` when calling the API).
+
+### `GET /api/admin/rebuild-inventory/status`
+
+Map-data rebuild job status. Requires `X-Admin-Token`.
+
+**Response** includes the same fields exposed publicly on **`mapDataRebuild`**, plus **`dataSnapshot`** (live `COUNT(*)` from the database):
+
+| Field | Description |
+|-------|-------------|
+| `placesCount` | Rows in `places` (null if the query failed) |
+| `placesQueryable` | Whether `places` could be counted |
+| `hasExistingPlacesData` | `true` when `placesCount > 0`; `null` if unknown |
+| `airportsCount` / `notesCount` | Optional counts (`notes` are **not** deleted by rebuild) |
+| `wipeWarning` | Human-readable summary for operators (bind-mounted Postgres persists until rebuild or manual removal) |
+
+### `POST /api/admin/rebuild-inventory`
+
+Starts a full rebuild (schema, parishes, **`DELETE FROM places`**, OSM ingest, optional static airports). Requires `X-Admin-Token`.
+
+| Body field | Description |
+|------------|-------------|
+| `includeAirports` | If `true`, run static airport seed after OSM (no image crawl) |
+| `clearPlaces` | Default `true` — clears `places` before ingest |
+| `confirmWipe` | Must be **`true`** when `clearPlaces` is true **and** either `places` has rows **or** the row count could not be read. Otherwise **`400`** with `code: "CONFIRM_WIPE_REQUIRED"` and `dataSnapshot`. |
+
+Returns **`409`** if a rebuild is already running.
+
+**Admin site:** proxies as **`GET /api/rebuild-inventory/status`** and **`POST /api/rebuild-inventory`** (the UI fetches a fresh snapshot, shows counts, sends `confirmWipe` after the operator confirms).
 
 ---
 

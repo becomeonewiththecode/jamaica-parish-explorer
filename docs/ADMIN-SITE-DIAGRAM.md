@@ -130,17 +130,28 @@ flowchart TD
 
 ### Map data rebuild (background OSM ingest)
 
+Poll responses and the pre-flight **GET** include **`dataSnapshot`** (`places` / `airports` / `notes` counts, **`wipeWarning`**) so operators see persisted data under bind mounts. **POST** must send **`confirmWipe: true`** when the API would delete existing **`places`** rows (or could not count them); otherwise **`400`** with **`CONFIRM_WIPE_REQUIRED`**. **`GET /api/health`** → **`mapDataRebuild`** omits **`dataSnapshot`** (admin token only).
+
 ```mermaid
 flowchart TD
+  POLL0["Dashboard polls GET …/rebuild-inventory/status\n~1.5s while inProgress, ~4s idle\ndataSnapshot → banner on disk + row counts"]
+
   U[Admin: Rebuild map data + optional airports]
+  U -.-> POLL0
 
-  U --> C{Confirm wipe places?}
+  U --> REF[Fresh GET status before POST\nsync counts for confirm text]
+  REF --> C{Browser confirm\nbind-mounted Postgres persists\nuntil DELETE / rebuild}
   C -->|no| X[Cancel]
-  C -->|yes| BR["Browser: POST /api/rebuild-inventory\n→ admin :5556 → proxy → API :3001\nX-Admin-Token"]
+  C -->|yes| BR["POST /api/rebuild-inventory\n→ admin :5556 → API :3001\nX-Admin-Token + confirmWipe when required"]
 
-  BR --> R{409 already in progress?}
+  BR --> GATE{API: wipe needs confirm\nand confirmWipe false?}
+  GATE -->|yes| E400["400 CONFIRM_WIPE_REQUIRED\n+ dataSnapshot in JSON"]
+  GATE -->|no| R{409 already in progress?}
+
+  E400 -.-> POLL0
+
   R -->|yes| E409[Toast: busy]
-  R -->|no| OK202["API: 200 { ok, state }\nstartRebuildInventory() async"]
+  R -->|no| OK202["200 startRebuildInventory() async"]
 
   OK202 --> BG["rebuildInventory:\napplySchema → seed → DELETE places\ningestPlacesFromOsm (19 steps)"]
 
@@ -152,15 +163,15 @@ flowchart TD
   WAIT --> OP
   RR -->|no| DONE[phase: done\nlastSummary]
 
-  POLL["Dashboard polls\nGET …/rebuild-inventory/status\nevery ~1.5s while inProgress"] -.-> STATE[Shared in-memory state:\nsections, %, phase]
+  POLL0 -.-> STATE[Shared in-memory job state:\nsections, %, phase]
   BG -.-> STATE
-  HEALTH["GET /api/health\nmapDataRebuild"] -.-> STATE
+  HEALTH["GET /api/health\nmapDataRebuild\nno dataSnapshot"] -.-> STATE
 
   classDef good fill:#064e3b,stroke:#4ade80,color:#f0fdf4;
   classDef bad fill:#7f1d1d,stroke:#f97373,color:#fef2f2;
   classDef neutral fill:#0b1020,stroke:#1f2937,color:#f9fafb;
 
   class OK202,DONE good;
-  class E409 bad;
-  class U,C,BR,R,BG,OP,RR,WAIT,POLL,STATE,HEALTH,X neutral;
+  class E400,E409 bad;
+  class U,REF,C,BR,GATE,R,BG,OP,RR,WAIT,STATE,HEALTH,X,POLL0 neutral;
 ```

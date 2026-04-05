@@ -22,7 +22,12 @@ const PORT = process.env.PORT || 3001;
 const execAsync = util.promisify(exec);
 const { applySchema, seedParishes } = require('./db/init');
 
-const { startRebuildInventory, getRebuildInventoryState } = require('./db/rebuild-inventory');
+const {
+  startRebuildInventory,
+  getRebuildInventoryState,
+  getRebuildInventoryDataSnapshot,
+  rebuildWipeRequiresConfirm,
+} = require('./db/rebuild-inventory');
 
 app.use(express.json());
 swagger.setup(app);
@@ -251,48 +256,71 @@ app.post('/api/admin/restart', (req, res) => {
   });
 });
 
-app.get('/api/admin/rebuild-inventory/status', (req, res) => {
-  const expected = process.env.ADMIN_RESTART_TOKEN;
-  const provided = req.headers['x-admin-token'];
-  if (!expected || !provided || provided !== expected) {
-    return res.status(403).json({ ok: false, error: 'Forbidden' });
+app.get('/api/admin/rebuild-inventory/status', async (req, res, next) => {
+  try {
+    const expected = process.env.ADMIN_RESTART_TOKEN;
+    const provided = req.headers['x-admin-token'];
+    if (!expected || !provided || provided !== expected) {
+      return res.status(403).json({ ok: false, error: 'Forbidden' });
+    }
+    const dataSnapshot = await getRebuildInventoryDataSnapshot();
+    res.json({ ok: true, ...getRebuildInventoryState(), dataSnapshot });
+  } catch (err) {
+    next(err);
   }
-  res.json({ ok: true, ...getRebuildInventoryState() });
 });
 
-app.post('/api/admin/rebuild-inventory', (req, res) => {
-  const expected = process.env.ADMIN_RESTART_TOKEN;
-  const provided = req.headers['x-admin-token'];
-  if (!expected || !provided || provided !== expected) {
-    return res.status(403).json({ ok: false, error: 'Forbidden' });
-  }
-
-  const body = req.body || {};
-  const includeAirports = Boolean(body.includeAirports);
-  const clearPlaces = body.clearPlaces !== false;
-
-  const started = startRebuildInventory(
-    null,
-    { includeAirports, clearPlaces, onLog: (m) => console.log(m) },
-    (err) => {
-      if (err) console.error('[rebuild-inventory]', err);
+app.post('/api/admin/rebuild-inventory', async (req, res, next) => {
+  try {
+    const expected = process.env.ADMIN_RESTART_TOKEN;
+    const provided = req.headers['x-admin-token'];
+    if (!expected || !provided || provided !== expected) {
+      return res.status(403).json({ ok: false, error: 'Forbidden' });
     }
-  );
 
-  if (!started) {
-    return res.status(409).json({
-      ok: false,
-      error: 'Rebuild already in progress',
+    const body = req.body || {};
+    const includeAirports = Boolean(body.includeAirports);
+    const clearPlaces = body.clearPlaces !== false;
+    const confirmWipe = Boolean(body.confirmWipe);
+
+    const dataSnapshot = await getRebuildInventoryDataSnapshot();
+    if (rebuildWipeRequiresConfirm(dataSnapshot, clearPlaces) && !confirmWipe) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          'Confirmation required: this rebuild deletes existing rows in places (or the row count could not be read). Set confirmWipe: true after operator review.',
+        code: 'CONFIRM_WIPE_REQUIRED',
+        dataSnapshot,
+      });
+    }
+
+    const started = startRebuildInventory(
+      null,
+      { includeAirports, clearPlaces, onLog: (m) => console.log(m) },
+      (err) => {
+        if (err) console.error('[rebuild-inventory]', err);
+      }
+    );
+
+    if (!started) {
+      return res.status(409).json({
+        ok: false,
+        error: 'Rebuild already in progress',
+        state: getRebuildInventoryState(),
+        dataSnapshot,
+      });
+    }
+
+    res.json({
+      ok: true,
+      message:
+        'Rebuild started in the background. This takes several minutes (OpenStreetMap). Check server logs and GET /api/admin/rebuild-inventory/status.',
       state: getRebuildInventoryState(),
+      dataSnapshot,
     });
+  } catch (err) {
+    next(err);
   }
-
-  res.json({
-    ok: true,
-    message:
-      'Rebuild started in the background. This takes several minutes (OpenStreetMap). Check server logs and GET /api/admin/rebuild-inventory/status.',
-    state: getRebuildInventoryState(),
-  });
 });
 
 // Central handler for async route errors (routes call next(err))

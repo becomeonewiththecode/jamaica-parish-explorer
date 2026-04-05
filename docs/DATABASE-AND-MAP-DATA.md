@@ -99,7 +99,7 @@ npm run seed:airports   # optional; or use static airport seed via rebuild with 
 
 **When to use:** New server, empty Compose `data/` directories, or you need a clean resync from OSM.
 
-1. **Admin (recommended if the API is up):** open the admin dashboard → **Rebuild map data** (see [Admin site](./ADMIN-SITE.md)). Optionally check **Include airports**. Confirm the dialog — the job runs **in the background**; watch the status panel and API logs.
+1. **Admin (recommended if the API is up):** open the admin dashboard → **Rebuild map data** (see [Admin site](./ADMIN-SITE.md)). The UI shows live **`places`** / **`airports`** / **`notes`** counts (from **`dataSnapshot`** on **`GET …/rebuild-inventory/status`**) because bind-mounted PostgreSQL keeps data on disk until you remove it or run this wipe. Confirm the count-aware dialog; the API requires **`confirmWipe: true`** when existing POI rows would be deleted. Optionally check **Airports (static)**. The job runs **in the background**; watch the status panel and API logs.
 2. **CLI:**
 
 ```bash
@@ -136,7 +136,7 @@ New OSM IDs are inserted; existing `osm_id` rows are left as-is (`INSERT OR IGNO
 
 ### Monitoring rebuild status (no admin token)
 
-`GET /api/health` includes a **`mapDataRebuild`** object (same shape as the admin status payload): `inProgress`, `phase`, `progressPercent`, `currentStepLabel`, per-category **`sections`**, `lastSummary`, etc. Use it for ops dashboards and alerting; it does not expose secrets.
+`GET /api/health` includes a **`mapDataRebuild`** object with the same **job** fields as the admin status endpoint (`inProgress`, `phase`, `progressPercent`, `currentStepLabel`, per-category **`sections`**, `lastSummary`, etc.) but **without** the admin-only **`dataSnapshot`** row counts. Use it for ops dashboards and alerting; it does not expose secrets.
 
 ---
 
@@ -181,7 +181,7 @@ flowchart TD
 | Incremental fetch CLI | `server/db/fetch-places.js` |
 | Airports | `server/db/seed-airports.js` |
 | Enrichment | `server/db/enrich-places.js` |
-| Admin trigger (map rebuild) | Proxies to `POST /api/admin/rebuild-inventory` (see `server/index.js`, `server/admin.js`) |
+| Admin trigger (map rebuild) | Proxies to `POST /api/admin/rebuild-inventory` with `confirmWipe` when existing `places` rows would be deleted (or count unreadable); `GET …/rebuild-inventory/status` adds `dataSnapshot` (`places` / `airports` / `notes` counts). See `server/index.js`, `server/admin.js`, `server/db/rebuild-inventory.js`. |
 | Admin DB backup/restore | API: `server/routes/admin-database.js` — `GET/POST /api/admin/database/*`; admin proxy: `GET/POST /api/database/*` in `server/admin.js` |
 
 ---

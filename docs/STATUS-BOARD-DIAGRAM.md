@@ -1,6 +1,6 @@
 ## Status Board Architecture Diagram
 
-The diagram below shows how the status board queries internal services and derives all external provider health from the main API's `/api/health` endpoint — it makes **no direct calls** to external weather or flight APIs. The same **`/api/health`** response also includes **`mapDataRebuild`** (OSM map-data job status, per-category progress); the status board HTML does not render it today, but it is available in the JSON for monitoring tools.
+The diagram below shows how the status board queries internal services and derives all external provider health from the main API's `/api/health` endpoint — it makes **no direct calls** to external weather or flight APIs. The same **`/api/health`** response also includes **`mapDataRebuild`** (OSM map-data job status, per-category progress) **without** the admin-only **`dataSnapshot`** (`places` / `airports` / `notes` counts); the status board HTML does not render **`mapDataRebuild`** today, but it is available in the JSON for monitoring tools.
 
 ```mermaid
 flowchart LR
@@ -14,7 +14,7 @@ flowchart LR
   end
 
   subgraph ApiServer["Main API Server<br/>server/index.js (port 3001)"]
-    H["GET /api/health<br/>{ ok, uptime, providers,<br/>waveProviders, flightProviders,<br/>mapDataRebuild }"]
+    H["GET /api/health<br/>{ … mapDataRebuild }<br/>no admin dataSnapshot"]
     WIsland["GET /api/weather/island"]
     WWaves["GET /api/weather/waves"]
     FApi["GET /api/flights"]
