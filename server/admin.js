@@ -484,8 +484,15 @@ app.post('/api/restart', authMiddleware, (req, res) => {
   });
 
   proxyReq.on('error', (e) => {
+    // ECONNRESET / EPIPE mean the API process was killed mid-request — the expected
+    // outcome when restarting the API itself.  Treat it as success so the dashboard
+    // shows "Restarted successfully" rather than a false failure toast.
+    if (e && (e.code === 'ECONNRESET' || e.code === 'EPIPE')) {
+      if (!res.headersSent) res.json({ ok: true, note: 'Connection reset — target is restarting' });
+      return;
+    }
     const msg = e && e.code ? e.code + ' (' + (e.message || '') + ')' : e && e.message ? e.message : 'proxy error';
-    res.status(502).json({ ok: false, error: 'Cannot reach API at ' + API_HOST + ':' + API_PORT + ': ' + msg });
+    if (!res.headersSent) res.status(502).json({ ok: false, error: 'Cannot reach API at ' + API_HOST + ':' + API_PORT + ': ' + msg });
   });
 
   proxyReq.on('timeout', () => {
