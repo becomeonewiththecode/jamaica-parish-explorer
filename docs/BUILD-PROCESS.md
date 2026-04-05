@@ -1,5 +1,7 @@
 # Build Process
 
+> See also: [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) for Mermaid diagrams of the Docker build stages, runtime process architecture, and `JAMAICA_DATA_DIR` resolution flow.
+
 Explains how the client, server, database, and Docker image are built, and what happens at each step.
 
 ---

@@ -24,7 +24,7 @@ flowchart LR
       WaveCache["waveCache<br/>15 coastal points<br/>TTL: 30 min"]
     end
 
-    DiskCache[("server/.weather-cache.json<br/>(disk persistence)")]
+    DiskCache[("$JAMAICA_DATA_DIR/.weather-cache.json<br/>default: server/.weather-cache.json<br/>path via server/data-dir.js")]
 
     subgraph WeatherJobs["Background refresh"]
       RefreshTask["refreshWeatherAndWaves()<br/>every 20 min<br/>skipped on startup if cache fresh"]
