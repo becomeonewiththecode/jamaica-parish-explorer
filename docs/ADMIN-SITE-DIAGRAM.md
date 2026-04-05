@@ -1,5 +1,31 @@
 ## Admin Site Diagrams
 
+### Client App link resolution
+
+```mermaid
+flowchart TD
+  PL[Dashboard page loads in browser]
+  PL --> FE["Browser: GET /api/client-url\n→ admin server port 5556"]
+
+  FE --> PR["admin.js probes:\nHEAD CLIENT_HOST:CLIENT_PORT\n(default 127.0.0.1:5173, 1 s timeout)"]
+
+  PR -->|Reachable| VU["{ url: 'http://<host>:CLIENT_PORT/', viteAvailable: true }"]
+  PR -->|Timeout / refused| PU["{ url: 'http://<host>:PUBLIC_API_PORT/', viteAvailable: false }"]
+
+  VU --> BV["Browser sets Client App link\nto Vite dev URL (:5173)"]
+  PU --> BP["Browser sets Client App link\nto production app URL (:PUBLIC_API_PORT)\nand adds tooltip: 'Vite dev server is offline'"]
+
+  classDef good fill:#064e3b,stroke:#4ade80,color:#f0fdf4;
+  classDef neutral fill:#0b1020,stroke:#1f2937,color:#f9fafb;
+  classDef prod fill:#1e3a5f,stroke:#60a5fa,color:#eff6ff;
+
+  class BV good;
+  class BP prod;
+  class PL,FE,PR,VU,PU neutral;
+```
+
+---
+
 ### Login flow
 
 ```mermaid
