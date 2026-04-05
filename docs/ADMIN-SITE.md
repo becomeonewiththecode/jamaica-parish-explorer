@@ -9,6 +9,7 @@ The admin site is an authenticated dashboard for managing the Jamaica Parish Exp
 - **Quick links** to Swagger API docs, Status Board, Client App, and the Health endpoint (open in new tabs). The **Client App** link is resolved dynamically: it points to the Vite dev server (`CLIENT_PORT`, default 5173) when that server is reachable, and falls back to the production app URL (served by Express on `API_PORT`) when Vite is offline.
 - **PM2 process table** showing all managed processes with status, CPU, memory, restarts, and uptime. Auto-refreshes every 30 seconds.
 - **Restart controls** — buttons to restart the API server, Status Board, Admin site, or all PM2 processes. Proxies to the API server's `POST /api/admin/restart` endpoint with the `X-Admin-Token` header.
+- **Map data rebuild** — clears the `places` table and refetches POIs from OpenStreetMap (runs in the **background** on the API; can take several minutes). Optional checkbox to re-seed airport rows from static data (no image crawl). Status is polled from `GET /api/admin/rebuild-inventory/status`. CLI equivalent: `npm run db:rebuild` or `npm run db:rebuild:all` from the project root. For data sources and all repopulation options, see [Database and map data](./DATABASE-AND-MAP-DATA.md).
 - **Inline Status Board** — collapsible iframe embedding the status board for quick reference without leaving the admin page.
 
 ---

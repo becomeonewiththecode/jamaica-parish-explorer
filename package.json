@@ -14,6 +14,8 @@
     "fetch:places": "cd server && node db/fetch-places.js",
     "enrich:places": "cd server && node db/enrich-places.js",
     "seed:airports": "cd server && node db/seed-airports.js",
+    "db:rebuild": "cd server && node db/rebuild-inventory-cli.js",
+    "db:rebuild:all": "cd server && node db/rebuild-inventory-cli.js --airports",
     "init": "cd server && node scripts/init-dev.js"
   },
   "keywords": [],

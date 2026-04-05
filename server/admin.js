@@ -375,6 +375,22 @@ function dashboardPage(req) {
     </div>
   </div>
 
+  <div class="card" style="margin-top:1rem;">
+    <div class="card-title">Map data (places &amp; airports)</div>
+    <p style="font-size:0.8rem; color:#9ca3af; margin:0 0 0.75rem;">
+      Re-applies schema, ensures parishes, <strong>clears</strong> the <code>places</code> table, then refetches POIs from OpenStreetMap (several minutes, many HTTP requests).
+      Optional: seed airport metadata (no image crawl). For text enrichment run <code>npm run enrich:places</code> on the server after this finishes.
+    </p>
+    <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.82rem; color:#d1d5db; margin-bottom:0.75rem; cursor:pointer;">
+      <input type="checkbox" id="rebuild-include-airports" />
+      Include airports (static seed, no images)
+    </label>
+    <div class="restart-group">
+      <button type="button" class="restart-btn" id="rebuild-map-btn" onclick="doRebuildMapData()">Rebuild map data</button>
+    </div>
+    <pre id="rebuild-status" style="margin-top:0.75rem; padding:0.6rem 0.75rem; background:#111827; border-radius:0.5rem; font-size:0.72rem; color:#9ca3af; white-space:pre-wrap; max-height:12rem; overflow:auto;">Status: (loading…)</pre>
+  </div>
+
   <details class="status-iframe-wrap">
     <summary>Inline Status Board</summary>
     <iframe src="http://${esc(publicHost)}:${PUBLIC_STATUS_PORT}/" loading="lazy"></iframe>
@@ -477,9 +493,59 @@ function dashboardPage(req) {
       } catch (e) { /* leave link disabled if fetch fails */ }
     }
 
+    var rebuildPollTimer = null;
+    async function pollRebuildStatus() {
+      try {
+        var res = await fetch('/api/rebuild-inventory/status');
+        var d = await res.json().catch(function() { return {}; });
+        var el = document.getElementById('rebuild-status');
+        if (!el) return;
+        if (!d.ok && res.status === 403) {
+          el.textContent = 'Forbidden (check ADMIN_RESTART_TOKEN matches API).';
+          return;
+        }
+        var lines = [];
+        lines.push('inProgress: ' + !!d.inProgress);
+        lines.push('lastStartedAt: ' + (d.lastStartedAt || '—'));
+        lines.push('lastFinishedAt: ' + (d.lastFinishedAt || '—'));
+        if (d.lastError) lines.push('lastError: ' + d.lastError);
+        if (d.lastSummary) lines.push('lastSummary: ' + JSON.stringify(d.lastSummary, null, 2));
+        el.textContent = lines.join('\\n');
+      } catch (e) {
+        var el2 = document.getElementById('rebuild-status');
+        if (el2) el2.textContent = 'Poll failed: ' + e.message;
+      }
+    }
+
+    async function doRebuildMapData() {
+      if (!confirm('This will DELETE all rows in the places table and refetch from OpenStreetMap. Continue?')) return;
+      var btn = document.getElementById('rebuild-map-btn');
+      var airports = document.getElementById('rebuild-include-airports');
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/rebuild-inventory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ includeAirports: !!(airports && airports.checked), clearPlaces: true }),
+        });
+        var data = await res.json().catch(function() { return {}; });
+        if (data.ok) {
+          showToast('Rebuild started — watch status below and server logs', true);
+        } else {
+          showToast((data.error || 'HTTP ' + res.status), false);
+        }
+        pollRebuildStatus();
+      } catch (e) {
+        showToast('Request failed: ' + e.message, false);
+      }
+      if (btn) btn.disabled = false;
+    }
+
     refreshClientUrl();
     refreshPm2();
     setInterval(refreshPm2, 30000);
+    pollRebuildStatus();
+    rebuildPollTimer = setInterval(pollRebuildStatus, 4000);
   </script>
 </body>
 </html>`;
@@ -542,6 +608,82 @@ app.post('/api/restart', authMiddleware, (req, res) => {
     res.status(504).json({ ok: false, error: 'Request to API timed out' });
   });
 
+  proxyReq.write(postData);
+  proxyReq.end();
+});
+
+app.get('/api/rebuild-inventory/status', authMiddleware, (req, res) => {
+  const options = {
+    hostname: API_HOST,
+    port: API_PORT,
+    path: '/api/admin/rebuild-inventory/status',
+    method: 'GET',
+    headers: { 'X-Admin-Token': ADMIN_RESTART_TOKEN },
+    timeout: 15000,
+  };
+  const proxyReq = http.request(options, (proxyRes) => {
+    let body = '';
+    proxyRes.on('data', (chunk) => {
+      body += chunk;
+    });
+    proxyRes.on('end', () => {
+      try {
+        res.status(proxyRes.statusCode).json(JSON.parse(body));
+      } catch {
+        res.status(proxyRes.statusCode).json({ ok: false, error: body });
+      }
+    });
+  });
+  proxyReq.on('error', (e) => {
+    const msg = e && e.code ? e.code + ' (' + (e.message || '') + ')' : e && e.message ? e.message : 'proxy error';
+    if (!res.headersSent) {
+      res.status(502).json({ ok: false, error: 'Cannot reach API: ' + msg });
+    }
+  });
+  proxyReq.on('timeout', () => {
+    proxyReq.destroy();
+    if (!res.headersSent) res.status(504).json({ ok: false, error: 'Request to API timed out' });
+  });
+  proxyReq.end();
+});
+
+app.post('/api/rebuild-inventory', authMiddleware, (req, res) => {
+  const postData = JSON.stringify(req.body || {});
+  const options = {
+    hostname: API_HOST,
+    port: API_PORT,
+    path: '/api/admin/rebuild-inventory',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Token': ADMIN_RESTART_TOKEN,
+      'Content-Length': Buffer.byteLength(postData),
+    },
+    timeout: 30000,
+  };
+  const proxyReq = http.request(options, (proxyRes) => {
+    let body = '';
+    proxyRes.on('data', (chunk) => {
+      body += chunk;
+    });
+    proxyRes.on('end', () => {
+      try {
+        res.status(proxyRes.statusCode).json(JSON.parse(body));
+      } catch {
+        res.status(proxyRes.statusCode).json({ ok: false, error: body });
+      }
+    });
+  });
+  proxyReq.on('error', (e) => {
+    const msg = e && e.code ? e.code + ' (' + (e.message || '') + ')' : e && e.message ? e.message : 'proxy error';
+    if (!res.headersSent) {
+      res.status(502).json({ ok: false, error: 'Cannot reach API: ' + msg });
+    }
+  });
+  proxyReq.on('timeout', () => {
+    proxyReq.destroy();
+    if (!res.headersSent) res.status(504).json({ ok: false, error: 'Request to API timed out' });
+  });
   proxyReq.write(postData);
   proxyReq.end();
 });

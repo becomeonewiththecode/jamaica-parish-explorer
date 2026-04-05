@@ -29,8 +29,10 @@ cd client && npm install && cd ..
 
 # Initialise the database (first time only)
 npm run db:init         # schema + parish seed data
-npm run fetch:places    # ~4,300 POIs from OpenStreetMap (slow, once only)
-npm run enrich:places   # Bing images + Wikipedia descriptions (slow, once only)
+npm run fetch:places    # POIs from OpenStreetMap via Overpass (slow; see docs)
+npm run enrich:places   # Wikipedia + website discovery for places (slow, optional)
+
+# Full wipe + OSM repopulation, sources, and admin rebuild: see docs/DATABASE-AND-MAP-DATA.md
 
 # Start API server + Vite dev server together
 npm run dev
@@ -190,6 +192,8 @@ docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/init.js"
 docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/fetch-places.js"
 docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/enrich-places.js"
 ```
+
+For a **full repopulation** of map POIs (clear `places` then Overpass ingest), use the admin **Rebuild map data** button (API must be running) or run `node db/rebuild-inventory-cli.js` inside the container from `/app/server`. See [Database and map data](./DATABASE-AND-MAP-DATA.md) for sources and tables.
 
 Or copy in an existing `jamaica.db`:
 

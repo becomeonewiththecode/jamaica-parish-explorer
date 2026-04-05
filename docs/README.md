@@ -5,6 +5,7 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 ## Table of Contents
 
 - [Startup guide](./STARTUP-GUIDE.md)
+- [Database and map data](./DATABASE-AND-MAP-DATA.md)
 - [Build process](./BUILD-PROCESS.md)
 - [Build process diagram](./BUILD-PROCESS-DIAGRAM.md)
 - [API reference](./API-REFERENCE.md)
@@ -23,6 +24,7 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 - [`STARTUP-GUIDE.md`](./STARTUP-GUIDE.md) — how to run the app in every mode: dev (Vite HMR), PM2 production, Docker Compose, and bare `npm start`. Includes port reference and common troubleshooting.
 - [`BUILD-PROCESS.md`](./BUILD-PROCESS.md) — how the client (Vite), server (native deps), database (init scripts), and Docker image (multi-stage) are built. Covers `JAMAICA_DATA_DIR`, `pmx: 'false'`, and layer caching.
 - [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) — Mermaid diagrams: Docker multi-stage build flow, runtime port/process architecture, and `JAMAICA_DATA_DIR` resolution.
+- [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md) — SQLite layout for map data (`parishes`, `places`, `airports`), **data sources** (OSM/Overpass, static seeds, Wikipedia/DDG enrichment), and **how to repopulate** (admin rebuild, `npm run db:init` / `fetch:places` / `db:rebuild`, `enrich:places`, `seed:airports`).
 
 ### API reference
 

@@ -1,10 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const db = require('./connection');
 
-// Run schema
-const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-db.exec(schema);
+function applySchema(db) {
+  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+  db.exec(schema);
+}
 
 // Seed data — all 14 parishes
 const parishes = [
@@ -122,34 +122,43 @@ const parishes = [
   }
 ];
 
-const insertParish = db.prepare(`
+function seedParishes(db) {
+  const insertParish = db.prepare(`
   INSERT OR IGNORE INTO parishes (slug, name, county, population, capital, area, description, fill_color, svg_path)
   VALUES (@slug, @name, @county, @population, @capital, @area, @description, @fill_color, @svg_path)
 `);
 
-const insertFeature = db.prepare(`
+  const insertFeature = db.prepare(`
   INSERT INTO features (parish_id, name) VALUES (?, ?)
 `);
 
-const getParishId = db.prepare(`SELECT id FROM parishes WHERE slug = ?`);
+  const getParishId = db.prepare(`SELECT id FROM parishes WHERE slug = ?`);
 
-const seedAll = db.transaction(() => {
-  for (const parish of parishes) {
-    const { features, ...parishRow } = parish;
-    insertParish.run(parishRow);
-    const row = getParishId.get(parish.slug);
-    if (row) {
-      // Only insert features if they don't exist yet
-      const existingCount = db.prepare('SELECT COUNT(*) as c FROM features WHERE parish_id = ?').get(row.id).c;
-      if (existingCount === 0) {
-        for (const feature of features) {
-          insertFeature.run(row.id, feature);
+  const seedAll = db.transaction(() => {
+    for (const parish of parishes) {
+      const { features, ...parishRow } = parish;
+      insertParish.run(parishRow);
+      const row = getParishId.get(parish.slug);
+      if (row) {
+        const existingCount = db.prepare('SELECT COUNT(*) as c FROM features WHERE parish_id = ?').get(row.id).c;
+        if (existingCount === 0) {
+          for (const feature of features) {
+            insertFeature.run(row.id, feature);
+          }
         }
       }
     }
-  }
-});
+  });
 
-seedAll();
-console.log('Database initialized and seeded successfully.');
-db.close();
+  seedAll();
+}
+
+module.exports = { applySchema, seedParishes };
+
+if (require.main === module) {
+  const db = require('./connection');
+  applySchema(db);
+  seedParishes(db);
+  console.log('Database initialized and seeded successfully.');
+  db.close();
+}

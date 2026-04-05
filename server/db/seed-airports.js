@@ -1,7 +1,4 @@
-const db = require('./connection');
-
-// Create airports table
-db.exec(`
+const AIRPORTS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS airports (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     code        TEXT UNIQUE NOT NULL,
@@ -22,7 +19,23 @@ db.exec(`
     image_url   TEXT,
     historical_facts TEXT NOT NULL
   )
+`;
+
+function createAirportsTable(db) {
+  db.exec(AIRPORTS_TABLE_SQL);
+}
+
+/** Upsert airport rows without fetching images (for admin / Docker rebuild). */
+function seedAirportsStatic(db) {
+  createAirportsTable(db);
+  const ins = db.prepare(`
+  INSERT OR REPLACE INTO airports (code, icao, name, short_name, type, lat, lon, parish_slug, named_after, opened, elevation, runway, operator, serves, website, image_url, historical_facts)
+  VALUES (@code, @icao, @name, @short_name, @type, @lat, @lon, @parish_slug, @named_after, @opened, @elevation, @runway, @operator, @serves, @website, @image_url, @historical_facts)
 `);
+  for (const ap of AIRPORTS) {
+    ins.run({ ...ap, image_url: null });
+  }
+}
 
 const AIRPORTS = [
   {
@@ -170,12 +183,14 @@ async function tryBingImage(name) {
   } catch (e) { return null; }
 }
 
-const insert = db.prepare(`
+async function main() {
+  const db = require('./connection');
+  createAirportsTable(db);
+  const insert = db.prepare(`
   INSERT OR REPLACE INTO airports (code, icao, name, short_name, type, lat, lon, parish_slug, named_after, opened, elevation, runway, operator, serves, website, image_url, historical_facts)
   VALUES (@code, @icao, @name, @short_name, @type, @lat, @lon, @parish_slug, @named_after, @opened, @elevation, @runway, @operator, @serves, @website, @image_url, @historical_facts)
 `);
 
-async function main() {
   console.log('Seeding airports table...\n');
 
   for (const ap of AIRPORTS) {
@@ -217,7 +232,11 @@ async function main() {
   db.close();
 }
 
-main().catch(err => {
-  console.error('Error:', err);
-  process.exit(1);
-});
+module.exports = { AIRPORTS, createAirportsTable, seedAirportsStatic };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Error:', err);
+    process.exit(1);
+  });
+}
