@@ -313,6 +313,29 @@ function dashboardPage(req) {
     .dot.stopped { background:#f97373; box-shadow:0 0 4px #f97373; }
     .dot.errored { background:#fcd34d; box-shadow:0 0 4px #fcd34d; }
 
+    .restart-console { display:flex; flex-direction:column; gap:0.5rem; min-height:0; }
+    .restart-console-hr { border:0; border-top:1px solid #1f2937; margin:0.35rem 0 0; padding:0; }
+    .restart-console-sub { font-size:0.72rem; color:#6b7280; margin:0; line-height:1.35; }
+    .restart-console-sub code { font-size:0.68rem; }
+    .rebuild-progress-wrap { margin-top:0.35rem; }
+    .rebuild-progress-meta { display:flex; justify-content:space-between; align-items:baseline; font-size:0.7rem; color:#9ca3af; margin-bottom:0.28rem; gap:0.5rem; flex-wrap:wrap; }
+    #rebuild-progress-pct { font-variant-numeric:tabular-nums; color:#e5e7eb; font-weight:600; min-width:2.75rem; }
+    #rebuild-progress-label { color:#9ca3af; text-align:right; flex:1; min-width:40%; }
+    .rebuild-progress-track { height:6px; background:#111827; border-radius:3px; overflow:hidden; border:1px solid #1f2937; }
+    .rebuild-progress-bar { height:100%; width:0%; background:linear-gradient(90deg,#4f46e5,#818cf8); transition:width 0.35s ease; }
+    .rebuild-sections { max-height:10rem; overflow-y:auto; margin:0.35rem 0 0.25rem; padding:0.3rem 0.35rem; background:#111827; border-radius:0.4rem; font-size:0.62rem; line-height:1.35; border:1px solid #1f2937; }
+    .rebuild-section-row { display:flex; align-items:center; gap:0.35rem; padding:0.1rem 0; border-bottom:1px solid #1f2937; }
+    .rebuild-section-row:last-child { border-bottom:none; }
+    .rebuild-sec-idx { color:#6b7280; min-width:2.2rem; flex-shrink:0; font-variant-numeric:tabular-nums; }
+    .rebuild-sec-name { color:#d1d5db; flex:1; word-break:break-word; min-width:0; }
+    .rebuild-sec-badge { flex-shrink:0; font-size:0.55rem; padding:0.06rem 0.28rem; border-radius:0.2rem; text-transform:uppercase; letter-spacing:0.02em; }
+    .badge-pending { background:#374151; color:#9ca3af; }
+    .badge-running { background:#1e3a5f; color:#93c5fd; }
+    .badge-ok { background:#064e3b; color:#6ee7b7; }
+    .badge-error { background:#7f1d1d; color:#fecaca; }
+    .rebuild-sec-detail { padding:0 0 0.12rem 2.5rem; font-size:0.58rem; color:#6b7280; line-height:1.3; }
+    #rebuild-status { margin:0; padding:0.45rem 0.5rem; background:#111827; border-radius:0.4rem; font-size:0.62rem; color:#6b7280; white-space:pre-wrap; max-height:3.8rem; overflow:auto; line-height:1.3; border:1px solid #1f2937; }
+
     .restart-group { display:flex; gap:0.5rem; flex-wrap:wrap; }
     .restart-btn { padding:0.5rem 1rem; border:1px solid #374151; border-radius:0.5rem; background:#111827; color:#e5e7eb; font-size:0.82rem; font-weight:500; cursor:pointer; }
     .restart-btn:hover { background:#1f2937; border-color:#4b5563; }
@@ -364,31 +387,35 @@ function dashboardPage(req) {
     </div>
     <div class="card">
       <div class="card-title">Restart Controls</div>
-      <p style="font-size:0.8rem; color:#9ca3af; margin:0 0 0.75rem;">Sends restart command via the API server's admin endpoint.</p>
-      <div class="restart-group">
-        <button class="restart-btn" onclick="doRestart('api')">Restart API</button>
-        <button class="restart-btn" onclick="doRestart('status')">Restart Status Board</button>
-        <button class="restart-btn" onclick="doRestart('admin')">Restart Admin</button>
-        <button class="restart-btn danger" onclick="doRestart('all')">Restart All</button>
+      <div class="restart-console">
+        <p style="font-size:0.8rem; color:#9ca3af; margin:0;">Restarts go through the API admin endpoint.</p>
+        <div class="restart-group">
+          <button class="restart-btn" onclick="doRestart('api')">Restart API</button>
+          <button class="restart-btn" onclick="doRestart('status')">Restart Status Board</button>
+          <button class="restart-btn" onclick="doRestart('admin')">Restart Admin</button>
+          <button class="restart-btn danger" onclick="doRestart('all')">Restart All</button>
+        </div>
+        <div id="restart-result" style="font-size:0.78rem; color:#9ca3af; min-height:0;"></div>
+        <hr class="restart-console-hr" />
+        <p class="restart-console-sub"><strong>Map data</strong> — clears <code>places</code>, refetches OSM (slow). Optional airports (no images). Enrich: <code>npm run enrich:places</code>.</p>
+        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#d1d5db; cursor:pointer; margin:0;">
+          <input type="checkbox" id="rebuild-include-airports" style="flex-shrink:0;" />
+          Airports (static)
+        </label>
+        <div class="restart-group">
+          <button type="button" class="restart-btn" id="rebuild-map-btn" onclick="doRebuildMapData()">Rebuild map data</button>
+        </div>
+        <div id="rebuild-progress-wrap" class="rebuild-progress-wrap">
+          <div class="rebuild-progress-meta">
+            <span id="rebuild-progress-pct">—</span>
+            <span id="rebuild-progress-label"></span>
+          </div>
+          <div class="rebuild-progress-track"><div id="rebuild-progress-bar" class="rebuild-progress-bar"></div></div>
+        </div>
+        <div id="rebuild-sections" class="rebuild-sections"></div>
+        <pre id="rebuild-status">…</pre>
       </div>
-      <div id="restart-result" style="margin-top:0.75rem; font-size:0.8rem;"></div>
     </div>
-  </div>
-
-  <div class="card" style="margin-top:1rem;">
-    <div class="card-title">Map data (places &amp; airports)</div>
-    <p style="font-size:0.8rem; color:#9ca3af; margin:0 0 0.75rem;">
-      Re-applies schema, ensures parishes, <strong>clears</strong> the <code>places</code> table, then refetches POIs from OpenStreetMap (several minutes, many HTTP requests).
-      Optional: seed airport metadata (no image crawl). For text enrichment run <code>npm run enrich:places</code> on the server after this finishes.
-    </p>
-    <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.82rem; color:#d1d5db; margin-bottom:0.75rem; cursor:pointer;">
-      <input type="checkbox" id="rebuild-include-airports" />
-      Include airports (static seed, no images)
-    </label>
-    <div class="restart-group">
-      <button type="button" class="restart-btn" id="rebuild-map-btn" onclick="doRebuildMapData()">Rebuild map data</button>
-    </div>
-    <pre id="rebuild-status" style="margin-top:0.75rem; padding:0.6rem 0.75rem; background:#111827; border-radius:0.5rem; font-size:0.72rem; color:#9ca3af; white-space:pre-wrap; max-height:12rem; overflow:auto;">Status: (loading…)</pre>
   </div>
 
   <details class="status-iframe-wrap">
@@ -494,27 +521,75 @@ function dashboardPage(req) {
     }
 
     var rebuildPollTimer = null;
+    var rebuildPollDelayMs = 4000;
+    function scheduleRebuildPoll() {
+      clearTimeout(rebuildPollTimer);
+      rebuildPollTimer = setTimeout(function() { pollRebuildStatus(); }, rebuildPollDelayMs);
+    }
     async function pollRebuildStatus() {
+      var pre = document.getElementById('rebuild-status');
       try {
         var res = await fetch('/api/rebuild-inventory/status');
         var d = await res.json().catch(function() { return {}; });
-        var el = document.getElementById('rebuild-status');
-        if (!el) return;
+        if (!pre) return;
         if (!d.ok && res.status === 403) {
-          el.textContent = 'Forbidden (check ADMIN_RESTART_TOKEN matches API).';
+          pre.textContent = 'Forbidden (check ADMIN_RESTART_TOKEN matches API).';
+          scheduleRebuildPoll();
           return;
         }
+        rebuildPollDelayMs = d.inProgress ? 1500 : 4000;
+
+        var pct = typeof d.progressPercent === 'number' ? Math.max(0, Math.min(100, d.progressPercent)) : null;
+        var bar = document.getElementById('rebuild-progress-bar');
+        var pctEl = document.getElementById('rebuild-progress-pct');
+        var labelEl = document.getElementById('rebuild-progress-label');
+        var secEl = document.getElementById('rebuild-sections');
+        if (bar) bar.style.width = (pct != null ? pct : 0) + '%';
+        if (pctEl) pctEl.textContent = pct != null ? pct + '%' : '—';
+        if (labelEl) {
+          if (d.inProgress && d.currentStepLabel) labelEl.textContent = d.currentStepLabel;
+          else if (d.phase && d.phase !== 'idle') labelEl.textContent = d.phase === 'done' ? 'Last run finished' : ('Phase: ' + d.phase);
+          else labelEl.textContent = '';
+        }
+        if (secEl) {
+          if (d.sections && d.sections.length) {
+            var sh = '';
+            for (var si = 0; si < d.sections.length; si++) {
+              var s = d.sections[si];
+              var st = s.status || 'pending';
+              var badge = 'badge-pending';
+              if (st === 'running') badge = 'badge-running';
+              else if (st === 'ok') badge = 'badge-ok';
+              else if (st === 'error') badge = 'badge-error';
+              sh += '<div class="rebuild-section-row"><span class="rebuild-sec-idx">' + esc(String(s.index)) + '/' + esc(String(s.total)) + '</span><span class="rebuild-sec-name">' + esc(s.category) + '</span><span class="rebuild-sec-badge ' + badge + '">' + esc(st) + '</span></div>';
+              var detail = '';
+              if (s.message) detail = esc(s.message);
+              else if (st === 'ok' && (s.found != null || s.insertedAttempted != null)) {
+                var parts = [];
+                if (s.found != null) parts.push(s.found + ' found');
+                if (s.insertedAttempted != null) parts.push(s.insertedAttempted + ' new rows');
+                detail = esc(parts.join(', '));
+              } else if (st === 'error' && s.httpStatus) detail = esc('HTTP ' + s.httpStatus);
+              if (detail) sh += '<div class="rebuild-sec-detail">' + detail + '</div>';
+            }
+            secEl.innerHTML = sh;
+          } else {
+            secEl.innerHTML = '<div style="color:#6b7280;font-size:0.62rem;">No section data (start a rebuild or refresh).</div>';
+          }
+        }
+
         var lines = [];
         lines.push('inProgress: ' + !!d.inProgress);
+        if (d.phase) lines.push('phase: ' + d.phase);
         lines.push('lastStartedAt: ' + (d.lastStartedAt || '—'));
         lines.push('lastFinishedAt: ' + (d.lastFinishedAt || '—'));
         if (d.lastError) lines.push('lastError: ' + d.lastError);
         if (d.lastSummary) lines.push('lastSummary: ' + JSON.stringify(d.lastSummary, null, 2));
-        el.textContent = lines.join('\\n');
+        pre.textContent = lines.join('\\n');
       } catch (e) {
-        var el2 = document.getElementById('rebuild-status');
-        if (el2) el2.textContent = 'Poll failed: ' + e.message;
+        if (pre) pre.textContent = 'Poll failed: ' + e.message;
       }
+      scheduleRebuildPoll();
     }
 
     async function doRebuildMapData() {
@@ -545,7 +620,6 @@ function dashboardPage(req) {
     refreshPm2();
     setInterval(refreshPm2, 30000);
     pollRebuildStatus();
-    rebuildPollTimer = setInterval(pollRebuildStatus, 4000);
   </script>
 </body>
 </html>`;

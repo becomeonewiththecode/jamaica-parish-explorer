@@ -41,13 +41,17 @@ Other persisted files in the same data directory (when using `JAMAICA_DATA_DIR`)
 
 ### 2. Places (OpenStreetMap)
 
-- **Source:** [OpenStreetMap](https://www.openstreetmap.org/) data, queried through the **Overpass API** (`https://overpass-api.de/api/interpreter` by default).
+- **Source:** [OpenStreetMap](https://www.openstreetmap.org/) data, queried through the **Overpass API**. The client rotates across several public interpreter endpoints (see env vars below); you can override the list.
 - **Implementation:** `server/db/places-from-osm.js` — categories include tourist attractions, landmarks, restaurants, cafés, hotels, guest houses, hospitals, schools, beaches, worship, banks, fuel, parks, stadiums, nightlife, shopping, car rental, etc., within a Jamaica bounding box.
 - **Parish assignment:** `client/public/jamaica-parishes.geojson` — point-in-polygon to map each OSM feature to a parish slug.
 - **Applied by:**
   - **Incremental:** `npm run fetch:places` — `INSERT OR IGNORE` (does not wipe existing rows).
   - **Full replace of POIs:** Admin **Rebuild map data** or `npm run db:rebuild` — **deletes all `places` rows** then ingests again.
-- **Rate limiting:** ~2 seconds between Overpass category requests (be polite to the public instance).
+- **Pacing and resilience (public Overpass):**
+  - **Between categories (main pass):** default **12 seconds** (`OVERPASS_CATEGORY_DELAY_MS`). Older docs mentioned ~2s; that was too aggressive and caused **HTTP 429** (rate limit) and **504** (timeouts).
+  - **Per request:** failed calls with **429**, **502**, **503**, **504**, or network errors are retried with backoff and mirror rotation, up to `OVERPASS_MAX_ATTEMPTS` (default **12**).
+  - **After the main pass:** steps that failed with a **retriable** status (not **400** bad query) are queued for **delayed retry round(s)** only for those indices — default **one** round after **120s** (`OVERPASS_FAILED_ROUND_DELAY_MS`), with **35s** between retries (`OVERPASS_RETRY_CATEGORY_DELAY_MS`) and extra attempts (`OVERPASS_RETRY_ROUND_MAX_ATTEMPTS`). Set `OVERPASS_FAILED_RETRY_ROUNDS=0` to disable, or `2`–`4` for more waves (cooldown grows each wave).
+- **Schema on API boot:** `server/index.js` runs `applySchema` + `seedParishes` at startup so `places` enrichment columns and the `airports` table exist **before** any rebuild — avoids `SqliteError: no such column/table` on fresh volumes.
 
 ### 3. Airports (static metadata in repo)
 
@@ -106,6 +110,52 @@ New OSM IDs are inserted; existing `osm_id` rows are left as-is (`INSERT OR IGNO
 - **`ADMIN_RESTART_TOKEN`** in `server/.env` must match between processes that call protected endpoints (admin UI → API proxy uses this for rebuild and restart).
 - The rebuild endpoint is documented alongside other admin routes in the running API; see Swagger at `/api/docs` if enabled.
 
+### Overpass-related environment variables (optional)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OVERPASS_ENDPOINTS` | *(built-in list of 3 interpreters)* | Comma-separated Overpass `/api/interpreter` URLs |
+| `OVERPASS_CATEGORY_DELAY_MS` | `12000` | Pause between **main-pass** category fetches |
+| `OVERPASS_MAX_ATTEMPTS` | `12` | Max HTTP attempts per category (main pass), with backoff |
+| `OVERPASS_FAILED_ROUND_DELAY_MS` | `120000` | Wait **before** starting a **failed-only** retry round (ms) |
+| `OVERPASS_RETRY_CATEGORY_DELAY_MS` | `35000` | Pause between fetches **inside** a retry round |
+| `OVERPASS_FAILED_RETRY_ROUNDS` | `1` | Number of delayed retry waves (`0` = off, max `4`) |
+| `OVERPASS_RETRY_ROUND_MAX_ATTEMPTS` | `max(12, 18)` | Per-request attempts during retry rounds |
+
+### Monitoring rebuild status (no admin token)
+
+`GET /api/health` includes a **`mapDataRebuild`** object (same shape as the admin status payload): `inProgress`, `phase`, `progressPercent`, `currentStepLabel`, per-category **`sections`**, `lastSummary`, etc. Use it for ops dashboards and alerting; it does not expose secrets.
+
+---
+
+## OSM ingest flow (diagram)
+
+```mermaid
+flowchart TD
+  subgraph Main["Main pass (all 19 queries)"]
+    A[For each category] --> B[POST Overpass — rotate mirrors on failure]
+    B --> C{HTTP OK?}
+    C -->|yes| D[INSERT OR IGNORE into places]
+    C -->|429/504/…| E[Backoff + retry / next mirror]
+    E --> B
+    C -->|400| F[Skip retries — bad query]
+    D --> G[Sleep OVERPASS_CATEGORY_DELAY_MS]
+    G --> A
+  end
+
+  Main --> H{Any retriable failures?}
+  H -->|no| Z[Done]
+  H -->|yes| W[Sleep OVERPASS_FAILED_ROUND_DELAY_MS]
+  W --> R["Retry pass — only failed indices"]
+  R --> T[Slower pacing + OVERPASS_RETRY_ROUND_MAX_ATTEMPTS]
+  T --> Z
+
+  classDef ok fill:#064e3b,stroke:#4ade80,color:#f0fdf4;
+  classDef warn fill:#422006,stroke:#f59e0b,color:#fffbeb;
+  class Z ok;
+  class F warn;
+```
+
 ---
 
 ## Implementation reference
@@ -126,8 +176,10 @@ New OSM IDs are inserted; existing `osm_id` rows are left as-is (`INSERT OR IGNO
 ## Summary
 
 - **Parishes / features:** repo static data via `db:init` or any full rebuild.
-- **Map POIs (`places`):** **OpenStreetMap** via **Overpass**; full wipe + refill uses admin **Rebuild map data** or `npm run db:rebuild`.
+- **Schema:** applied on **every API startup** (`applySchema` + migrations + `seedParishes`), not only during rebuild.
+- **Map POIs (`places`):** **OpenStreetMap** via **Overpass**; full wipe + refill uses admin **Rebuild map data** or `npm run db:rebuild`. Ingest uses **slow pacing**, **mirror rotation**, **retries**, and an optional **failed-only delayed retry round**.
 - **Airports:** repo static list; optional fast seed during rebuild or `npm run seed:airports` for images.
 - **Rich text/links on places:** `npm run enrich:places` (separate step, external Wikipedia / DuckDuckGo).
+- **Observability:** **`GET /api/health`** → **`mapDataRebuild`** for live rebuild progress without the admin token.
 
 For operations-focused setup (ports, PM2, Docker), see [Startup guide](./STARTUP-GUIDE.md).

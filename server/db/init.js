@@ -1,9 +1,31 @@
 const fs = require('fs');
 const path = require('path');
+const { createAirportsTable } = require('./seed-airports');
+
+/** Idempotent fixes for DBs created before newer columns / airports table existed. */
+function ensureSchemaMigrations(db) {
+  const cols = db.prepare('PRAGMA table_info(places)').all();
+  const names = new Set(cols.map((c) => c.name));
+  const addIfMissing = (col, sqlType) => {
+    if (!names.has(col)) {
+      db.exec(`ALTER TABLE places ADD COLUMN ${col} ${sqlType}`);
+      names.add(col);
+    }
+  };
+  addIfMissing('description', 'TEXT');
+  addIfMissing('image_url', 'TEXT');
+  addIfMissing('menu_url', 'TEXT');
+  addIfMissing('tiktok_url', 'TEXT');
+  addIfMissing('instagram_url', 'TEXT');
+  addIfMissing('booking_url', 'TEXT');
+  addIfMissing('tripadvisor_url', 'TEXT');
+  createAirportsTable(db);
+}
 
 function applySchema(db) {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
+  ensureSchemaMigrations(db);
 }
 
 // Seed data — all 14 parishes
@@ -153,7 +175,7 @@ function seedParishes(db) {
   seedAll();
 }
 
-module.exports = { applySchema, seedParishes };
+module.exports = { applySchema, seedParishes, ensureSchemaMigrations };
 
 if (require.main === module) {
   const db = require('./connection');

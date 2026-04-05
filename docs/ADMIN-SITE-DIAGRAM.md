@@ -90,3 +90,42 @@ flowchart TD
   class F403,ERR bad;
   class U,BR,T,PX,AV,PM,KP,CR,EH,RP,SA neutral;
 ```
+
+---
+
+### Map data rebuild (background OSM ingest)
+
+```mermaid
+flowchart TD
+  U[Admin: Rebuild map data + optional airports]
+
+  U --> C{Confirm wipe places?}
+  C -->|no| X[Cancel]
+  C -->|yes| BR["Browser: POST /api/rebuild-inventory\n→ admin :5556 → proxy → API :3001\nX-Admin-Token"]
+
+  BR --> R{409 already in progress?}
+  R -->|yes| E409[Toast: busy]
+  R -->|no| OK202["API: 200 { ok, state }\nstartRebuildInventory() async"]
+
+  OK202 --> BG["rebuildInventory:\napplySchema → seed → DELETE places\ningestPlacesFromOsm (19 steps)"]
+
+  BG --> OP[(Overpass mirrors\nrotate / backoff / retries)]
+  OP --> BG
+
+  BG --> RR{Retriable failures\n429 / 504 / …?}
+  RR -->|yes| WAIT[Cooldown + slower\nfailed-only retry round]
+  WAIT --> OP
+  RR -->|no| DONE[phase: done\nlastSummary]
+
+  POLL["Dashboard polls\nGET …/rebuild-inventory/status\nevery ~1.5s while inProgress"] -.-> STATE[Shared in-memory state:\nsections, %, phase]
+  BG -.-> STATE
+  HEALTH["GET /api/health\nmapDataRebuild"] -.-> STATE
+
+  classDef good fill:#064e3b,stroke:#4ade80,color:#f0fdf4;
+  classDef bad fill:#7f1d1d,stroke:#f97373,color:#fef2f2;
+  classDef neutral fill:#0b1020,stroke:#1f2937,color:#f9fafb;
+
+  class OK202,DONE good;
+  class E409 bad;
+  class U,C,BR,R,BG,OP,RR,WAIT,POLL,STATE,HEALTH,X neutral;
+```

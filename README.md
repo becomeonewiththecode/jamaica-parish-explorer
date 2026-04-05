@@ -33,7 +33,7 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Vessel traffic** — live AIS-based vessel layer around Jamaica (AISStream.io) with ship icons, optional cruise-only filter, and ability to overlay flights, weather, and waves; port popup shows upcoming cruise calls with an AIS column (In port / not in port) and warns when a ship expected today does not report as docked
 - **Map base layers** — optional Thunderforest layers: **Transport** (roads, railways, transit), **Landscape** (terrain, nature, topography), **Neighbourhood** (streets, clear labels); one at a time in map controls (requires `VITE_THUNDERFOREST_API_KEY`)
 - **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
-- **Status board** — a small dashboard on port `5555` that checks API health, flights, weather, waves, vessels, and cruise schedule endpoints. Weather provider health (Open‑Meteo, WeatherAPI, OpenWeather) is derived from the backend's `/api/health` response instead of calling those providers directly from the board, which keeps external API usage centralized and cache‑friendly.
+- **Status board** — a small dashboard on port `5555` that checks API health, flights, weather, waves, vessels, and cruise schedule endpoints. Weather, wave, and flight provider health are derived from the backend's `/api/health` response instead of calling those providers directly from the board. The same **`/api/health`** payload also includes **`mapDataRebuild`** (OpenStreetMap ingest job progress) for monitoring, even though the status board UI does not render it yet.
 
 ## Tech Stack
 
@@ -71,14 +71,14 @@ cd client && npm install && cd ..
 
 ### Database Setup
 
-The SQLite database is not included in the repo and must be built locally:
+The SQLite database is not included in the repo and must be built locally. When the **API server starts**, it runs **`applySchema` + parish seed** (`server/index.js`) so the DB file picks up new tables/columns automatically; `npm run db:init` is still the usual first-time bootstrap from the project root.
 
 ```bash
 # 1. Initialize the database schema and seed parish data
 npm run db:init
 
 # 2. Fetch points of interest from OpenStreetMap (~4,300 places)
-#    This queries the Overpass API — takes a few minutes
+#    This queries the Overpass API — can take many minutes (polite pacing + retries; see docs)
 npm run fetch:places
 
 # 3. Enrich places with photos and descriptions
@@ -184,6 +184,7 @@ project_jamaica/
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/api/health` | Uptime, weather/wave/flight provider health, and **`mapDataRebuild`** (OSM map-data job status) |
 | GET | `/api/parishes` | List all parishes (lightweight) |
 | GET | `/api/parishes/:slug` | Full parish detail + features |
 | GET | `/api/parishes/:slug/places` | Places in a parish (optional `?category=`) |
@@ -205,6 +206,7 @@ project_jamaica/
 
 ## Data Documentation
 
+- **Database, map POIs, Overpass, admin rebuild:** see [`docs/DATABASE-AND-MAP-DATA.md`](./docs/DATABASE-AND-MAP-DATA.md)
 - **Flights:** see [`docs/FLIGHT-DATA.md`](./docs/FLIGHT-DATA.md)
 - **Weather and Waves:** see [`docs/WEATHER-AND-WAVE-DATA.md`](./docs/WEATHER-AND-WAVE-DATA.md)
 - **Vessels (AISStream):** see [`docs/VESSEL-DATA-AND-USAGE.md`](./docs/VESSEL-DATA-AND-USAGE.md)

@@ -20,6 +20,16 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const execAsync = util.promisify(exec);
 const db = require('./db/connection');
+const { applySchema, seedParishes } = require('./db/init');
+
+try {
+  applySchema(db);
+  seedParishes(db);
+} catch (e) {
+  console.error('[api] Database schema/seed failed:', e);
+  process.exit(1);
+}
+
 const { startRebuildInventory, getRebuildInventoryState } = require('./db/rebuild-inventory');
 
 app.use(express.json());
@@ -49,7 +59,7 @@ app.use('/api/ports', portCruiseRoutes);
  * /health:
  *   get:
  *     summary: Server health check
- *     description: Returns server uptime and provider health snapshots for weather, waves, and flights. Used by the status board.
+ *     description: Returns server uptime, provider health (weather, waves, flights), and map-data OSM rebuild status (phase, per-category progress). Used by the status board and ops monitoring.
  *     tags: [Health]
  *     responses:
  *       200:
@@ -68,6 +78,7 @@ app.get('/api/health', (req, res) => {
     typeof flightRoutes.getFlightProviderHealth === 'function'
       ? flightRoutes.getFlightProviderHealth()
       : undefined;
+  const mapDataRebuild = getRebuildInventoryState();
   res.json({
     ok: true,
     uptime: process.uptime(),
@@ -75,6 +86,7 @@ app.get('/api/health', (req, res) => {
     providers,
     waveProviders,
     flightProviders,
+    mapDataRebuild,
   });
 });
 

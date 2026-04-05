@@ -5,7 +5,7 @@ The status board is a lightweight dashboard that reports whether key backend ser
 ### What it checks
 
 **Internal services** (checked via the API server):
-- **API health**: `GET /api/health` (Express server up, basic info).
+- **API health**: `GET /api/health` (Express server up, basic info, plus embedded **map-data rebuild** state in `mapDataRebuild` for JSON/monitoring — the HTML dashboard does not display that block yet).
 - **Island weather**: `GET /api/weather/island` (multi‑provider aggregate across Open‑Meteo, WeatherAPI, OpenWeather).
 - **Wave data**: `GET /api/weather/waves` (Open‑Meteo Marine).
 - **Flights data**: `GET /api/flights` (scheduled + live flight feed).
@@ -106,8 +106,10 @@ Each section title uses a traffic-light colour scheme:
         ok: true,
         uptime: process.uptime(),
         env: process.env.NODE_ENV || 'development',
-        providers,        // weather provider health from routes/weather.js
-        flightProviders,  // flight provider health from routes/flights.js
+        providers,         // weather provider health from routes/weather.js
+        waveProviders,     // wave/marine provider health
+        flightProviders,   // flight provider health from routes/flights.js
+        mapDataRebuild,    // OSM ingest job: getRebuildInventoryState() from db/rebuild-inventory.js
       });
     });
     ```

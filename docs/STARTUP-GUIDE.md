@@ -47,6 +47,8 @@ npm run dev
 
 The API proxies Vite internally when `NODE_ENV=development` so `/api/*` and `/` both resolve correctly.
 
+On **every** API process start, `server/index.js` applies **`schema.sql`**, runs **idempotent migrations** (e.g. missing `places` columns, `airports` table), and **seeds parishes** so Docker volumes and upgrades stay consistent without waiting for a manual rebuild. Map POIs are still refilled via **admin → Rebuild map data** or `npm run db:rebuild` (see [Database and map data](./DATABASE-AND-MAP-DATA.md)).
+
 ---
 
 ## Mode 2 — PM2 (production, bare metal / VM)

@@ -10,7 +10,7 @@ This document provides a quick reference for all API endpoints.
 
 ### `GET /api/health`
 
-Server health check used by the status board. Returns uptime and provider health snapshots.
+Server health check used by the status board. Returns uptime, provider health snapshots, and **map-data OSM rebuild** status (no auth).
 
 | Field | Description |
 |-------|-------------|
@@ -20,6 +20,7 @@ Server health check used by the status board. Returns uptime and provider health
 | `providers` | Weather provider health (Open-Meteo, WeatherAPI, OpenWeatherMap) |
 | `waveProviders` | Wave/marine provider health |
 | `flightProviders` | Flight provider health (AeroDataBox, RapidAPI, OpenSky, adsb.lol) |
+| `mapDataRebuild` | Snapshot of the background **Rebuild map data** job: `inProgress`, `phase`, `progressPercent`, `currentStepLabel`, `lastStartedAt`, `lastFinishedAt`, `lastError`, `lastSummary` (e.g. `totalPlaces`, `osmStillFailedAfterRetries`), `sections` (per-category `status`, `httpStatus`, `found`, …), `includeAirportsPlanned`. Same data as `GET /api/admin/rebuild-inventory/status` but reachable without admin token for monitoring. |
 
 ### `POST /api/admin/restart`
 

@@ -24,7 +24,7 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 - [`STARTUP-GUIDE.md`](./STARTUP-GUIDE.md) — how to run the app in every mode: dev (Vite HMR), PM2 production, Docker Compose, and bare `npm start`. Includes port reference and common troubleshooting.
 - [`BUILD-PROCESS.md`](./BUILD-PROCESS.md) — how the client (Vite), server (native deps), database (init scripts), and Docker image (multi-stage) are built. Covers `JAMAICA_DATA_DIR`, `pmx: 'false'`, and layer caching.
 - [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) — Mermaid diagrams: Docker multi-stage build flow, runtime port/process architecture, and `JAMAICA_DATA_DIR` resolution.
-- [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md) — SQLite layout for map data (`parishes`, `places`, `airports`), **data sources** (OSM/Overpass, static seeds, Wikipedia/DDG enrichment), and **how to repopulate** (admin rebuild, `npm run db:init` / `fetch:places` / `db:rebuild`, `enrich:places`, `seed:airports`).
+- [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md) — SQLite layout for map data (`parishes`, `places`, `airports`), **data sources** (OSM/Overpass, static seeds, Wikipedia/DDG enrichment), **how to repopulate**, **Overpass env vars** (pacing, mirrors, delayed retry of failed categories), **schema-on-startup**, and a **Mermaid ingest-flow diagram**.
 
 ### API reference
 
@@ -33,12 +33,12 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 ### Admin site
 
 - [`ADMIN-SITE.md`](./ADMIN-SITE.md) — authenticated admin dashboard for monitoring PM2 processes, restarting services, and accessing Swagger/Status Board. Runs on port 5556.
-- [`ADMIN-SITE-DIAGRAM.md`](./ADMIN-SITE-DIAGRAM.md) — Mermaid diagram of the admin login flow, including rate limiting and lockout behavior.
+- [`ADMIN-SITE-DIAGRAM.md`](./ADMIN-SITE-DIAGRAM.md) — Mermaid diagrams: client-app link resolution, login flow, PM2 restart proxy, and **map data rebuild** (background OSM ingest, retries, health snapshot).
 
 ### Status board and monitoring
 
 - [`STATUS-BOARD.md`](./STATUS-BOARD.md) — how the status board works, what it checks, how to run it, and how weather provider health is derived from `/api/health`.
-- [`STATUS-BOARD-DIAGRAM.md`](./STATUS-BOARD-DIAGRAM.md) — Mermaid diagram of the status board architecture (browser → status server → API → external providers).
+- [`STATUS-BOARD-DIAGRAM.md`](./STATUS-BOARD-DIAGRAM.md) — Mermaid diagram of the status board architecture (browser → status server → API → external providers); **`/api/health`** includes **`mapDataRebuild`** for ops JSON.
 
 ### Weather and waves
 
