@@ -8,7 +8,10 @@ RUN apk add --no-cache python3 make g++ git
 # Copy full repo (docker-compose will set context to project root)
 COPY . .
 
-# Install dependencies and build the client
+# Host copies must not leave node_modules in the layer (see .dockerignore); strip if present.
+RUN rm -rf node_modules client/node_modules server/node_modules
+
+# Install dependencies and build the client (native modules compile for Alpine here)
 RUN npm install && cd server && npm install && cd .. && npm run build
 
 FROM node:20-alpine AS runtime

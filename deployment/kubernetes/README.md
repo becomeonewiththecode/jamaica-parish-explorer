@@ -5,6 +5,7 @@ This option runs the app on a Kubernetes cluster using a Deployment, Service, an
 ### Files
 
 - `Dockerfile` — builds a production image suitable for Kubernetes
+- `pvc.yaml` — `PersistentVolumeClaim` for the SQLite database and cache files
 - `deployment.yaml` — `Deployment` with 2 replicas and health probes
 - `service.yaml` — `ClusterIP` service exposing the app on port 80 inside the cluster
 - `ingress.yaml` — example `Ingress` routing HTTP traffic to the service
@@ -19,13 +20,29 @@ docker build -t ghcr.io/your-username/jamaica-parish-explorer:latest ../..
 docker push ghcr.io/your-username/jamaica-parish-explorer:latest
 ```
 
-2. **Deploy to your cluster**:
+2. **Create secrets** for API keys and admin credentials:
 
 ```bash
+kubectl create secret generic jamaica-secrets \
+  --from-literal=RAPIDAPI_KEY=your_key \
+  --from-literal=OPENSKY_CLIENT_ID=your_id \
+  --from-literal=OPENSKY_CLIENT_SECRET=your_secret \
+  --from-literal=AISSTREAM_API_KEY=your_key
+```
+
+3. **Deploy to your cluster**:
+
+```bash
+kubectl apply -f pvc.yaml
 kubectl apply -f deployment.yaml
 kubectl apply -f service.yaml
 kubectl apply -f ingress.yaml
 ```
 
-3. Point DNS for `jamaica.example.com` at your cluster's ingress controller address, and adjust hostnames/annotations as required for your environment.
+4. Point DNS for `jamaica.example.com` at your cluster's ingress controller address, and adjust hostnames/annotations as required for your environment.
 
+### Persistent data
+
+The SQLite database (`jamaica.db`) and JSON caches are written to `/data` inside the container via `JAMAICA_DATA_DIR=/data`. A `PersistentVolumeClaim` (`pvc.yaml`) backs that path. Adjust `storageClassName` and `storage` size in `pvc.yaml` for your cluster.
+
+> **Important:** SQLite does not support concurrent writes from multiple pods. Keep `replicas: 1` if pods share the same PVC, or use `replicas: 2` only if the PVC's storage class supports `ReadWriteMany` and you accept that only reads are truly concurrent. For multi-replica write support, migrate to a proper database (PostgreSQL, etc.).

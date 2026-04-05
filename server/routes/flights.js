@@ -3,9 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 const db = require('../db/connection');
+const { getDataDir } = require('../data-dir');
 
 // --- Persistent flight cache (survives server restarts) ---
-const FLIGHT_CACHE_FILE = path.join(__dirname, '..', '.flight-cache.json');
+const FLIGHT_CACHE_FILE = path.join(getDataDir(), '.flight-cache.json');
 
 function loadPersistedFlightCache() {
   try {

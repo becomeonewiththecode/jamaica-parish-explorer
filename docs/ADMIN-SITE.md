@@ -61,8 +61,11 @@ All configuration is via environment variables in `server/.env`:
 | `ADMIN_USER` | `admin` | Login username |
 | `ADMIN_PASSWORD` | *(required)* | Login password — the server refuses to start without this |
 | `ADMIN_RESTART_TOKEN` | *(empty)* | Must match the API server's `ADMIN_RESTART_TOKEN` for restart commands to work |
-| `API_HOST` | `localhost` | Hostname of the main API server |
-| `API_PORT` | `3001` | Port of the main API server |
+| `API_HOST` | `127.0.0.1` | Host the admin process uses to reach the API (`localhost` in env is normalized to `127.0.0.1` for the same IPv4/IPv6 reason as the status board) |
+| `API_PORT` | `3001` | Port the admin process uses to reach the API (internal / loopback) |
+| `ADMIN_PUBLIC_HOST` | *(from request)* | Optional fixed hostname for Swagger, health, status links, and iframe when `Host` is wrong behind a proxy |
+| `ADMIN_PUBLIC_API_PORT` | `API_PORT` | Port in those **browser** URLs when the API is published on a different host port (e.g. Docker `HOST_PORT` → container `3001`) |
+| `ADMIN_PUBLIC_STATUS_PORT` | `STATUS_PORT` | Same for the status board URL if its published port differs |
 | `STATUS_PORT` | `5555` | Port of the status board (used for links and iframe) |
 
 ---

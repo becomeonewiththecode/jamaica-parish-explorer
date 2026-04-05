@@ -3,9 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 const db = require('../db/connection');
+const { getDataDir } = require('../data-dir');
 
 // --- Persistent weather/wave cache (survives server restarts) ---
-const CACHE_FILE = path.join(__dirname, '..', '.weather-cache.json');
+const CACHE_FILE = path.join(getDataDir(), '.weather-cache.json');
 
 function loadPersistedCache() {
   try {

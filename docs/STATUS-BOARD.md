@@ -77,8 +77,9 @@ Each section title uses a traffic-light colour scheme:
   - **Environment variables** (optional):
     - `STATUS_PORT` (default `5555`) — port for the status board.
     - `STATUS_HOST` (default `0.0.0.0`) — bind address; use `0.0.0.0` so the board is reachable on your LAN (e.g. `http://10.0.0.205:5555/`).
-    - `API_HOST` (default `localhost`) — where the main API is reachable.
+    - `API_HOST` (default `127.0.0.1`) — outbound hostname for checks. The value `localhost` is treated as `127.0.0.1` so Node does not prefer IPv6 `::1` while the API listens on IPv4 `0.0.0.0`.
     - `API_PORT` (default `3001`) — port for the main API.
+    - `CLIENT_HOST` (optional) — same rules as `API_HOST` for the Vite (5173) probe; defaults to `127.0.0.1`.
     - `STATUS_REFRESH_MS` (default `60000` / 1 minute) — how often the browser UI refreshes `/status.json` (in ms).
 
 ### Implementation details

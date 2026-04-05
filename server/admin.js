@@ -4,13 +4,22 @@ const crypto = require('crypto');
 const http = require('http');
 const { exec } = require('child_process');
 
+function outboundLoopbackHost(raw, fallback = '127.0.0.1') {
+  const h = (raw && String(raw).trim()) || fallback;
+  return h === 'localhost' ? '127.0.0.1' : h;
+}
+
 const PORT = process.env.ADMIN_PORT || 5556;
 const HOST = process.env.ADMIN_HOST || '0.0.0.0';
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const API_HOST = process.env.API_HOST || 'localhost';
-const API_PORT = process.env.API_PORT || 3001;
+const API_HOST = outboundLoopbackHost(process.env.API_HOST);
+/** Port the admin process uses to reach the API (loopback / internal). */
+const API_PORT = Number(process.env.API_PORT) || 3001;
+/** Port in dashboard links for browsers (e.g. Docker publish HOST_PORT→3001 → set this to HOST_PORT). */
+const PUBLIC_API_PORT = Number(process.env.ADMIN_PUBLIC_API_PORT) || API_PORT;
 const STATUS_PORT = process.env.STATUS_PORT || 5555;
+const PUBLIC_STATUS_PORT = Number(process.env.ADMIN_PUBLIC_STATUS_PORT) || Number(STATUS_PORT) || 5555;
 const ADMIN_RESTART_TOKEN = process.env.ADMIN_RESTART_TOKEN || '';
 
 if (!ADMIN_PASSWORD) {
@@ -185,7 +194,7 @@ app.get('/api/pm2', authMiddleware, async (req, res) => {
 });
 
 app.get('/', authMiddleware, (req, res) => {
-  res.type('html').send(dashboardPage());
+  res.type('html').send(dashboardPage(req));
 });
 
 // --- HTML Pages ---
@@ -227,7 +236,23 @@ function loginPage(errorHtml) {
 </html>`;
 }
 
-function dashboardPage() {
+/** Hostname for links/iframe in the dashboard (browser must reach this host). */
+function publicHostname(req) {
+  const fromEnv = process.env.ADMIN_PUBLIC_HOST && String(process.env.ADMIN_PUBLIC_HOST).trim();
+  if (fromEnv) return fromEnv;
+  if (req && typeof req.hostname === 'string' && req.hostname.length > 0) return req.hostname;
+  const raw = (req && req.headers && req.headers.host) || '';
+  if (raw.startsWith('[')) {
+    const end = raw.indexOf(']');
+    return end > 1 ? raw.slice(1, end) : 'localhost';
+  }
+  const colon = raw.lastIndexOf(':');
+  if (colon > 0 && !/]:/g.test(raw)) return raw.slice(0, colon);
+  return raw || 'localhost';
+}
+
+function dashboardPage(req) {
+  const publicHost = publicHostname(req);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -290,16 +315,16 @@ function dashboardPage() {
   </div>
 
   <div class="links">
-    <a href="http://${getExternalHost()}:${API_PORT}/api/docs/" target="_blank" class="link-btn">
+    <a href="http://${esc(publicHost)}:${PUBLIC_API_PORT}/api/docs/" target="_blank" class="link-btn">
       <span>&#128214;</span> Swagger Docs
     </a>
-    <a href="http://${getExternalHost()}:${STATUS_PORT}/" target="_blank" class="link-btn">
+    <a href="http://${esc(publicHost)}:${PUBLIC_STATUS_PORT}/" target="_blank" class="link-btn">
       <span>&#128200;</span> Status Board
     </a>
-    <a href="http://${getExternalHost()}:5173/" target="_blank" class="link-btn">
+    <a href="http://${esc(publicHost)}:5173/" target="_blank" class="link-btn">
       <span>&#127758;</span> Client App
     </a>
-    <a href="http://${getExternalHost()}:${API_PORT}/api/health" target="_blank" class="link-btn">
+    <a href="http://${esc(publicHost)}:${PUBLIC_API_PORT}/api/health" target="_blank" class="link-btn">
       <span>&#128153;</span> Health Endpoint
     </a>
   </div>
@@ -325,7 +350,7 @@ function dashboardPage() {
 
   <details class="status-iframe-wrap">
     <summary>Inline Status Board</summary>
-    <iframe src="http://${getExternalHost()}:${STATUS_PORT}/" loading="lazy"></iframe>
+    <iframe src="http://${esc(publicHost)}:${PUBLIC_STATUS_PORT}/" loading="lazy"></iframe>
   </details>
 
   <div id="toast" class="toast"></div>
@@ -392,11 +417,12 @@ function dashboardPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: target }),
         });
-        var data = await res.json();
+        var data = await res.json().catch(function() { return {}; });
         if (data.ok) {
           showToast('Restarted ' + target + ' successfully', true);
         } else {
-          showToast('Restart failed: ' + (data.error || 'unknown error'), false);
+          var detail = data.error || data.message || ('HTTP ' + res.status);
+          showToast('Restart failed: ' + detail, false);
         }
       } catch (e) {
         // Connection errors are expected when restarting — the target process dies mid-request
@@ -415,12 +441,6 @@ function dashboardPage() {
   </script>
 </body>
 </html>`;
-}
-
-function getExternalHost() {
-  // Use the hostname that the user would access from their browser
-  // In a real deployment this would be configurable; for LAN use, localhost works
-  return 'localhost';
 }
 
 // --- Support admin self-restart via PM2 ---
@@ -464,7 +484,8 @@ app.post('/api/restart', authMiddleware, (req, res) => {
   });
 
   proxyReq.on('error', (e) => {
-    res.status(502).json({ ok: false, error: e.message });
+    const msg = e && e.code ? e.code + ' (' + (e.message || '') + ')' : e && e.message ? e.message : 'proxy error';
+    res.status(502).json({ ok: false, error: 'Cannot reach API at ' + API_HOST + ':' + API_PORT + ': ' + msg });
   });
 
   proxyReq.on('timeout', () => {
@@ -477,5 +498,7 @@ app.post('/api/restart', authMiddleware, (req, res) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`[Admin] Dashboard running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  console.log(
+    `[Admin] http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} · API proxy ${API_HOST}:${API_PORT}/api/admin/restart`
+  );
 });

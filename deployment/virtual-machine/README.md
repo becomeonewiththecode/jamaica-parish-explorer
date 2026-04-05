@@ -22,10 +22,20 @@ This option runs the app directly on a Linux VM (e.g. Ubuntu) using Node.js and 
    NODE_ENV=production
    PORT=3001
    HOST=0.0.0.0
+
+   # Flight and vessel data
    RAPIDAPI_KEY=your_rapidapi_key
    OPENSKY_CLIENT_ID=your_opensky_client_id
    OPENSKY_CLIENT_SECRET=your_opensky_client_secret
    AISSTREAM_API_KEY=your_aisstream_api_key
+
+   # Admin dashboard authentication (required)
+   ADMIN_USER=admin
+   ADMIN_PASSWORD=your_strong_random_password
+   ADMIN_RESTART_TOKEN=your_restart_token
+
+   # Optional: store DB + caches outside the repo (e.g. survives re-deploy)
+   # JAMAICA_DATA_DIR=/var/lib/jamaica-parish-explorer
    ```
 
    Example `client/.env`:
@@ -50,5 +60,18 @@ deployment/virtual-machine/deploy.sh
 sudo systemctl status jamaica-parish-explorer
 ```
 
-By default the app listens on port `3000`. Use a reverse proxy (Nginx, Caddy, etc.) or a firewall rule to expose it on port 80/443 as needed.
+By default the app API listens on port `3001`. Use a reverse proxy (Nginx, Caddy, etc.) or a firewall rule to expose it on port 80/443 as needed.
 
+### PM2 (optional — adds status board and admin dashboard)
+
+The `systemd` service above runs only the API (`npm start`). If you also want the **status board** (port 5555) and **admin dashboard** (port 5556), install PM2 and use `ecosystem.config.js` instead:
+
+```bash
+npm install -g pm2
+cd /opt/jamaica-parish-explorer
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup   # follow the printed instructions to register with systemd
+```
+
+> **Note:** PM2 v6 on nvm-managed Node.js requires `pmx: 'false'` in `ecosystem.config.js` for the API process (already set) to prevent a `libnode.so` load error from its APM module. If you see `ERR_DLOPEN_FAILED` on `jamaica-api`, verify that setting is present.

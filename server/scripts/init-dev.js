@@ -1,7 +1,11 @@
 const http = require('http');
 const { spawn } = require('child_process');
 
-const API_HOST = process.env.API_HOST || 'localhost';
+function outboundLoopbackHost(raw, fallback = '127.0.0.1') {
+  const h = (raw && String(raw).trim()) || fallback;
+  return h === 'localhost' ? '127.0.0.1' : h;
+}
+const API_HOST = outboundLoopbackHost(process.env.API_HOST);
 const API_PORT = process.env.API_PORT || 3001;
 const CLIENT_PORT = process.env.CLIENT_PORT || 5173;
 const STATUS_PORT = process.env.STATUS_PORT || 5555;
