@@ -20,7 +20,7 @@ cd "$APP_DIR"
 npm install
 npm run build
 
-sudo cp deployment/option4-vm/jamaica-parish-explorer.service /etc/systemd/system/jamaica-parish-explorer.service
+sudo cp deployment/virtual-machine/jamaica-parish-explorer.service /etc/systemd/system/jamaica-parish-explorer.service
 sudo systemctl daemon-reload
 sudo systemctl enable jamaica-parish-explorer
 sudo systemctl restart jamaica-parish-explorer

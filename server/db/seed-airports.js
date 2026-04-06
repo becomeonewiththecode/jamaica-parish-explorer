@@ -1,16 +1,15 @@
-const db = require('./connection');
+const { query, closePool } = require('./pg-query');
 
-// Create airports table
-db.exec(`
-  CREATE TABLE IF NOT EXISTS airports (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+const AIRPORTS_TABLE_SQL_PG = `
+CREATE TABLE IF NOT EXISTS airports (
+    id          BIGSERIAL PRIMARY KEY,
     code        TEXT UNIQUE NOT NULL,
     icao        TEXT NOT NULL,
     name        TEXT NOT NULL,
     short_name  TEXT NOT NULL,
     type        TEXT NOT NULL,
-    lat         REAL NOT NULL,
-    lon         REAL NOT NULL,
+    lat         DOUBLE PRECISION NOT NULL,
+    lon         DOUBLE PRECISION NOT NULL,
     parish_slug TEXT NOT NULL,
     named_after TEXT NOT NULL,
     opened      TEXT NOT NULL,
@@ -21,8 +20,66 @@ db.exec(`
     website     TEXT,
     image_url   TEXT,
     historical_facts TEXT NOT NULL
-  )
-`);
+)`;
+
+async function ensureAirportsTable() {
+  await query(AIRPORTS_TABLE_SQL_PG);
+}
+
+/** @deprecated use ensureAirportsTable */
+const createAirportsTable = ensureAirportsTable;
+
+const AIRPORT_UPSERT = `
+INSERT INTO airports (code, icao, name, short_name, type, lat, lon, parish_slug, named_after, opened, elevation, runway, operator, serves, website, image_url, historical_facts)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+ON CONFLICT (code) DO UPDATE SET
+  icao = EXCLUDED.icao,
+  name = EXCLUDED.name,
+  short_name = EXCLUDED.short_name,
+  type = EXCLUDED.type,
+  lat = EXCLUDED.lat,
+  lon = EXCLUDED.lon,
+  parish_slug = EXCLUDED.parish_slug,
+  named_after = EXCLUDED.named_after,
+  opened = EXCLUDED.opened,
+  elevation = EXCLUDED.elevation,
+  runway = EXCLUDED.runway,
+  operator = EXCLUDED.operator,
+  serves = EXCLUDED.serves,
+  website = EXCLUDED.website,
+  image_url = EXCLUDED.image_url,
+  historical_facts = EXCLUDED.historical_facts
+`;
+
+function airportRowParams(ap) {
+  return [
+    ap.code,
+    ap.icao,
+    ap.name,
+    ap.short_name,
+    ap.type,
+    ap.lat,
+    ap.lon,
+    ap.parish_slug,
+    ap.named_after,
+    ap.opened,
+    ap.elevation,
+    ap.runway,
+    ap.operator,
+    ap.serves,
+    ap.website ?? null,
+    ap.image_url ?? null,
+    ap.historical_facts,
+  ];
+}
+
+/** Upsert airport rows without fetching images (for admin / Docker rebuild). */
+async function seedAirportsStatic() {
+  await ensureAirportsTable();
+  for (const ap of AIRPORTS) {
+    await query(AIRPORT_UPSERT, airportRowParams({ ...ap, image_url: null }));
+  }
+}
 
 const AIRPORTS = [
   {
@@ -170,12 +227,9 @@ async function tryBingImage(name) {
   } catch (e) { return null; }
 }
 
-const insert = db.prepare(`
-  INSERT OR REPLACE INTO airports (code, icao, name, short_name, type, lat, lon, parish_slug, named_after, opened, elevation, runway, operator, serves, website, image_url, historical_facts)
-  VALUES (@code, @icao, @name, @short_name, @type, @lat, @lon, @parish_slug, @named_after, @opened, @elevation, @runway, @operator, @serves, @website, @image_url, @historical_facts)
-`);
-
 async function main() {
+  await ensureAirportsTable();
+
   console.log('Seeding airports table...\n');
 
   for (const ap of AIRPORTS) {
@@ -203,21 +257,24 @@ async function main() {
       console.log(`  ${ap.code}: No image found.`);
     }
 
-    insert.run({ ...ap, image_url: imageUrl });
+    await query(AIRPORT_UPSERT, airportRowParams({ ...ap, image_url: imageUrl }));
     console.log(`  ${ap.code}: ${ap.name} — saved.\n`);
   }
 
-  // Print results
-  const rows = db.prepare('SELECT code, name, image_url FROM airports').all();
+  const { rows } = await query('SELECT code, name, image_url FROM airports ORDER BY code');
   console.log('\nAirports in database:');
   for (const r of rows) {
     console.log(`  ${r.code} — ${r.name} — image: ${r.image_url ? 'YES' : 'NO'}`);
   }
 
-  db.close();
+  await closePool();
 }
 
-main().catch(err => {
-  console.error('Error:', err);
-  process.exit(1);
-});
+module.exports = { AIRPORTS, createAirportsTable, ensureAirportsTable, seedAirportsStatic };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Error:', err);
+    process.exit(1);
+  });
+}

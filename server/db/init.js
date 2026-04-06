@@ -1,10 +1,53 @@
 const fs = require('fs');
 const path = require('path');
-const db = require('./connection');
+const { query } = require('./pg-query');
+const { ensureAirportsTable } = require('./seed-airports');
 
-// Run schema
-const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-db.exec(schema);
+function splitPostgresqlStatements(sql) {
+  return sql
+    .split(';')
+    .map((chunk) =>
+      chunk
+        .split('\n')
+        .filter((line) => !/^\s*--/.test(line))
+        .join('\n')
+        .trim()
+    )
+    .filter((s) => s.length > 0);
+}
+
+/** Apply base DDL from schema.postgresql.sql */
+async function applySchema() {
+  const schemaPath = path.join(__dirname, 'schema.postgresql.sql');
+  const raw = fs.readFileSync(schemaPath, 'utf8');
+  for (const stmt of splitPostgresqlStatements(raw)) {
+    await query(stmt);
+  }
+  await ensureSchemaMigrations();
+}
+
+/** Idempotent column / airports fixes (PostgreSQL). */
+async function ensureSchemaMigrations() {
+  const { rows } = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'places'`
+  );
+  const names = new Set(rows.map((r) => r.column_name));
+  const addIfMissing = async (col, sqlType) => {
+    if (!names.has(col)) {
+      await query(`ALTER TABLE places ADD COLUMN IF NOT EXISTS ${col} ${sqlType}`);
+      names.add(col);
+    }
+  };
+  await addIfMissing('description', 'TEXT');
+  await addIfMissing('image_url', 'TEXT');
+  await addIfMissing('menu_url', 'TEXT');
+  await addIfMissing('tiktok_url', 'TEXT');
+  await addIfMissing('instagram_url', 'TEXT');
+  await addIfMissing('booking_url', 'TEXT');
+  await addIfMissing('tripadvisor_url', 'TEXT');
+  await ensureAirportsTable();
+}
 
 // Seed data — all 14 parishes
 const parishes = [
@@ -122,34 +165,122 @@ const parishes = [
   }
 ];
 
-const insertParish = db.prepare(`
-  INSERT OR IGNORE INTO parishes (slug, name, county, population, capital, area, description, fill_color, svg_path)
-  VALUES (@slug, @name, @county, @population, @capital, @area, @description, @fill_color, @svg_path)
-`);
+async function seedParishes() {
+  const { withTransaction, clientQuery } = require('./pg-query');
 
-const insertFeature = db.prepare(`
-  INSERT INTO features (parish_id, name) VALUES (?, ?)
-`);
+  await withTransaction(async (client) => {
+    for (const parish of parishes) {
+      const { features, ...parishRow } = parish;
+      await clientQuery(
+        client,
+        `INSERT INTO parishes (slug, name, county, population, capital, area, description, fill_color, svg_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (slug) DO NOTHING`,
+        [
+          parishRow.slug,
+          parishRow.name,
+          parishRow.county,
+          parishRow.population,
+          parishRow.capital,
+          parishRow.area,
+          parishRow.description,
+          parishRow.fill_color,
+          parishRow.svg_path,
+        ]
+      );
 
-const getParishId = db.prepare(`SELECT id FROM parishes WHERE slug = ?`);
-
-const seedAll = db.transaction(() => {
-  for (const parish of parishes) {
-    const { features, ...parishRow } = parish;
-    insertParish.run(parishRow);
-    const row = getParishId.get(parish.slug);
-    if (row) {
-      // Only insert features if they don't exist yet
-      const existingCount = db.prepare('SELECT COUNT(*) as c FROM features WHERE parish_id = ?').get(row.id).c;
-      if (existingCount === 0) {
-        for (const feature of features) {
-          insertFeature.run(row.id, feature);
+      const r = await clientQuery(client, 'SELECT id FROM parishes WHERE slug = $1', [parish.slug]);
+      const row = r.rows[0];
+      if (row) {
+        const c = await clientQuery(
+          client,
+          'SELECT COUNT(*)::int AS c FROM features WHERE parish_id = $1',
+          [row.id]
+        );
+        if (c.rows[0].c === 0) {
+          for (const feature of features) {
+            await clientQuery(client, 'INSERT INTO features (parish_id, name) VALUES ($1, $2)', [
+              row.id,
+              feature,
+            ]);
+          }
         }
       }
     }
-  }
-});
+  });
+}
 
-seedAll();
-console.log('Database initialized and seeded successfully.');
-db.close();
+/** Upsert parish rows from seed (updates copy when slug already exists). */
+async function upsertParishesFromSeed() {
+  const { withTransaction, clientQuery } = require('./pg-query');
+
+  await withTransaction(async (client) => {
+    for (const parish of parishes) {
+      const { features: _f, ...parishRow } = parish;
+      await clientQuery(
+        client,
+        `INSERT INTO parishes (slug, name, county, population, capital, area, description, fill_color, svg_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (slug) DO UPDATE SET
+           name = EXCLUDED.name,
+           county = EXCLUDED.county,
+           population = EXCLUDED.population,
+           capital = EXCLUDED.capital,
+           area = EXCLUDED.area,
+           description = EXCLUDED.description,
+           fill_color = EXCLUDED.fill_color,
+           svg_path = EXCLUDED.svg_path`,
+        [
+          parishRow.slug,
+          parishRow.name,
+          parishRow.county,
+          parishRow.population,
+          parishRow.capital,
+          parishRow.area,
+          parishRow.description,
+          parishRow.fill_color,
+          parishRow.svg_path,
+        ]
+      );
+    }
+  });
+}
+
+/** Remove all feature rows and re-insert from seed (parish landmark lists). */
+async function resyncFeaturesFromSeed() {
+  const { withTransaction, clientQuery } = require('./pg-query');
+
+  await query('DELETE FROM features');
+  await withTransaction(async (client) => {
+    for (const parish of parishes) {
+      const { features } = parish;
+      const r = await clientQuery(client, 'SELECT id FROM parishes WHERE slug = $1', [parish.slug]);
+      const row = r.rows[0];
+      if (!row) continue;
+      for (const feature of features) {
+        await clientQuery(client, 'INSERT INTO features (parish_id, name) VALUES ($1, $2)', [
+          row.id,
+          feature,
+        ]);
+      }
+    }
+  });
+}
+
+module.exports = { applySchema, seedParishes, upsertParishesFromSeed, resyncFeaturesFromSeed, ensureSchemaMigrations };
+
+if (require.main === module) {
+  const { closePool } = require('./pg-query');
+  (async () => {
+    try {
+      await applySchema();
+      await seedParishes();
+      console.log('Database initialized and seeded successfully.');
+    } finally {
+      await closePool();
+    }
+  })().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

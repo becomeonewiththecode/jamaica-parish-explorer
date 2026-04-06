@@ -459,26 +459,39 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
   const [currentZoom, setCurrentZoom] = useState(11);
   const showFlights = showFlightsProp !== undefined ? showFlightsProp : true;
   const setShowFlights = onFlightsChange || (() => {});
-  const [showWeatherView, setShowWeatherView] = useState(false); // when on: zoom 9–11 only airports + weather, no places
+  // Weather/waves/vessels are independent layers from flights.
+  // Keep them ON by default so map glyphs appear immediately on refresh (no need to toggle).
+  const [showWeatherView, setShowWeatherView] = useState(true); // when on: zoom 9–11 only airports + weather, no places
   const [islandWeather, setIslandWeather] = useState([]);
-  const [showWavesView, setShowWavesView] = useState(false);
+  const [showWavesView, setShowWavesView] = useState(true);
   const [islandWaves, setIslandWaves] = useState([]);
-  const [showVessels, setShowVessels] = useState(false);
+  const [showVessels, setShowVessels] = useState(true);
   const [vessels, setVessels] = useState([]);
   const liveDataOn = showFlights || showWeatherView || showWavesView || showVessels;
-  const toggleAllLiveData = () => {
-    if (liveDataOn) {
-      setShowFlights(false);
-      setShowWeatherView(false);
-      setShowWavesView(false);
-      setShowVessels(false);
-    } else {
-      setShowFlights(true);
-      setShowWeatherView(true);
-      setShowWavesView(true);
-      setShowVessels(true);
+  const allLiveDataOn = showFlights && showWeatherView && showWavesView && showVessels;
+
+  const [liveDataMenuOpen, setLiveDataMenuOpen] = useState(false);
+  const liveDataMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!liveDataMenuOpen) return;
+    function handleClickOutside(e) {
+      if (!liveDataMenuRef.current) return;
+      if (!liveDataMenuRef.current.contains(e.target)) {
+        setLiveDataMenuOpen(false);
+      }
     }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [liveDataMenuOpen]);
+
+  const setAllLiveData = (on) => {
+    setShowFlights(on);
+    setShowWeatherView(on);
+    setShowWavesView(on);
+    setShowVessels(on);
   };
+
   // Base map layer: one of standard OSM, or Thunderforest Transport / Landscape / Neighbourhood
   const [baseLayer, setBaseLayer] = useState('standard');
   const [portCruisesById, setPortCruisesById] = useState({});
@@ -842,7 +855,7 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
     <>
       <div className="map-top-strip">
         <div className={`map-top-grid${activeSlug ? ' has-parish' : ''}`}>
-          {/* Cell 1: Back + title (when parish selected) */}
+          {/* Cell 1: Back + title (when parish selected). */}
           {activeSlug && (
             <div className="map-top-cell parish-cell parish-zoom-header">
               <button className="zoom-back-btn" onClick={() => onSelect(null)}>
@@ -859,22 +872,86 @@ function MapSection({ activeSlug, onSelect, onAirportSelect, showFlights: showFl
           )}
 
           {/* Cell 2: Zoom */}
-          <div className="map-top-cell zoom-cell zoom-level-control">
-            <span className="zoom-level-label">Zoom</span>
-            <span className="zoom-level-value">{currentZoom}</span>
-            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
-            <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
+          <div className="map-top-cell zoom-cell">
+            <div className="zoom-level-control">
+              <span className="zoom-level-label">Zoom</span>
+              <span className="zoom-level-value">{currentZoom}</span>
+              <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomIn()} title="Zoom in">+</button>
+              <button className="zoom-level-btn" onClick={() => mapRef.current && mapRef.current.zoomOut()} title="Zoom out">−</button>
+            </div>
           </div>
 
           {/* Cell 3: Flight, Weather, Waves, Map layer */}
           <div className="map-top-cell toggles-cell">
-            <button
-              className={`flight-toggle-btn${liveDataOn ? ' flight-toggle-active' : ''}`}
-              onClick={toggleAllLiveData}
-              title={liveDataOn ? 'Hide all live data (flights, weather, waves, vessels)' : 'Show all live data (flights, weather, waves, vessels)'}
-            >
-              ✈ Live Data <span className="toggle-value">{liveDataOn ? 'ON' : 'OFF'}</span>
-            </button>
+            <div className="live-data-dropdown-wrap" ref={liveDataMenuRef}>
+              <button
+                className={`flight-toggle-btn${liveDataOn ? ' flight-toggle-active' : ''}`}
+                onClick={() => setLiveDataMenuOpen((v) => !v)}
+                title="Live Data layers"
+              >
+                ✈ Live Data <span className="toggle-value">{liveDataOn ? 'ON' : 'OFF'}</span>
+              </button>
+              {liveDataMenuOpen && (
+                <div className="live-data-dropdown" role="menu" aria-label="Live Data layers">
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">✈ Live Data (All)</div>
+                    <label className="live-data-switch" title="Turn all live layers on/off">
+                      <input
+                        type="checkbox"
+                        checked={allLiveDataOn}
+                        onChange={(e) => setAllLiveData(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                  <div className="live-data-divider" />
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">✈ Flights</div>
+                    <label className="live-data-switch">
+                      <input
+                        type="checkbox"
+                        checked={showFlights}
+                        onChange={(e) => setShowFlights(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">☀ Weather</div>
+                    <label className="live-data-switch">
+                      <input
+                        type="checkbox"
+                        checked={showWeatherView}
+                        onChange={(e) => setShowWeatherView(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">🌊 Waves</div>
+                    <label className="live-data-switch">
+                      <input
+                        type="checkbox"
+                        checked={showWavesView}
+                        onChange={(e) => setShowWavesView(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                  <div className="live-data-menu-item">
+                    <div className="live-data-menu-label">🛳 Vessels</div>
+                    <label className="live-data-switch">
+                      <input
+                        type="checkbox"
+                        checked={showVessels}
+                        onChange={(e) => setShowVessels(e.target.checked)}
+                      />
+                      <span className="live-data-slider" />
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
             {hasThunderforestKey ? (
               <select
                 className="base-layer-select parish-select-dropdown"

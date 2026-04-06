@@ -189,17 +189,18 @@ The client always receives the server snapshot and lets the map decide how to re
 
 #### Top bar toggle
 
-A new toggle is added alongside flights, weather, and waves:
+Vessels are controlled by the 🛳 **Vessels** switch inside the **✈ Live Data** dropdown (also affected by the **✈ Live Data (All)** master switch):
 
-- **Label:** `🛳 Vessels`
 - **States:**
   - `OFF` — no vessel markers drawn; polling stopped.
   - `ON` — vessel markers drawn on the map; polling active.
 
-Tooltip:
+On initial load:
+- **Vessels start ON**
+- **Flights start OFF**, so you may see weather/waves/vessel markers even though the flight overlay is not shown yet.
 
-- `Show vessels and cruise ships around Jamaica` when OFF.
-- `Hide vessel traffic` when ON.
+Tooltip:
+- Use the app's Live Data button tooltip to infer whether all live overlays are shown/hidden.
 
 #### Polling behavior
 
@@ -299,5 +300,5 @@ This keeps the map readable when viewing ships, while still allowing users to ov
 
 - If `/api/vessels` returns `vessels: []`, AISStream is connected but no AIS `PositionReport` messages are currently within the Jamaica bounding box (or the stream is temporarily quiet).
 - Keeping the app open with **Vessels ON** will automatically update markers as ships enter or leave the area or start/stop transmitting AIS (client polls `/api/vessels` every 60 seconds).
-- AIS messages are still held in-memory for map rendering, but cruise schedules scraped from CruiseDig / CruiseMapper are now also **persisted** to the SQLite database (`cruise_ports` and `cruise_calls` tables) when `/api/ports/:id/cruises` is requested. This allows future features (reports, history, AIS‑linked arrival tracking) to reuse the same stored cruise schedule data.
+- AIS messages are still held in-memory for map rendering, but cruise schedules scraped from CruiseDig / CruiseMapper are now also **persisted** to PostgreSQL (`cruise_ports` and `cruise_calls` tables) when `/api/ports/:id/cruises` is requested. This allows future features (reports, history, AIS‑linked arrival tracking) to reuse the same stored cruise schedule data.
 

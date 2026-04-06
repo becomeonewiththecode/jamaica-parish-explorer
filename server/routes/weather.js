@@ -2,10 +2,11 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
-const db = require('../db/connection');
+const { query, withTransaction, clientQuery } = require('../db/pg-query');
+const { getDataDir } = require('../data-dir');
 
 // --- Persistent weather/wave cache (survives server restarts) ---
-const CACHE_FILE = path.join(__dirname, '..', '.weather-cache.json');
+const CACHE_FILE = path.join(getDataDir(), '.weather-cache.json');
 
 function loadPersistedCache() {
   try {
@@ -588,29 +589,39 @@ router.get('/waves', async (req, res) => {
  *       200:
  *         description: Array of weather event objects
  */
-router.get('/events', (req, res) => {
-  const { type, parish } = req.query;
-  let where = '1=1';
-  const params = {};
-  if (type) {
-    where += ' AND type = @type';
-    params.type = String(type);
-  }
-  if (parish) {
-    where += ' AND parish_slug = @parish';
-    params.parish = String(parish).toLowerCase();
-  }
-  // Only return events that are ongoing or start in the future
-  where += ' AND (ends_at IS NULL OR ends_at >= datetime(\'now\', \'-1 hour\'))';
+router.get('/events', async (req, res, next) => {
+  try {
+    const { type, parish } = req.query;
+    const parts = ['1=1'];
+    const params = [];
+    let n = 1;
+    if (type) {
+      parts.push(`type = $${n++}`);
+      params.push(String(type));
+    }
+    if (parish) {
+      parts.push(`parish_slug = $${n++}`);
+      params.push(String(parish).toLowerCase());
+    }
+    parts.push(
+      `(ends_at IS NULL OR ends_at::timestamptz >= (timezone('utc', now()) - interval '1 hour'))`
+    );
+    const where = parts.join(' AND ');
 
-  const rows = db.prepare(`
+    const { rows } = await query(
+      `
     SELECT id, type, source, event_id, severity, headline, description, parish_slug, area, starts_at, ends_at, fetched_at
     FROM weather_events
     WHERE ${where}
     ORDER BY starts_at ASC
-  `).all(params);
+  `,
+      params
+    );
 
-  res.json({ events: rows });
+    res.json({ events: rows });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // Simple event classification based on Open-Meteo weather codes and wind/precip values
@@ -696,36 +707,36 @@ function classifyAnomalyFromSources(slug, aggregate) {
   };
 }
 
-function upsertWeatherEvents(events) {
+async function upsertWeatherEvents(events) {
   if (!events.length) return;
-  const stmt = db.prepare(`
+  const sql = `
     INSERT INTO weather_events (type, source, event_id, severity, headline, description, parish_slug, area, starts_at, ends_at)
-    VALUES (@type, @source, @event_id, @severity, @headline, @description, @parish_slug, @area, @starts_at, @ends_at)
-  `);
-  const tx = db.transaction((rows) => {
-    for (const ev of rows) {
-      stmt.run({
-        type: ev.type,
-        source: ev.source,
-        event_id: ev.event_id || null,
-        severity: ev.severity || null,
-        headline: ev.headline || null,
-        description: ev.description || null,
-        parish_slug: ev.parish_slug || null,
-        area: ev.area || null,
-        starts_at: ev.starts_at || null,
-        ends_at: ev.ends_at || null,
-      });
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+  `;
+  await withTransaction(async (client) => {
+    for (const ev of events) {
+      await clientQuery(client, sql, [
+        ev.type,
+        ev.source,
+        ev.event_id || null,
+        ev.severity || null,
+        ev.headline || null,
+        ev.description || null,
+        ev.parish_slug || null,
+        ev.area || null,
+        ev.starts_at || null,
+        ev.ends_at || null,
+      ]);
     }
   });
-  tx(events);
 }
 
-function pruneOldWeatherEvents() {
-  db.prepare(`
+async function pruneOldWeatherEvents() {
+  await query(`
     DELETE FROM weather_events
-    WHERE ends_at IS NOT NULL AND ends_at < datetime('now', '-1 day')
-  `).run();
+    WHERE ends_at IS NOT NULL
+      AND ends_at::timestamptz < (timezone('utc', now()) - interval '1 day')
+  `);
 }
 
 // Refresh weather and wave caches every 20 minutes so every parish has up-to-date rain/sun/wind and wave data
@@ -754,8 +765,8 @@ async function refreshWeatherAndWaves() {
       const anomaly = classifyAnomalyFromSources(slug, item);
       if (anomaly) derivedEvents.push(anomaly);
     }
-    pruneOldWeatherEvents();
-    upsertWeatherEvents(derivedEvents);
+    await pruneOldWeatherEvents();
+    await upsertWeatherEvents(derivedEvents);
   } catch (e) {
     console.error('[Weather] Island refresh failed:', e.message);
   }

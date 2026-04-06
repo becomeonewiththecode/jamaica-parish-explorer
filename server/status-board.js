@@ -7,13 +7,20 @@ const { exec } = require('child_process');
 // Load server .env so we can see API keys when present
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
+/** Node often resolves "localhost" to ::1; our API listens on 0.0.0.0 (IPv4). Map only that hostname. */
+function outboundLoopbackHost(raw, fallback = '127.0.0.1') {
+  const h = (raw && String(raw).trim()) || fallback;
+  return h === 'localhost' ? '127.0.0.1' : h;
+}
+
 const app = express();
 const PORT = process.env.STATUS_PORT || 5555;
 /** Bind all interfaces so LAN (e.g. 10.0.0.x:5555) works, not only localhost */
 const HOST = process.env.STATUS_HOST || '0.0.0.0';
-const API_HOST = process.env.API_HOST || 'localhost';
-const API_PORT = process.env.API_PORT || 3001;
-const CLIENT_PORT = process.env.CLIENT_PORT || 5173;
+const API_HOST = outboundLoopbackHost(process.env.API_HOST);
+const API_PORT = Number(process.env.API_PORT) || 3001;
+const CLIENT_PORT = Number(process.env.CLIENT_PORT) || 5173;
+const CLIENT_HOST = outboundLoopbackHost(process.env.CLIENT_HOST);
 
 // Internal API checks (within this project)
 const CHECKS = [
@@ -51,7 +58,7 @@ const EXTERNAL_CHECKS = [
 // Server processes (API, client, status board)
 const SERVER_TARGETS = [
   { id: 'api-server', label: 'API server (3001)', host: API_HOST, port: API_PORT, path: '/api/health' },
-  { id: 'client-server', label: 'Client (Vite, 5173)', host: 'localhost', port: CLIENT_PORT, path: '/' },
+  { id: 'client-server', label: 'Client (Vite, 5173)', host: CLIENT_HOST, port: CLIENT_PORT, path: '/' },
 ];
 
 function fetchPm2Status() {

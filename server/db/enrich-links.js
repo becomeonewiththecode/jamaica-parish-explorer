@@ -1,6 +1,6 @@
-const db = require('./connection');
+const { query, closePool } = require('./pg-query');
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // --- Utility: check if a URL returns 200 ---
 async function urlExists(url, timeout = 6000) {
@@ -220,17 +220,29 @@ async function findWebsite(name, category) {
   return null;
 }
 
-// --- Main ---
-const updateStmt = db.prepare(`
+async function applyLinkUpdates(placeId, updates) {
+  await query(
+    `
   UPDATE places SET
-    description = CASE WHEN ?1 IS NOT NULL THEN ?1 ELSE description END,
-    website = CASE WHEN ?2 IS NOT NULL THEN ?2 ELSE website END,
-    tiktok_url = CASE WHEN ?3 IS NOT NULL THEN ?3 ELSE tiktok_url END,
-    instagram_url = CASE WHEN ?4 IS NOT NULL THEN ?4 ELSE instagram_url END,
-    booking_url = CASE WHEN ?5 IS NOT NULL THEN ?5 ELSE booking_url END,
-    tripadvisor_url = CASE WHEN ?6 IS NOT NULL THEN ?6 ELSE tripadvisor_url END
-  WHERE id = ?7
-`);
+    description = COALESCE($1, description),
+    website = COALESCE($2, website),
+    tiktok_url = COALESCE($3, tiktok_url),
+    instagram_url = COALESCE($4, instagram_url),
+    booking_url = COALESCE($5, booking_url),
+    tripadvisor_url = COALESCE($6, tripadvisor_url)
+  WHERE id = $7
+`,
+    [
+      updates.description ?? null,
+      updates.website ?? null,
+      updates.tiktok_url ?? null,
+      updates.instagram_url ?? null,
+      updates.booking_url ?? null,
+      updates.tripadvisor_url ?? null,
+      placeId,
+    ]
+  );
+}
 
 async function enrichPlace(place) {
   const updates = {};
@@ -281,7 +293,7 @@ async function enrichPlace(place) {
 
 async function main() {
   // Priority order
-  const places = db.prepare(`
+  const pr = await query(`
     SELECT id, name, category, lat, lon, description, website, tiktok_url, instagram_url, booking_url, tripadvisor_url
     FROM places
     ORDER BY
@@ -293,7 +305,8 @@ async function main() {
         ELSE 20
       END,
       name
-  `).all();
+  `);
+  const places = pr.rows;
 
   // Filter to those needing work
   const needsWork = places.filter(p =>
@@ -312,15 +325,14 @@ async function main() {
       const updates = await enrichPlace(place);
 
       if (Object.keys(updates).length > 0) {
-        updateStmt.run(
-          updates.description || null,
-          updates.website || null,
-          updates.tiktok_url || null,
-          updates.instagram_url || null,
-          updates.booking_url || null,
-          updates.tripadvisor_url || null,
-          place.id
-        );
+        await applyLinkUpdates(place.id, {
+          description: updates.description || null,
+          website: updates.website || null,
+          tiktok_url: updates.tiktok_url || null,
+          instagram_url: updates.instagram_url || null,
+          booking_url: updates.booking_url || null,
+          tripadvisor_url: updates.tripadvisor_url || null,
+        });
         for (const key of Object.keys(updates)) {
           if (stats[key] !== undefined) stats[key]++;
         }
@@ -336,17 +348,18 @@ async function main() {
   }
 
   // Final summary
-  const summary = db.prepare(`
+  const sumr = await query(`
     SELECT
-      COUNT(*) as total,
-      SUM(CASE WHEN description IS NOT NULL AND description != '' THEN 1 ELSE 0 END) as descs,
-      SUM(CASE WHEN website IS NOT NULL AND website != '' THEN 1 ELSE 0 END) as sites,
-      SUM(CASE WHEN tiktok_url IS NOT NULL AND tiktok_url != '' THEN 1 ELSE 0 END) as tiktoks,
-      SUM(CASE WHEN instagram_url IS NOT NULL AND instagram_url != '' THEN 1 ELSE 0 END) as instagrams,
-      SUM(CASE WHEN booking_url IS NOT NULL AND booking_url != '' THEN 1 ELSE 0 END) as bookings,
-      SUM(CASE WHEN tripadvisor_url IS NOT NULL AND tripadvisor_url != '' THEN 1 ELSE 0 END) as tripadvisors
+      COUNT(*)::bigint AS total,
+      SUM(CASE WHEN description IS NOT NULL AND description != '' THEN 1 ELSE 0 END)::bigint AS descs,
+      SUM(CASE WHEN website IS NOT NULL AND website != '' THEN 1 ELSE 0 END)::bigint AS sites,
+      SUM(CASE WHEN tiktok_url IS NOT NULL AND tiktok_url != '' THEN 1 ELSE 0 END)::bigint AS tiktoks,
+      SUM(CASE WHEN instagram_url IS NOT NULL AND instagram_url != '' THEN 1 ELSE 0 END)::bigint AS instagrams,
+      SUM(CASE WHEN booking_url IS NOT NULL AND booking_url != '' THEN 1 ELSE 0 END)::bigint AS bookings,
+      SUM(CASE WHEN tripadvisor_url IS NOT NULL AND tripadvisor_url != '' THEN 1 ELSE 0 END)::bigint AS tripadvisors
     FROM places
-  `).get();
+  `);
+  const summary = sumr.rows[0];
 
   console.log(`\nDone! Added: desc:${stats.description} web:${stats.website} trip:${stats.tripadvisor_url} book:${stats.booking_url} ig:${stats.instagram_url} tt:${stats.tiktok_url}`);
   console.log(`\nDatabase totals (${summary.total} places):`);
@@ -357,7 +370,7 @@ async function main() {
   console.log(`  Instagram: ${summary.instagrams}`);
   console.log(`  TikTok: ${summary.tiktoks}`);
 
-  db.close();
+  await closePool();
 }
 
 main().catch(err => {

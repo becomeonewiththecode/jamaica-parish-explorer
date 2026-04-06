@@ -10,7 +10,7 @@ This document provides a quick reference for all API endpoints.
 
 ### `GET /api/health`
 
-Server health check used by the status board. Returns uptime and provider health snapshots.
+Server health check used by the status board. Returns uptime, provider health snapshots, and **map-data OSM rebuild** status (no auth).
 
 | Field | Description |
 |-------|-------------|
@@ -20,6 +20,7 @@ Server health check used by the status board. Returns uptime and provider health
 | `providers` | Weather provider health (Open-Meteo, WeatherAPI, OpenWeatherMap) |
 | `waveProviders` | Wave/marine provider health |
 | `flightProviders` | Flight provider health (AeroDataBox, RapidAPI, OpenSky, adsb.lol) |
+| `mapDataRebuild` | Snapshot of the background **Rebuild map data** job: `inProgress`, `phase`, `progressPercent`, `currentStepLabel`, `lastStartedAt`, `lastFinishedAt`, `lastError`, `lastSummary` (e.g. `totalPlaces`, `osmStillFailedAfterRetries`), `sections` (per-category `status`, `httpStatus`, `found`, …), `includeAirportsPlanned`. Same core fields as `GET /api/admin/rebuild-inventory/status` but **without** `dataSnapshot` (admin-only). |
 
 ### `POST /api/admin/restart`
 
@@ -31,6 +32,68 @@ Triggers a PM2 process restart. Requires `X-Admin-Token` header matching `ADMIN_
 | `target` | body | `"api"`, `"status"`, or `"all"` (default `"all"`) |
 
 Returns `403` if token is missing or invalid.
+
+If `target` is `api` or `all`, the API server may rebuild the React client in production (only when it detects that `client/` source files are newer than `client/dist/`). The JSON response includes `clientBuildRebuilt` and (when a rebuild occurs) a truncated `clientBuild` output.
+
+### `GET /api/admin/database/backup`
+
+Downloads a **plain SQL** dump of the PostgreSQL database (`pg_dump` with `--clean --if-exists --no-owner --no-acl`). Requires `X-Admin-Token` matching `ADMIN_RESTART_TOKEN`. The API host must have **`pg_dump`** on `PATH` (e.g. `postgresql-client` in Docker).
+
+**Response:** `200` with `Content-Disposition: attachment` and SQL body, or `403` / `503` (client tools missing) / `500` with JSON on failure before streaming starts.
+
+### `GET /api/admin/database/summary`
+
+Returns **`COUNT(*)`** for core tables (`parishes`, `places`, `airports`, `notes`, `features`, `flights`, `cruise_ports`, `cruise_calls`). Requires `X-Admin-Token`.
+
+**Response `200` JSON:** `ok`, `counts` (per-table number or `null` if that table failed), `tableErrors` (optional per-table messages), `isNonEmpty` (true if any successful count is greater than zero), `hasContentData` (true if places, airports, notes, or features have rows). **`500`** if the database cannot be queried at all.
+
+**Admin site:** proxied as **`GET /api/database/summary`** (session auth; admin adds the token to the API request).
+
+### `POST /api/admin/database/restore`
+
+Restores from an uploaded **plain SQL** backup. Requires `X-Admin-Token`. **Multipart form:** field **`backup`** (file), field **`confirm`** must be exactly **`RESTORE`**. Runs **`psql`** with `ON_ERROR_STOP` against `DATABASE_URL` / `POSTGRES_*`.
+
+**Limits:** default max upload **512 MiB**; override with **`ADMIN_DB_RESTORE_MAX_BYTES`** on the API server.
+
+**PostgreSQL versions:** dumps taken with **PostgreSQL 17+** `pg_dump` may include `SET transaction_timeout = …`, which **PostgreSQL 16** rejects. The restore handler strips that line so Compose’s default **`postgres:16-alpine`** can import such files. For other version mismatches, use matching server/client major versions or edit the SQL manually.
+
+**Response:** `200` `{ ok: true, message }` on success, or `400` / `403` / `413` / `500` with `detail` (stderr) on failure.
+
+**Admin site (port 5556):** authenticated session proxies these as **`GET /api/database/backup`**, **`GET /api/database/summary`**, and **`POST /api/database/restore`** (no admin token in the browser — the admin process adds `X-Admin-Token` when calling the API).
+
+### `GET /api/admin/rebuild-inventory/status`
+
+Map-data rebuild job status. Requires `X-Admin-Token`.
+
+**Response** includes the same fields exposed publicly on **`mapDataRebuild`**, plus **`dataSnapshot`** (live `COUNT(*)` from the database):
+
+| Field | Description |
+|-------|-------------|
+| `placesCount` | Rows in `places` (null if the query failed) |
+| `placesQueryable` | Whether `places` could be counted |
+| `hasExistingPlacesData` | `true` when `placesCount > 0`; `null` if unknown |
+| `airportsCount` / `notesCount` | Optional counts (`notes` are **not** deleted by default rebuild; selective `notes_clear` does) |
+| `wipeWarning` | Human-readable summary for operators (bind-mounted Postgres persists until rebuild or manual removal) |
+
+### `POST /api/admin/rebuild-inventory`
+
+Requires `X-Admin-Token`.
+
+**Without `targets` (or non-array):** starts the **full** rebuild (schema, parishes, **`DELETE FROM places`**, OSM ingest, optional static airports) — same as `npm run db:rebuild` / `db:rebuild:all`.
+
+**With `targets` (non-empty array):** runs only the selected steps in order: `parishes` → `features` → `places` → `airports` → `notes_clear` → `flights` → `cruise_ports` → `cruise_calls`. The **`places`** step still runs parish seed (if needed), **`DELETE FROM places`** (when `clearPlaces` is true), and OSM ingest. **`notes_clear`** deletes **all** rows in **`notes`** (user content). **`flights`** triggers scheduled + live provider refresh. **`cruise_ports`** upserts default Jamaica ports; **`cruise_calls`** re-scrapes schedules (ignores the 6h cache). Only one job runs at a time (**`409`** if busy).
+
+| Body field | Description |
+|------------|-------------|
+| `targets` | Optional string array of step keys (see list above). When present and non-empty, selective mode is used. |
+| `includeAirports` | With **`places`**: if `true`, run static airport seed **after** OSM. Also use **`airports`** alone to seed without OSM. |
+| `clearPlaces` | Default `true` — clears `places` before OSM when `places` is in `targets` or for full rebuild |
+| `confirmWipe` | Required **`true`** when the **`places`** step would delete rows (or count unknown), same as full rebuild — else **`400`** `CONFIRM_WIPE_REQUIRED` |
+| `confirmClearNotes` | Required **`true`** when `notes_clear` is in `targets` — else **`400`** `CONFIRM_CLEAR_NOTES_REQUIRED` |
+
+Returns **`409`** if a rebuild is already running.
+
+**Admin site:** proxies as **`GET /api/rebuild-inventory/status`** and **`POST /api/rebuild-inventory`** (checkboxes for each section, confirmations, `confirmWipe` / `confirmClearNotes` as needed).
 
 ---
 

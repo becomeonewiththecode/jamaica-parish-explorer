@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Jamaican flag favicon (green field + black saltire outline + gold saltire) -->
+  <rect width="256" height="256" fill="#009E60"/>
+
+  <!-- Draw black outline bands first, then gold inner bands -->
+  <g transform="translate(128 128)">
+    <!-- Black saltire outline -->
+    <rect x="-20" y="-128" width="40" height="256" fill="#000000" transform="rotate(45)"/>
+    <rect x="-20" y="-128" width="40" height="256" fill="#000000" transform="rotate(-45)"/>
+
+    <!-- Gold inner saltire -->
+    <rect x="-16" y="-128" width="32" height="256" fill="#FCD116" transform="rotate(45)"/>
+    <rect x="-16" y="-128" width="32" height="256" fill="#FCD116" transform="rotate(-45)"/>
+  </g>
+</svg>
+

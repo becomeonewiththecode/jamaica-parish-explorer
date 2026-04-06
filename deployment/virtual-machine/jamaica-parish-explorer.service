@@ -7,11 +7,17 @@ Type=simple
 User=jamaica
 WorkingDirectory=/opt/jamaica-parish-explorer
 Environment=NODE_ENV=production
-Environment=PORT=3000
+Environment=PORT=3001
+Environment=HOST=0.0.0.0
+# Optional: store SQLite DB and caches outside the repo directory
+# Environment=JAMAICA_DATA_DIR=/var/lib/jamaica-parish-explorer
+# Optional: admin dashboard auth (strongly recommended in production)
+# Environment=ADMIN_USER=admin
+# Environment=ADMIN_PASSWORD=changeme
+# Environment=ADMIN_RESTART_TOKEN=changeme
 ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-

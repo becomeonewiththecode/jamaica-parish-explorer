@@ -39,6 +39,13 @@ CREATE TABLE IF NOT EXISTS places (
     opening_hours TEXT,
     cuisine     TEXT,
     stars       INTEGER,
+    description   TEXT,
+    image_url     TEXT,
+    menu_url      TEXT,
+    tiktok_url    TEXT,
+    instagram_url TEXT,
+    booking_url   TEXT,
+    tripadvisor_url TEXT,
     fetched_at  TEXT DEFAULT (datetime('now'))
 );
 
@@ -68,6 +75,28 @@ CREATE INDEX IF NOT EXISTS idx_features_parish ON features(parish_id);
 CREATE INDEX IF NOT EXISTS idx_places_parish ON places(parish_id);
 CREATE INDEX IF NOT EXISTS idx_places_category ON places(category);
 CREATE INDEX IF NOT EXISTS idx_places_osm ON places(osm_id);
+
+-- Airports (static seed + optional image crawl; table must exist for /api even when not seeded)
+CREATE TABLE IF NOT EXISTS airports (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    code        TEXT UNIQUE NOT NULL,
+    icao        TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    short_name  TEXT NOT NULL,
+    type        TEXT NOT NULL,
+    lat         REAL NOT NULL,
+    lon         REAL NOT NULL,
+    parish_slug TEXT NOT NULL,
+    named_after TEXT NOT NULL,
+    opened      TEXT NOT NULL,
+    elevation   TEXT NOT NULL,
+    runway      TEXT NOT NULL,
+    operator    TEXT NOT NULL,
+    serves      TEXT NOT NULL,
+    website     TEXT,
+    image_url   TEXT,
+    historical_facts TEXT NOT NULL
+);
 
 -- Cruise ports (logical ports used for schedules and AIS-linked cruise data)
 CREATE TABLE IF NOT EXISTS cruise_ports (

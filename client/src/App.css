@@ -431,8 +431,9 @@
 
 .map-top-grid {
   display: grid;
-  grid-template-columns: auto minmax(380px, auto) minmax(220px, 320px);
-  gap: 12px;
+  /* Center the Live Data controls (middle column) exactly above the map. */
+  grid-template-columns: 1fr auto 1fr;
+  gap: 6px;
   align-items: center;
   justify-content: center;
   width: 100%;
@@ -440,7 +441,34 @@
 }
 
 .map-top-grid.has-parish {
-  grid-template-columns: minmax(140px, auto) auto minmax(380px, auto) minmax(220px, 320px);
+  grid-template-columns: minmax(140px, auto) auto minmax(340px, auto) minmax(220px, 300px);
+}
+
+.admin-login-link {
+  position: fixed;
+  top: 18px;
+  right: 16px;
+  z-index: 1155; /* above .map-top-strip (1100), below popup modals (1200+) */
+  background: rgba(10, 22, 40, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #1e3a5f;
+  border-radius: 20px;
+  padding: 8px 12px;
+  color: #7a9cc6;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.admin-login-link:hover {
+  border-color: #f0c040;
+  color: #f0c040;
+  background: rgba(240, 192, 64, 0.10);
 }
 
 .map-top-cell {
@@ -457,7 +485,8 @@
 .map-top-cell.zoom-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
+  justify-content: flex-end;
 }
 
 .map-top-cell.toggles-cell {
@@ -465,7 +494,7 @@
   flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .vessel-leaflet-icon {
@@ -559,11 +588,12 @@
 
 .map-top-cell.search-cell {
   display: flex;
-  justify-content: stretch;
+  justify-content: flex-start;
 }
 
 .map-top-cell.search-cell .search-bar {
-  width: 100%;
+  width: 280px;
+  max-width: 280px;
   min-width: 0;
 }
 
@@ -860,6 +890,94 @@
   color: #f0c040;
 }
 
+/* Live Data layers dropdown (flights / weather / waves / vessels) */
+.live-data-dropdown-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.live-data-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 240px;
+  background: rgba(10, 22, 40, 0.96);
+  backdrop-filter: blur(10px);
+  border: 1px solid #1e3a5f;
+  border-radius: 12px;
+  padding: 10px;
+  z-index: 1150;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+.live-data-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 6px;
+  color: #c0d8c0;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.live-data-menu-label {
+  color: #5a7a9a;
+  white-space: nowrap;
+}
+
+.live-data-divider {
+  height: 1px;
+  background: rgba(30, 58, 95, 0.7);
+  margin: 6px 0;
+}
+
+.live-data-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.live-data-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.live-data-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: rgba(11, 16, 32, 0.9);
+  border: 1px solid #1e3a5f;
+  border-radius: 999px;
+  transition: all 0.15s ease;
+}
+
+.live-data-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  top: 2px;
+  background: #5a7a9a;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+
+.live-data-switch input:checked + .live-data-slider {
+  background: rgba(240, 192, 64, 0.18);
+  border-color: #f0c040;
+}
+
+.live-data-switch input:checked + .live-data-slider::before {
+  transform: translateX(20px);
+  background: #f0c040;
+}
+
 /* Flight arrival/departure icon colors */
 .flight-icon-arrival {
   color: #4caf50;
@@ -1043,8 +1161,8 @@
 .zoom-level-control {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: 3px;
+  padding: 6px 10px;
   background: rgba(10, 22, 40, 0.85);
   backdrop-filter: blur(8px);
   border: 1px solid #1e3a5f;
@@ -1056,18 +1174,22 @@
 .zoom-level-label {
   color: #5a7a9a;
   font-weight: 600;
+  font-size: 0.6rem;
+  /* Shrink: keep the label as a semantic hint, but don't render the extra width. */
+  display: none;
 }
 
 .zoom-level-value {
   color: #f0c040;
   font-weight: 700;
-  min-width: 18px;
+  min-width: 12px;
   text-align: center;
+  font-size: 0.72rem;
 }
 
 .zoom-level-btn {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1075,7 +1197,7 @@
   border: 1px solid #1e3a5f;
   border-radius: 50%;
   color: #b0c4de;
-  font-size: 0.85rem;
+  font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -2118,7 +2240,7 @@
 
 /* SEARCH BAR — inside .map-top-strip, centered with controls */
 .search-bar {
-  width: 323px;
+  width: 280px;
   flex-shrink: 0;
 }
 
@@ -3165,15 +3287,15 @@
   }
 
   .zoom-level-control {
-    padding: 4px 6px;
+    padding: 4px 8px;
     gap: 2px;
   }
 
   .zoom-level-btn {
-    width: 28px;
-    height: 28px;
-    min-width: 28px;
-    min-height: 28px;
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    min-height: 16px;
   }
 
   .flight-toggle-btn {
@@ -3342,6 +3464,12 @@
 
 /* Touch-friendly: ensure minimum tap targets where hover is poor */
 @media (hover: none) and (pointer: coarse) {
+  .zoom-level-control {
+    /* Avoid extra height from the wrapper border; other controls rely on their own button border only. */
+    border: 0;
+    min-height: 44px;
+  }
+
   .zoom-level-btn {
     min-width: 44px;
     min-height: 44px;
@@ -3364,5 +3492,12 @@
 
   .search-input-wrap {
     min-height: 44px;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .admin-login-link {
+    min-height: 44px;
+    padding: 10px 14px;
   }
 }

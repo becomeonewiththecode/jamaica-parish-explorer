@@ -74,7 +74,7 @@ OPENSKY_CLIENT_SECRET=<your-opensky-client-secret>
 
 - **Scheduled flights (AeroDataBox):** Polled every **15 minutes** for KIN and MBJ.
 - **Live radar (adsb.lol, OpenSky):** Polled every **30 seconds** for all Jamaica airports (per-airport radius plus Jamaica-wide).
-- **Startup behaviour:** On server boot, the server checks for a persisted cache file (`server/.flight-cache.json`). If fresh scheduled flight data exists (less than 15 minutes old), it is restored into memory and the startup AeroDataBox fetch is **skipped** to avoid unnecessary paid API calls. Route cache entries still within their 2-hour TTL are also restored. If the cache is stale or missing, the first fetch runs immediately as before.
+- **Startup behaviour:** On server boot, the server checks for a persisted cache file (path: `$JAMAICA_DATA_DIR/.flight-cache.json`; default `server/.flight-cache.json` when `JAMAICA_DATA_DIR` is unset — see `server/data-dir.js`). If fresh scheduled flight data exists (less than 15 minutes old), it is restored into memory and the startup AeroDataBox fetch is **skipped** to avoid unnecessary paid API calls. Route cache entries still within their 2-hour TTL are also restored. If the cache is stale or missing, the first fetch runs immediately as before.
 
 ### Fetch Sequence (per poll cycle)
 
@@ -90,7 +90,7 @@ OPENSKY_CLIENT_SECRET=<your-opensky-client-secret>
 **Cache cleanup (every 2 min):**  
 A scheduled job removes **live** landed arrivals and departed departures from the cache once they are more than **45 minutes** past their completed time (from radar). **Scheduled** (AeroDataBox) flights are never removed by the server — they often have past scheduled times and would otherwise be wiped; the client hides completed scheduled flights after 45 minutes.
 
-**Cache persistence:** After each scheduled fetch and every 5 minutes for route data, the server writes both the per-airport scheduled flights and the route lookup cache to `server/.flight-cache.json`. This file is restored on startup so server restarts within the poll interval do not trigger redundant AeroDataBox (paid) or route lookup API calls.
+**Cache persistence:** After each scheduled fetch and every 5 minutes for route data, the server writes both the per-airport scheduled flights and the route lookup cache to `$JAMAICA_DATA_DIR/.flight-cache.json` (default `server/.flight-cache.json`). This file is restored on startup so server restarts within the poll interval do not trigger redundant AeroDataBox (paid) or route lookup API calls.
 
 **Provider health on restart:** When the scheduled flight cache is restored from disk, the AeroDataBox and RapidAPI provider health snapshots are pre-populated with `lastOk: true` and the timestamp of the cached data. This ensures the status board shows these providers as online immediately after a restart, rather than "not checked yet" until the next scheduled poll (up to 15 minutes).
 
@@ -141,11 +141,11 @@ Scheduled flights (AeroDataBox) are cross-referenced with live radar so the boar
 
 ### Database Table
 
-Flight records are stored in SQLite (`jamaica.db`) in the `flights` table:
+Flight records are stored in PostgreSQL (`flights` table, `DATABASE_URL`):
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | INTEGER | Auto-increment primary key |
+| `id` | BIGSERIAL | Primary key |
 | `flight_number` | TEXT | Airline flight code (e.g. AA 1986) |
 | `airport` | TEXT | Jamaica airport IATA code (KIN, MBJ, OCJ, KTP) |
 | `status` | TEXT | Flight status (Arrived, Expected, Departed, Approaching, etc.) |
@@ -212,7 +212,10 @@ Queries stored flight records from the database.
 
 ### Map Markers (FlightTracker component)
 
-When "Live Flights" is toggled on:
+Live Flights are controlled by the flight layer (`showFlights` in `MapSection`):
+- **Initial load:** Live Flights are **OFF by default**.
+- Enabled by the **✈ Flights** switch inside the **✈ Live Data** dropdown (also affected by **✈ Live Data (All)** master switch).
+- When Live Flights are enabled, the map shows:
 - **AeroDataBox airports (KIN, MBJ):** Flight count badges appear at airport positions showing arrival/departure counts (e.g. `↓13 ↑12`)
 - **Live aircraft:** Plane icons at actual aircraft positions, rotated to match heading. **Icons** match the typecode category: helicopter, cargo, business, small, widebody, and narrow each have a distinct inline SVG shape; **color** is from altitude (see altitude legend at bottom of map).
 - Clicking a flight count badge opens the airport's detail view in the InfoSection panel
@@ -247,7 +250,8 @@ Parishes containing airports (Kingston, St. James, St. Mary) include an **Airpor
 | File | Purpose |
 |------|---------|
 | `server/routes/flights.js` | API routes, data fetching, polling, OAuth, DB storage, disk-persistence; contains `classifyLiveFlight()`, `getCallsignMatchKeys()`, `confirmFlightStatuses()`, `removeCompletedFlightsFromCache()` |
-| `server/.flight-cache.json` | Auto-generated persisted cache (scheduled flights + route lookups); restored on startup to avoid redundant API calls. Git-ignored |
+| `server/data-dir.js` | Resolves `JAMAICA_DATA_DIR` (or `server/`) for **JSON cache paths only** — not PostgreSQL; relational data uses `DATABASE_URL` |
+| `$JAMAICA_DATA_DIR/.flight-cache.json` | Auto-generated persisted cache (scheduled flights + route lookups); default location is `server/.flight-cache.json`. Restored on startup to avoid redundant API calls. Git-ignored |
 | `server/db/schema.sql` | Database schema including `flights` table |
 | `server/.env` | API credentials (gitignored) |
 | `client/src/data/aircraftTypeDesignators.js` | Typecode → icon category (ICAO + TCCA Standard 421.40) |

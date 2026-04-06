@@ -22,7 +22,7 @@ flowchart LR
       RouteCache["routeCache (Map)<br/>callsign → origin/dest ICAO<br/>TTL: 2 hours"]
     end
 
-    DiskCache[("server/.flight-cache.json<br/>(disk persistence)")]
+    DiskCache[("$JAMAICA_DATA_DIR/.flight-cache.json<br/>default: server/.flight-cache.json<br/>path via server/data-dir.js")]
 
     subgraph FlightJobs["Background polling"]
       ScheduledPoll["fetchScheduledFlights()<br/>every 15 min<br/>skipped on startup if cache fresh"]
@@ -37,7 +37,7 @@ flowchart LR
   end
 
   %% Frontend calls backend
-  Map -->|"needs live flights layer"| FlightsApiClient
+  Map -->|"needs ✈ Flights switch in Live Data dropdown (default OFF)"| FlightsApiClient
   AirportViews -->|"needs flight board"| FlightsApiClient
   FlightsApiClient -->|"GET /api/flights"| FlightsEndpoint
 

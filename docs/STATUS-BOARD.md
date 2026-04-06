@@ -5,7 +5,7 @@ The status board is a lightweight dashboard that reports whether key backend ser
 ### What it checks
 
 **Internal services** (checked via the API server):
-- **API health**: `GET /api/health` (Express server up, basic info).
+- **API health**: `GET /api/health` (Express server up, basic info, plus embedded **map-data rebuild** state in `mapDataRebuild` for JSON/monitoring — the HTML dashboard does not display that block yet). **`mapDataRebuild`** does not include admin-only **`dataSnapshot`** row counts; use **`GET /api/admin/rebuild-inventory/status`** with `X-Admin-Token` for those.
 - **Island weather**: `GET /api/weather/island` (multi‑provider aggregate across Open‑Meteo, WeatherAPI, OpenWeather).
 - **Wave data**: `GET /api/weather/waves` (Open‑Meteo Marine).
 - **Flights data**: `GET /api/flights` (scheduled + live flight feed).
@@ -77,8 +77,9 @@ Each section title uses a traffic-light colour scheme:
   - **Environment variables** (optional):
     - `STATUS_PORT` (default `5555`) — port for the status board.
     - `STATUS_HOST` (default `0.0.0.0`) — bind address; use `0.0.0.0` so the board is reachable on your LAN (e.g. `http://10.0.0.205:5555/`).
-    - `API_HOST` (default `localhost`) — where the main API is reachable.
+    - `API_HOST` (default `127.0.0.1`) — outbound hostname for checks. The value `localhost` is treated as `127.0.0.1` so Node does not prefer IPv6 `::1` while the API listens on IPv4 `0.0.0.0`.
     - `API_PORT` (default `3001`) — port for the main API.
+    - `CLIENT_HOST` (optional) — same rules as `API_HOST` for the Vite (5173) probe; defaults to `127.0.0.1`.
     - `STATUS_REFRESH_MS` (default `60000` / 1 minute) — how often the browser UI refreshes `/status.json` (in ms).
 
 ### Implementation details
@@ -105,8 +106,10 @@ Each section title uses a traffic-light colour scheme:
         ok: true,
         uptime: process.uptime(),
         env: process.env.NODE_ENV || 'development',
-        providers,        // weather provider health from routes/weather.js
-        flightProviders,  // flight provider health from routes/flights.js
+        providers,         // weather provider health from routes/weather.js
+        waveProviders,     // wave/marine provider health
+        flightProviders,   // flight provider health from routes/flights.js
+        mapDataRebuild,    // OSM ingest job: getRebuildInventoryState() from db/rebuild-inventory.js
       });
     });
     ```
@@ -135,6 +138,10 @@ Each section title uses a traffic-light colour scheme:
     { "target": "status" }   // pm2 restart jamaica-status
     { "target": "all" }      // pm2 restart all (default)
     ```
+
+- **Client rebuild behavior (production)**:
+  - When `target` is `api` or `all`, the API server checks whether the React client build needs to be regenerated (based on `client/` source changes vs `client/dist/` output).
+  - If needed, it runs `npm run build` before restarting `jamaica-api`, so UI changes (e.g. title/favicon) are picked up automatically.
 
 - **How authentication works**:
 

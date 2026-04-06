@@ -12,7 +12,7 @@
  *   node server/db/validate-places.js --report-only # Only generate report from current data
  */
 
-const db = require('./connection');
+const { query, closePool } = require('./pg-query');
 const path = require('path');
 const fs = require('fs');
 
@@ -83,18 +83,19 @@ function standardizePhone(raw) {
   return raw; // fallback
 }
 
-function phase1_standardizePhones() {
+async function phase1_standardizePhones() {
   console.log('\n=== PHASE 1: Standardizing phone numbers ===');
-  const rows = db.prepare("SELECT id, phone FROM places WHERE phone IS NOT NULL AND phone <> '' AND phone <> 'N/F'").all();
+  const { rows } = await query(
+    "SELECT id, phone FROM places WHERE phone IS NOT NULL AND phone <> '' AND phone <> 'N/F'"
+  );
   console.log(`  Found ${rows.length} phone numbers to standardize`);
 
-  const update = db.prepare('UPDATE places SET phone = ? WHERE id = ?');
   let changed = 0;
 
   for (const row of rows) {
     const standardized = standardizePhone(row.phone);
     if (standardized !== row.phone) {
-      update.run(standardized, row.id);
+      await query('UPDATE places SET phone = $1 WHERE id = $2', [standardized, row.id]);
       changed++;
     }
   }
@@ -177,14 +178,7 @@ async function findOpeningHours(name, category) {
 async function phase2_enrich() {
   console.log('\n=== PHASE 2: Web enrichment ===');
 
-  // Priority order: tourist-facing categories first
-  const priorityCategories = [
-    'restaurant', 'cafe', 'hotel', 'resort', 'guest_house',
-    'tourist_attraction', 'beach', 'nightlife', 'car_rental',
-    'shopping', 'landmark', 'stadium', 'park',
-  ];
-
-  const places = db.prepare(`
+  const pr = await query(`
     SELECT id, name, category, website, tiktok_url, menu_url, opening_hours, phone, address
     FROM places
     ORDER BY
@@ -197,7 +191,8 @@ async function phase2_enrich() {
         ELSE 20
       END,
       name
-  `).all();
+  `);
+  const places = pr.rows;
 
   // Only enrich items that are missing key web-findable fields
   const needsWork = places.filter(p =>
@@ -207,10 +202,6 @@ async function phase2_enrich() {
   );
 
   console.log(`  ${needsWork.length} places need enrichment out of ${places.length} total`);
-
-  const updateWebsite = db.prepare('UPDATE places SET website = ? WHERE id = ?');
-  const updateTiktok = db.prepare('UPDATE places SET tiktok_url = ? WHERE id = ?');
-  const updateMenu = db.prepare('UPDATE places SET menu_url = ? WHERE id = ?');
 
   let stats = { website: 0, tiktok: 0, menu: 0, errors: 0 };
   let ddgCalls = 0;
@@ -230,7 +221,7 @@ async function phase2_enrich() {
         const site = await findWebsite(place.name, place.category);
         ddgCalls++;
         if (site) {
-          updateWebsite.run(site, place.id);
+          await query('UPDATE places SET website = $1 WHERE id = $2', [site, place.id]);
           stats.website++;
         }
         await sleep(350);
@@ -241,7 +232,7 @@ async function phase2_enrich() {
         const tiktok = await findTikTok(place.name);
         ddgCalls++;
         if (tiktok) {
-          updateTiktok.run(tiktok, place.id);
+          await query('UPDATE places SET tiktok_url = $1 WHERE id = $2', [tiktok, place.id]);
           stats.tiktok++;
         }
         await sleep(350);
@@ -252,7 +243,7 @@ async function phase2_enrich() {
         const menu = await findMenu(place.name);
         ddgCalls++;
         if (menu) {
-          updateMenu.run(menu, place.id);
+          await query('UPDATE places SET menu_url = $1 WHERE id = $2', [menu, place.id]);
           stats.menu++;
         }
         await sleep(350);
@@ -275,7 +266,7 @@ async function phase2_enrich() {
 // PHASE 3: Mark remaining empty fields as "N/F"
 // ============================================================
 
-function phase3_markNF() {
+async function phase3_markNF() {
   console.log('\n=== PHASE 3: Marking empty fields as N/F ===');
 
   const fields = [
@@ -290,9 +281,14 @@ function phase3_markNF() {
   const results = {};
 
   for (const field of fields) {
-    const count = db.prepare(`SELECT COUNT(*) as c FROM places WHERE ${field.col} IS NULL OR ${field.col} = ''`).get().c;
+    const cr = await query(
+      `SELECT COUNT(*)::bigint AS c FROM places WHERE ${field.col} IS NULL OR ${field.col} = ''`
+    );
+    const count = Number(cr.rows[0].c);
     if (count > 0) {
-      db.prepare(`UPDATE places SET ${field.col} = 'N/F' WHERE ${field.col} IS NULL OR ${field.col} = ''`).run();
+      await query(
+        `UPDATE places SET ${field.col} = 'N/F' WHERE ${field.col} IS NULL OR ${field.col} = ''`
+      );
     }
     results[field.col] = count;
     console.log(`  ${field.label}: marked ${count} entries as N/F`);
@@ -305,7 +301,7 @@ function phase3_markNF() {
 // PHASE 4: Generate validation report
 // ============================================================
 
-function phase4_report() {
+async function phase4_report() {
   console.log('\n=== PHASE 4: Generating validation report ===');
 
   const REQUIRED_FIELDS = [
@@ -317,25 +313,38 @@ function phase4_report() {
     { col: 'address', label: 'Physical Address' },
   ];
 
-  const total = db.prepare('SELECT COUNT(*) as c FROM places').get().c;
+  const tc = await query('SELECT COUNT(*)::bigint AS c FROM places');
+  const total = Number(tc.rows[0].c);
 
   // Summary by field
   const fieldSummary = {};
   for (const field of REQUIRED_FIELDS) {
-    const nf = db.prepare(`SELECT COUNT(*) as c FROM places WHERE ${field.col} = 'N/F'`).get().c;
+    const nfr = await query(`SELECT COUNT(*)::bigint AS c FROM places WHERE ${field.col} = 'N/F'`);
+    const nf = Number(nfr.rows[0].c);
     const found = total - nf;
-    fieldSummary[field.col] = { label: field.label, found, notFound: nf, pct: ((found / total) * 100).toFixed(1) };
+    fieldSummary[field.col] = {
+      label: field.label,
+      found,
+      notFound: nf,
+      pct: ((found / total) * 100).toFixed(1),
+    };
   }
 
   // Summary by category
-  const categories = db.prepare('SELECT DISTINCT category FROM places ORDER BY category').all().map(r => r.category);
+  const catRows = await query('SELECT DISTINCT category FROM places ORDER BY category');
+  const categories = catRows.rows.map((r) => r.category);
   const categorySummary = {};
 
   for (const cat of categories) {
-    const catTotal = db.prepare('SELECT COUNT(*) as c FROM places WHERE category = ?').get(cat).c;
+    const ctr = await query('SELECT COUNT(*)::bigint AS c FROM places WHERE category = $1', [cat]);
+    const catTotal = Number(ctr.rows[0].c);
     const catFields = {};
     for (const field of REQUIRED_FIELDS) {
-      const nf = db.prepare(`SELECT COUNT(*) as c FROM places WHERE category = ? AND ${field.col} = 'N/F'`).get(cat).c;
+      const nfr2 = await query(
+        `SELECT COUNT(*)::bigint AS c FROM places WHERE category = $1 AND ${field.col} = 'N/F'`,
+        [cat]
+      );
+      const nf = Number(nfr2.rows[0].c);
       catFields[field.col] = { found: catTotal - nf, notFound: nf };
     }
     categorySummary[cat] = { total: catTotal, fields: catFields };
@@ -343,11 +352,12 @@ function phase4_report() {
 
   // Individual N/F entries grouped by category for follow-up
   const nfEntries = [];
-  const places = db.prepare(`
+  const plr = await query(`
     SELECT id, name, category, lat, lon, address, phone, website, opening_hours, tiktok_url, menu_url,
-           (SELECT p.name FROM parishes p WHERE p.id = places.parish_id) as parish_name
+           (SELECT p.name FROM parishes p WHERE p.id = places.parish_id) AS parish_name
     FROM places ORDER BY category, name
-  `).all();
+  `);
+  const places = plr.rows;
 
   for (const place of places) {
     const missing = [];
@@ -476,36 +486,36 @@ function phase4_report() {
 // ============================================================
 
 async function main() {
+  const tc0 = await query('SELECT COUNT(*)::bigint AS c FROM places');
   console.log('====================================');
   console.log('  Places Validation & Enrichment');
   console.log('====================================');
-  console.log(`  Total places: ${db.prepare('SELECT COUNT(*) as c FROM places').get().c}`);
+  console.log(`  Total places: ${tc0.rows[0].c}`);
   console.log(`  Mode: ${REPORT_ONLY ? 'report-only' : SKIP_ENRICH ? 'skip-enrich' : 'full'}`);
 
   if (!REPORT_ONLY) {
-    // Phase 1: Standardize phones
-    phase1_standardizePhones();
+    await phase1_standardizePhones();
 
-    // Phase 2: Web enrichment (unless skipped)
     if (!SKIP_ENRICH) {
       await phase2_enrich();
     }
 
-    // Phase 3: Mark N/F
-    phase3_markNF();
+    await phase3_markNF();
   }
 
-  // Phase 4: Report
-  const report = phase4_report();
+  const report = await phase4_report();
 
   console.log('\n====================================');
   console.log('  DONE');
   console.log(`  ${report.nfCount} items have at least one N/F field`);
   console.log(`  Reports: ${report.mdPath}`);
   console.log('====================================');
+
+  await closePool();
 }
 
-main().catch(err => {
+main().catch(async (err) => {
   console.error('Fatal error:', err);
+  await closePool().catch(() => {});
   process.exit(1);
 });

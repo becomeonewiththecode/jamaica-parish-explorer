@@ -1,0 +1,24 @@
+# Never copy host node_modules — native addons (e.g. better-sqlite3) must be
+# installed inside the image (Alpine musl vs host glibc breaks at runtime).
+node_modules
+client/node_modules
+server/node_modules
+
+# Build outputs (rebuilt in Dockerfile)
+client/dist
+
+.git
+.gitignore
+**/.DS_Store
+*.md
+.env
+deployment/docker-compose/.env
+
+# Bind-mount data next to compose files (Postgres + JAMAICA_DATA_DIR). Owned by root/container
+# users — Docker cannot read them when sending build context; they must never be in the image.
+deployment/docker-compose/data
+
+# Cursor / IDE
+.cursor
+.vscode
+*.log

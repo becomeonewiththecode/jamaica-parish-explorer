@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: jamaica-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jamaica}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jamaica}
+      POSTGRES_DB: ${POSTGRES_DB:-jamaica}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  jamaica-parish-explorer:
+    image: maxwayne/jamaica-explorer:1.0
+    container_name: jamaica-explorer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=${PORT:-3001}
+      - HOST=0.0.0.0
+      - STATUS_HOST=0.0.0.0
+      - STATUS_PORT=5555
+      - ADMIN_HOST=0.0.0.0
+      - ADMIN_PORT=5556
+      # Browser links in admin (Swagger/health); API inside container stays on PORT
+      - ADMIN_PUBLIC_API_PORT=${HOST_PORT:-80}
+      - JAMAICA_DATA_DIR=/data
+      - POSTGRES_USER=${POSTGRES_USER:-jamaica}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-jamaica}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-jamaica}
+    ports:
+      # API server
+      - "${HOST_PORT:-80}:${PORT:-3001}"
+      # Status board
+      - "${STATUS_PORT:-5555}:5555"
+      # Admin dashboard
+      - "${ADMIN_PORT:-5556}:5556"
+    volumes:
+      - ./data/jamaica:/data
+    working_dir: /app
+
