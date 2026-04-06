@@ -179,7 +179,7 @@ docker compose -f deployment/docker-compose/docker-compose-build.yml up -d --bui
 
 **PostgreSQL** data and **JSON caches** use **bind mounts** under **`deployment/docker-compose/data/`** (paths relative to the compose file): **`data/postgres`** → Postgres, **`data/jamaica`** → **`/data`** (`JAMAICA_DATA_DIR`). Application code and `node_modules` stay in the image.
 
-**Easiest:** use the admin dashboard (**`ADMIN_PORT`**, default **5556**) → **Database backup & restore** (downloads `.sql` or uploads a dump with a **`RESTORE`** confirmation; see [`ADMIN-SITE.md`](./ADMIN-SITE.md)).
+**Easiest:** use the admin dashboard (**`ADMIN_PORT`**, default **5556**) → **Database** tab (downloads `.sql` or uploads a dump with a **`RESTORE`** confirmation; see [`ADMIN-SITE.md`](./ADMIN-SITE.md)).
 
 **CLI:** back up with `pg_dump` (from the host or a throwaway client container), not by copying Postgres data directories raw. Example if Postgres is reachable on the compose network:
 

@@ -7,11 +7,11 @@ The admin site is an authenticated dashboard for managing the Jamaica Parish Exp
 ## What it provides
 
 - **Quick links** to Swagger API docs, Status Board, Client App, and the Health endpoint (open in new tabs). The **Client App** link is resolved dynamically: it points to the Vite dev server (`CLIENT_PORT`, default 5173) when that server is reachable, and falls back to the production app URL (served by Express on `API_PORT`) when Vite is offline.
-- **PM2 process table** showing all managed processes with status, CPU, memory, restarts, and uptime. Auto-refreshes every 30 seconds.
-- **Restart controls** — buttons to restart the API server, Status Board, Admin site, or all PM2 processes. Proxies to the API server's `POST /api/admin/restart` endpoint with the `X-Admin-Token` header.
-- **Database backup & restore** — download a PostgreSQL **`.sql`** dump (`pg_dump` via `GET /api/database/backup` → API `GET /api/admin/database/backup`), or upload a backup with a **`RESTORE`** confirmation field (`POST /api/database/restore` → API `POST /api/admin/database/restore`). Requires **`ADMIN_RESTART_TOKEN`** on both admin and API; the API image should include **`postgresql-client`**. Restore overwrites existing database objects (destructive).
-- **Map data rebuild** — same dashboard card as **Restart Controls** (below the PM2 restart buttons): clears the `places` table and refetches POIs from OpenStreetMap (runs in the **background** on the API; often **10+ minutes** with polite Overpass pacing and automatic **retry rounds** for failed categories). With **bind-mounted** PostgreSQL, data persists on disk until you remove it or run this rebuild — the UI shows a **banner** with live **`places`** (and **`airports`** / **`notes`**) counts and a wipe warning; the API requires **`confirmWipe: true`** when existing POI rows would be deleted (or the count cannot be read). Optional checkbox to re-seed airport rows from static data (no image crawl). The UI shows a **progress bar**, **percent**, **current step**, and a **per-category list** (pending / running / ok / error with HTTP status). While a job is running, status is polled about every **1.5s**; when idle, about every **4s** (`GET /api/rebuild-inventory/status` via the admin proxy — requires session cookie + matching `ADMIN_RESTART_TOKEN` to the API). **`GET /api/health`** exposes **`mapDataRebuild`** without the admin-only **`dataSnapshot`** row counts. CLI equivalent: `npm run db:rebuild` or `npm run db:rebuild:all` from the project root. For Overpass env vars, retry behaviour, and data sources, see [Database and map data](./DATABASE-AND-MAP-DATA.md) and the [Admin site diagram](./ADMIN-SITE-DIAGRAM.md) (map rebuild flow).
-- **Inline Status Board** — collapsible iframe embedding the status board for quick reference without leaving the admin page.
+- **Top-level tabs** — **Operations** (PM2 process table and **Service restarts**), **Map data rebuild**, and **Database** (backup / restore). Open the status dashboard via the **Status Board** quick link (new tab).
+- **PM2 process table** — on the **Operations** tab: all managed processes with status, CPU, memory, restarts, and uptime. Auto-refreshes every 30 seconds.
+- **Restart controls** — on the **Operations** tab, **Service restarts** card: buttons to restart the API server, Status Board, Admin site, or all PM2 processes. Proxies to `POST /api/admin/restart` with the `X-Admin-Token` header.
+- **Database backup & restore** — **Database** top-level tab: **row counts** (`GET /api/database/summary`) show whether tracked tables are empty and list **`COUNT(*)`** per table; refresh when you open the tab or after a restore. Download **`.sql`** (`GET /api/database/backup`) or upload with **`RESTORE`** (`POST /api/database/restore`). Requires **`ADMIN_RESTART_TOKEN`**; API needs **`postgresql-client`**. Restore is destructive.
+- **Map data rebuild** — **Map data rebuild** top-level tab: full OSM rebuild flow, **`dataSnapshot`** banner, **`confirmWipe`**, progress UI, and admin proxy polling. Starting a rebuild switches to this tab. **`GET /api/health`** exposes **`mapDataRebuild`** without admin-only **`dataSnapshot`**. CLI: `npm run db:rebuild` / `db:rebuild:all`. See [Database and map data](./DATABASE-AND-MAP-DATA.md) and [Admin site diagram](./ADMIN-SITE-DIAGRAM.md).
 
 ---
 
@@ -63,12 +63,12 @@ All configuration is via environment variables in `server/.env`:
 | `ADMIN_USER` | `admin` | Login username |
 | `ADMIN_PASSWORD` | *(required)* | Login password — the server refuses to start without this |
 | `ADMIN_RESTART_TOKEN` | *(empty)* | Must match the API server's `ADMIN_RESTART_TOKEN` for restart commands to work |
-| `API_HOST` | `127.0.0.1` | Host the admin process uses to reach the API (`localhost` in env is normalized to `127.0.0.1` for the same IPv4/IPv6 reason as the status board) |
+| `API_HOST` | `127.0.0.1` | Host the admin process uses to reach the API (`localhost` in env is normalized to `127.0.0.1` for the same IPv4/IPv6 reason as the status board). **Inside Docker,** if the admin and API are not in the same container, `127.0.0.1` points at the admin container itself — set this to the **Compose service name** that runs the API (e.g. `jamaica-parish-explorer`) or `host.docker.internal` so **restart, rebuild, and database restore** proxies succeed. |
 | `API_PORT` | `3001` | Port the admin process uses to reach the API (internal / loopback) |
 | `ADMIN_PUBLIC_HOST` | *(from request)* | Optional fixed hostname for Swagger, health, status links, and iframe when `Host` is wrong behind a proxy |
 | `ADMIN_PUBLIC_API_PORT` | `API_PORT` | Port in those **browser** URLs when the API is published on a different host port (e.g. Docker `HOST_PORT` → container `3001`) |
 | `ADMIN_PUBLIC_STATUS_PORT` | `STATUS_PORT` | Same for the status board URL if its published port differs |
-| `STATUS_PORT` | `5555` | Port of the status board (used for links and iframe) |
+| `STATUS_PORT` | `5555` | Port of the status board (used for the **Status Board** quick link) |
 | `CLIENT_HOST` | `127.0.0.1` | Host used to probe whether the Vite dev server is running |
 | `CLIENT_PORT` | `5173` | Port of the Vite dev server (probe + browser URL when Vite is up) |
 | `ADMIN_PUBLIC_CLIENT_PORT` | `CLIENT_PORT` | Port in the browser URL for the client when Vite is up and the published port differs |

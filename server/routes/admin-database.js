@@ -1,7 +1,8 @@
 const express = require('express');
 const { spawn } = require('child_process');
 const multer = require('multer');
-const { resolveDatabaseUrl } = require('../db/pg-query');
+const { resolveDatabaseUrl, closePool } = require('../db/pg-query');
+const { getDatabaseSummary } = require('../db/database-summary');
 
 const router = express.Router();
 
@@ -10,6 +11,17 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: maxRestoreBytes },
 });
+
+/**
+ * pg_dump from PostgreSQL 17+ clients may emit SET transaction_timeout, which PG16 and earlier reject.
+ * Strip those lines so restores into PG16 (e.g. docker compose postgres:16-alpine) succeed.
+ */
+function stripUnsupportedPgDumpSessionVars(sqlText) {
+  return sqlText.replace(
+    /^\s*SET\s+(SESSION\s+)?transaction_timeout\s*=[^;\r\n]*;?\s*\r?\n?/gim,
+    ''
+  );
+}
 
 function requireAdminToken(req, res, next) {
   const expected = process.env.ADMIN_RESTART_TOKEN;
@@ -69,11 +81,23 @@ router.get('/backup', requireAdminToken, (req, res) => {
 });
 
 /**
+ * Row counts for main tables — see admin **Database** tab.
+ */
+router.get('/summary', requireAdminToken, async (req, res, next) => {
+  try {
+    const summary = await getDatabaseSummary();
+    res.json({ ok: true, ...summary });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * Restore from pg_dump plain SQL uploaded as multipart field `backup`.
  * Body field `confirm` must equal `RESTORE`.
  */
 router.post('/restore', requireAdminToken, (req, res, next) => {
-  upload.single('backup')(req, res, (err) => {
+  upload.single('backup')(req, res, async (err) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({
@@ -92,6 +116,16 @@ router.post('/restore', requireAdminToken, (req, res, next) => {
       return res.status(400).json({ ok: false, error: 'Missing backup file (multipart field name: backup)' });
     }
 
+    // Long-running restore: do not let Node close the socket while psql runs.
+    req.socket.setTimeout(0);
+
+    // Drop pooled connections so psql can run DROP/CREATE without tripping idle clients (avoids process crashes).
+    try {
+      await closePool();
+    } catch (e) {
+      console.warn('[admin-database] closePool before restore:', e && e.message ? e.message : e);
+    }
+
     const dbUrl = resolveDatabaseUrl();
     const child = spawn('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-f', '-'], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -106,7 +140,11 @@ router.post('/restore', requireAdminToken, (req, res, next) => {
       stdout += String(c);
     });
 
+    let responded = false;
+
     child.on('error', (e) => {
+      if (responded) return;
+      responded = true;
       if (e.code === 'ENOENT') {
         return res.status(503).json({
           ok: false,
@@ -117,9 +155,12 @@ router.post('/restore', requireAdminToken, (req, res, next) => {
       return next(e);
     });
 
-    child.stdin.end(req.file.buffer);
+    const sqlText = stripUnsupportedPgDumpSessionVars(req.file.buffer.toString('utf8'));
+    child.stdin.end(Buffer.from(sqlText, 'utf8'));
 
     child.on('close', (code) => {
+      if (responded) return;
+      responded = true;
       if (code !== 0) {
         return res.status(500).json({
           ok: false,

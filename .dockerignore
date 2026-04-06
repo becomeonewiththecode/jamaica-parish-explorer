@@ -14,6 +14,10 @@ client/dist
 .env
 deployment/docker-compose/.env
 
+# Bind-mount data next to compose files (Postgres + JAMAICA_DATA_DIR). Owned by root/container
+# users — Docker cannot read them when sending build context; they must never be in the image.
+deployment/docker-compose/data
+
 # Cursor / IDE
 .cursor
 .vscode

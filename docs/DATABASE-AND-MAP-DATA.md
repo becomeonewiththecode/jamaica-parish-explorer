@@ -19,7 +19,7 @@ See [`deployment/docker-compose/README.md`](../deployment/docker-compose/README.
 
 ## Backup and restore (PostgreSQL)
 
-- **Admin UI (recommended when the stack is up):** log in to the admin dashboard (default port **5556**) → **Database backup & restore**. Download produces a plain **`.sql`** file (`pg_dump` with `--clean --if-exists --no-owner --no-acl`). Upload restore requires typing **`RESTORE`** in the confirmation field; it runs **`psql`** with `ON_ERROR_STOP` and can **overwrite or drop** existing objects — treat backups as sensitive and test restores on a copy first.
+- **Admin UI (recommended when the stack is up):** log in to the admin dashboard (default port **5556**) → **Database** tab. Download produces a plain **`.sql`** file (`pg_dump` with `--clean --if-exists --no-owner --no-acl`). Upload restore requires typing **`RESTORE`** in the confirmation field; it runs **`psql`** with `ON_ERROR_STOP` and can **overwrite or drop** existing objects — treat backups as sensitive and test restores on a copy first.
 - **API (automation):** `GET /api/admin/database/backup` and `POST /api/admin/database/restore` with header **`X-Admin-Token`** matching **`ADMIN_RESTART_TOKEN`** (same secret as restart/rebuild). Max upload size defaults to **512 MiB**; set **`ADMIN_DB_RESTORE_MAX_BYTES`** to override.
 - **Prerequisites:** the API process host must have **`pg_dump`** and **`psql`** on `PATH` (Docker images install **`postgresql-client`**). If tools are missing, the API returns **503** for backup.
 - **CLI alternative:** `pg_dump` / `psql` from any machine that can reach Postgres — see [Startup guide](./STARTUP-GUIDE.md) (Docker section).
@@ -99,7 +99,7 @@ npm run seed:airports   # optional; or use static airport seed via rebuild with 
 
 **When to use:** New server, empty Compose `data/` directories, or you need a clean resync from OSM.
 
-1. **Admin (recommended if the API is up):** open the admin dashboard → **Rebuild map data** (see [Admin site](./ADMIN-SITE.md)). The UI shows live **`places`** / **`airports`** / **`notes`** counts (from **`dataSnapshot`** on **`GET …/rebuild-inventory/status`**) because bind-mounted PostgreSQL keeps data on disk until you remove it or run this wipe. Confirm the count-aware dialog; the API requires **`confirmWipe: true`** when existing POI rows would be deleted. Optionally check **Airports (static)**. The job runs **in the background**; watch the status panel and API logs.
+1. **Admin (recommended if the API is up):** open the admin dashboard → **Map data rebuild** tab (see [Admin site](./ADMIN-SITE.md)). The UI shows live **`places`** / **`airports`** / **`notes`** counts (from **`dataSnapshot`** on **`GET …/rebuild-inventory/status`**) because bind-mounted PostgreSQL keeps data on disk until you remove it or run this wipe. Confirm the count-aware dialog; the API requires **`confirmWipe: true`** when existing POI rows would be deleted. Optionally check **Airports (static)**. The job runs **in the background**; watch the status panel and API logs.
 2. **CLI:**
 
 ```bash
@@ -194,6 +194,6 @@ flowchart TD
 - **Airports:** repo static list; optional fast seed during rebuild or `npm run seed:airports` for images.
 - **Rich text/links on places:** `npm run enrich:places` (separate step, external Wikipedia / DuckDuckGo).
 - **Observability:** **`GET /api/health`** → **`mapDataRebuild`** for live rebuild progress without the admin token.
-- **Backups:** admin **Database backup & restore** or direct `pg_dump` — see [Backup and restore](#backup-and-restore-postgresql) above.
+- **Backups:** admin **Database** tab (backup & restore) or direct `pg_dump` — see [Backup and restore](#backup-and-restore-postgresql) above.
 
 For operations-focused setup (ports, PM2, Docker), see [Startup guide](./STARTUP-GUIDE.md).

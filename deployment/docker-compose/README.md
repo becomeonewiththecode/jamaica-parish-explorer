@@ -98,7 +98,7 @@ The app still connects to Postgres via **`POSTGRES_HOST=postgres`** (or **`DATAB
 
 These directories are listed in **`.gitignore`** at the repo root so database and cache files are not committed.
 
-**Backups:** use the admin UI (**`ADMIN_PORT`**, mapped like the status board) → **Database backup & restore**, or run `pg_dump` against the `postgres` service — see [`docs/DATABASE-AND-MAP-DATA.md`](../../docs/DATABASE-AND-MAP-DATA.md).
+**Backups:** use the admin UI (**`ADMIN_PORT`**, mapped like the status board) → **Database** tab, or run `pg_dump` against the `postgres` service — see [`docs/DATABASE-AND-MAP-DATA.md`](../../docs/DATABASE-AND-MAP-DATA.md). This stack uses **PostgreSQL 16** by default; SQL dumps produced by **PG 17+** clients may contain `SET transaction_timeout`, which the API strips on restore so imports still work.
 
 **Upgrading from SQLite-era compose** that stored `jamaica.db` on `/data`: migrate data with [`docs/DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](../../docs/DATA-MIGRATION-SQLITE-TO-POSTGRES.md), then rely on Postgres for all relational data.
 

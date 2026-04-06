@@ -41,15 +41,25 @@ Downloads a **plain SQL** dump of the PostgreSQL database (`pg_dump` with `--cle
 
 **Response:** `200` with `Content-Disposition: attachment` and SQL body, or `403` / `503` (client tools missing) / `500` with JSON on failure before streaming starts.
 
+### `GET /api/admin/database/summary`
+
+Returns **`COUNT(*)`** for core tables (`parishes`, `places`, `airports`, `notes`, `features`, `flights`, `cruise_ports`, `cruise_calls`). Requires `X-Admin-Token`.
+
+**Response `200` JSON:** `ok`, `counts` (per-table number or `null` if that table failed), `tableErrors` (optional per-table messages), `isNonEmpty` (true if any successful count is greater than zero), `hasContentData` (true if places, airports, notes, or features have rows). **`500`** if the database cannot be queried at all.
+
+**Admin site:** proxied as **`GET /api/database/summary`** (session auth; admin adds the token to the API request).
+
 ### `POST /api/admin/database/restore`
 
 Restores from an uploaded **plain SQL** backup. Requires `X-Admin-Token`. **Multipart form:** field **`backup`** (file), field **`confirm`** must be exactly **`RESTORE`**. Runs **`psql`** with `ON_ERROR_STOP` against `DATABASE_URL` / `POSTGRES_*`.
 
 **Limits:** default max upload **512 MiB**; override with **`ADMIN_DB_RESTORE_MAX_BYTES`** on the API server.
 
+**PostgreSQL versions:** dumps taken with **PostgreSQL 17+** `pg_dump` may include `SET transaction_timeout = …`, which **PostgreSQL 16** rejects. The restore handler strips that line so Compose’s default **`postgres:16-alpine`** can import such files. For other version mismatches, use matching server/client major versions or edit the SQL manually.
+
 **Response:** `200` `{ ok: true, message }` on success, or `400` / `403` / `413` / `500` with `detail` (stderr) on failure.
 
-**Admin site (port 5556):** authenticated session proxies these as **`GET /api/database/backup`** and **`POST /api/database/restore`** (no admin token in the browser — the admin process adds `X-Admin-Token` when calling the API).
+**Admin site (port 5556):** authenticated session proxies these as **`GET /api/database/backup`**, **`GET /api/database/summary`**, and **`POST /api/database/restore`** (no admin token in the browser — the admin process adds `X-Admin-Token` when calling the API).
 
 ### `GET /api/admin/rebuild-inventory/status`
 

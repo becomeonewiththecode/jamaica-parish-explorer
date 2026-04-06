@@ -34,7 +34,7 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 
 ### Admin site
 
-- [`ADMIN-SITE.md`](./ADMIN-SITE.md) — authenticated admin dashboard for monitoring PM2 processes, restarting services, **PostgreSQL backup/restore**, rebuild map data, and accessing Swagger/Status Board. Runs on port 5556.
+- [`ADMIN-SITE.md`](./ADMIN-SITE.md) — authenticated admin dashboard: **Operations** (PM2 + service restarts), **Map data rebuild**, **Database**; plus Swagger/Status Board/Client/Health quick links. Runs on port 5556.
 - [`ADMIN-SITE-DIAGRAM.md`](./ADMIN-SITE-DIAGRAM.md) — Mermaid diagrams: client-app link resolution, login flow, PM2 restart proxy, **database backup/restore** (admin → API → `pg_dump` / `psql`), and **map data rebuild** (`dataSnapshot` row counts, **`confirmWipe`**, `CONFIRM_WIPE_REQUIRED`, background OSM ingest, retries; public **`mapDataRebuild`** without counts).
 
 ### Status board and monitoring

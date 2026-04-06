@@ -1,5 +1,9 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
+
+/** Same asset as the client app (`client/public/jamaican-flag-favicon.svg`). */
+const ADMIN_FAVICON_SVG = path.join(__dirname, '..', 'client', 'public', 'jamaican-flag-favicon.svg');
 const crypto = require('crypto');
 const http = require('http');
 const { exec } = require('child_process');
@@ -95,6 +99,63 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/** Multipart body for POST /api/admin/database/restore (avoids undici fetch+FormData issues). */
+function buildDatabaseRestoreMultipart(sqlBuffer, originalname) {
+  const boundary = `----nodeRestore${crypto.randomBytes(24).toString('hex')}`;
+  const safeName = String(originalname || 'backup.sql').replace(/[\r\n"\\]/g, '_');
+  const head =
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="confirm"\r\n\r\n` +
+    `RESTORE\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="backup"; filename="${safeName}"\r\n` +
+    `Content-Type: application/octet-stream\r\n\r\n`;
+  const tail = `\r\n--${boundary}--\r\n`;
+  const body = Buffer.concat([Buffer.from(head, 'utf8'), sqlBuffer, Buffer.from(tail, 'utf8')]);
+  return { boundary, body };
+}
+
+function proxyRestoreToApi(body, boundary) {
+  return new Promise((resolve, reject) => {
+    const opts = {
+      hostname: API_HOST,
+      port: API_PORT,
+      path: '/api/admin/database/restore',
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': String(body.length),
+        'X-Admin-Token': ADMIN_RESTART_TOKEN,
+      },
+      timeout: 30 * 60 * 1000,
+    };
+    const preq = http.request(opts, (pres) => {
+      const chunks = [];
+      pres.on('data', (c) => chunks.push(c));
+      pres.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { ok: false, error: text.slice(0, 800) || 'Non-JSON response from API' };
+        }
+        resolve({ status: pres.statusCode || 500, data });
+      });
+    });
+    preq.on('error', (e) => {
+      const cause = e.cause && e.cause.message ? ` (${e.cause.message})` : '';
+      reject(new Error(`${e.code || 'ECONN'}: ${e.message}${cause} — check API_HOST/API_PORT (from inside Docker use the API service hostname, not 127.0.0.1)`));
+    });
+    preq.on('timeout', () => {
+      preq.destroy();
+      reject(new Error('Restore proxy timed out after 30 minutes'));
+    });
+    preq.write(body);
+    preq.end();
+  });
+}
+
 // --- PM2 status (reused from status-board.js) ---
 function fetchPm2Status() {
   return new Promise((resolve) => {
@@ -144,6 +205,13 @@ function probeClientAvailable() {
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+app.get('/favicon.svg', (req, res) => {
+  res.type('image/svg+xml');
+  res.sendFile(ADMIN_FAVICON_SVG, (err) => {
+    if (err && !res.headersSent) res.sendStatus(404);
+  });
+});
 
 // --- Login routes ---
 app.get('/login', (req, res) => {
@@ -238,10 +306,14 @@ function loginPage(errorHtml) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <title>Admin Login – Jamaica Explorer</title>
   <style>
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#050816; color:#f9fafb; margin:0; display:flex; align-items:center; justify-content:center; min-height:100vh; }
     .login-card { background:#0b1020; border:1px solid #1f2937; border-radius:0.75rem; padding:2.5rem; width:100%; max-width:360px; box-shadow:0 10px 30px rgba(0,0,0,0.4); }
+    .login-brand { display:flex; flex-direction:column; align-items:center; gap:0.65rem; margin-bottom:0.35rem; }
+    .login-brand h1 { margin:0; font-size:1.5rem; }
+    .login-favicon { width:2.5rem; height:2.5rem; border-radius:0.45rem; flex-shrink:0; }
     h1 { margin:0 0 0.25rem; font-size:1.5rem; }
     .subtitle { color:#9ca3af; font-size:0.85rem; margin-bottom:1.5rem; }
     label { display:block; font-size:0.85rem; color:#d1d5db; margin-bottom:0.3rem; }
@@ -254,7 +326,10 @@ function loginPage(errorHtml) {
 </head>
 <body>
   <div class="login-card">
-    <h1>Admin Panel</h1>
+    <div class="login-brand">
+      <img src="/favicon.svg" alt="" class="login-favicon" width="40" height="40">
+      <h1>Admin Panel</h1>
+    </div>
     <div class="subtitle">Jamaica Parish Explorer</div>
     ${errorHtml || ''}
     <form method="POST" action="/login">
@@ -291,11 +366,14 @@ function dashboardPage(req) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <title>Admin Dashboard – Jamaica Explorer</title>
   <style>
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#050816; color:#f9fafb; margin:0; padding:1.5rem 2rem; }
     h1 { margin:0; font-size:1.6rem; }
     .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; }
+    .header-title-row { display:flex; align-items:center; gap:0.65rem; }
+    .header-favicon { width:1.75rem; height:1.75rem; flex-shrink:0; border-radius:0.35rem; }
     .header-right { display:flex; align-items:center; gap:0.75rem; }
     .user-badge { font-size:0.8rem; color:#9ca3af; }
     .logout-btn { font-size:0.8rem; color:#f97373; text-decoration:none; padding:0.3rem 0.7rem; border:1px solid #7f1d1d; border-radius:0.4rem; }
@@ -305,8 +383,19 @@ function dashboardPage(req) {
     .link-btn { display:inline-flex; align-items:center; gap:0.4rem; padding:0.5rem 1rem; background:#111827; border:1px solid #374151; border-radius:0.5rem; color:#e5e7eb; text-decoration:none; font-size:0.85rem; font-weight:500; }
     .link-btn:hover { background:#1f2937; border-color:#4b5563; }
 
-    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom:1.5rem; }
-    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    .admin-major-wrap { margin-bottom:1.5rem; }
+    .admin-major-tab-bar { display:flex; gap:0.4rem; margin-bottom:0.85rem; border-bottom:1px solid #1f2937; flex-wrap:wrap; }
+    .admin-major-tab {
+      padding:0.55rem 1rem; font-size:0.88rem; font-weight:600; color:#9ca3af; background:transparent;
+      border:none; border-bottom:3px solid transparent; margin-bottom:-1px; cursor:pointer;
+      border-radius:0.4rem 0.4rem 0 0; font-family:inherit;
+    }
+    .admin-major-tab:hover { color:#e5e7eb; background:#111827; }
+    .admin-major-tab[aria-selected="true"] { color:#e5e7eb; border-bottom-color:#818cf8; }
+    .admin-major-tab:focus-visible { outline:2px solid #818cf8; outline-offset:2px; }
+    .admin-major-panel { display:none; }
+    .admin-major-panel.is-active { display:block; }
+
     .card { padding:1rem 1.1rem; border-radius:0.75rem; background:#0b1020; border:1px solid #1f2937; box-shadow:0 10px 30px rgba(0,0,0,0.4); }
     .card-title { font-weight:600; font-size:0.95rem; margin-bottom:0.75rem; }
 
@@ -320,6 +409,17 @@ function dashboardPage(req) {
     .dot.errored { background:#fcd34d; box-shadow:0 0 4px #fcd34d; }
 
     .restart-console { display:flex; flex-direction:column; gap:0.5rem; min-height:0; }
+    .restart-tab-bar { display:flex; gap:0.25rem; margin:0 0 0.5rem; border-bottom:1px solid #1f2937; flex-wrap:wrap; }
+    .restart-tab {
+      padding:0.45rem 0.85rem; font-size:0.78rem; font-weight:500; color:#9ca3af; background:transparent;
+      border:none; border-bottom:2px solid transparent; margin-bottom:-1px; cursor:pointer;
+      border-radius:0.35rem 0.35rem 0 0; font-family:inherit;
+    }
+    .restart-tab:hover { color:#e5e7eb; background:#111827; }
+    .restart-tab[aria-selected="true"] { color:#e5e7eb; border-bottom-color:#6366f1; }
+    .restart-tab:focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+    .restart-tab-panel { display:none; flex-direction:column; gap:0.5rem; min-height:0; }
+    .restart-tab-panel.is-active { display:flex; }
     .restart-console-hr { border:0; border-top:1px solid #1f2937; margin:0.35rem 0 0; padding:0; }
     .restart-console-sub { font-size:0.72rem; color:#6b7280; margin:0; line-height:1.35; }
     .restart-console-sub code { font-size:0.68rem; }
@@ -359,18 +459,18 @@ function dashboardPage(req) {
     .toast.fail { background:#7f1d1d; color:#fecaca; border:1px solid #991b1b; }
 
     .pm2-note { font-size:0.75rem; color:#6b7280; margin-top:0.5rem; }
+    .pm2-card-wrap { max-width:42rem; }
+    .ops-stack { display:flex; flex-direction:column; gap:1rem; max-width:42rem; }
 
-    .status-iframe-wrap { margin-top:1rem; }
-    .status-iframe-wrap summary { cursor:pointer; font-size:0.85rem; color:#9ca3af; margin-bottom:0.5rem; }
-    .status-iframe-wrap iframe { width:100%; height:600px; border:1px solid #1f2937; border-radius:0.5rem; background:#050816; }
-
-    .db-tools-card { margin-top:1rem; }
-    .db-tools-card code { font-size:0.72rem; }
+    .db-tab-panel code { font-size:0.72rem; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>Admin Dashboard</h1>
+    <div class="header-title-row">
+      <img src="/favicon.svg" alt="" class="header-favicon" width="28" height="28">
+      <h1>Admin Dashboard</h1>
+    </div>
     <div class="header-right">
       <span class="user-badge">${esc(ADMIN_USER)}</span>
       <a href="/logout" class="logout-btn">Logout</a>
@@ -392,77 +492,166 @@ function dashboardPage(req) {
     </a>
   </div>
 
-  <div class="grid">
-    <div class="card">
-      <div class="card-title">PM2 Processes</div>
-      <div id="pm2-table">Loading...</div>
-      <div class="pm2-note">Auto-refreshes every 30s</div>
+  <div class="admin-major-wrap">
+    <div class="admin-major-tab-bar" role="tablist" aria-label="Dashboard sections">
+      <button type="button" class="admin-major-tab" role="tab" id="major-tab-ops" aria-selected="true" aria-controls="major-panel-ops" tabindex="0" onclick="setMajorTab('operations')">Operations</button>
+      <button type="button" class="admin-major-tab" role="tab" id="major-tab-mapdata" aria-selected="false" aria-controls="major-panel-mapdata" tabindex="-1" onclick="setMajorTab('mapdata')">Map data rebuild</button>
+      <button type="button" class="admin-major-tab" role="tab" id="major-tab-database" aria-selected="false" aria-controls="major-panel-database" tabindex="-1" onclick="setMajorTab('database')">Database</button>
     </div>
-    <div class="card">
-      <div class="card-title">Restart Controls</div>
-      <div class="restart-console">
-        <p style="font-size:0.8rem; color:#9ca3af; margin:0;">Restarts go through the API admin endpoint.</p>
-        <div class="restart-group">
-          <button class="restart-btn" onclick="doRestart('api')">Restart API</button>
-          <button class="restart-btn" onclick="doRestart('status')">Restart Status Board</button>
-          <button class="restart-btn" onclick="doRestart('admin')">Restart Admin</button>
-          <button class="restart-btn danger" onclick="doRestart('all')">Restart All</button>
+    <div id="major-panel-ops" class="admin-major-panel is-active" role="tabpanel" aria-labelledby="major-tab-ops">
+      <div class="ops-stack">
+        <div class="card pm2-card-wrap">
+          <div class="card-title">PM2 Processes</div>
+          <div id="pm2-table">Loading...</div>
+          <div class="pm2-note">Auto-refreshes every 30s</div>
         </div>
-        <div id="restart-result" style="font-size:0.78rem; color:#9ca3af; min-height:0;"></div>
-        <hr class="restart-console-hr" />
-        <p class="restart-console-sub"><strong>Map data</strong> — clears <code>places</code>, refetches OSM (slow). With bind-mounted Postgres, data persists on disk until you remove it or run this rebuild. Optional airports (no images). Enrich: <code>npm run enrich:places</code>. <strong>Notes</strong> in <code>notes</code> are not deleted.</p>
-        <div id="rebuild-data-banner" class="rebuild-data-banner" style="display:none;" role="status"></div>
-        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#d1d5db; cursor:pointer; margin:0;">
-          <input type="checkbox" id="rebuild-include-airports" style="flex-shrink:0;" />
-          Airports (static)
-        </label>
-        <div class="restart-group">
-          <button type="button" class="restart-btn" id="rebuild-map-btn" onclick="doRebuildMapData()">Rebuild map data</button>
-        </div>
-        <div id="rebuild-progress-wrap" class="rebuild-progress-wrap">
-          <div class="rebuild-progress-meta">
-            <span id="rebuild-progress-pct">—</span>
-            <span id="rebuild-progress-label"></span>
+        <div class="card pm2-card-wrap">
+          <div class="card-title">Service restarts</div>
+          <p style="font-size:0.8rem; color:#9ca3af; margin:0 0 0.65rem;">Restarts go through the API admin endpoint.</p>
+          <div class="restart-group">
+            <button class="restart-btn" onclick="doRestart('api')">Restart API</button>
+            <button class="restart-btn" onclick="doRestart('status')">Restart Status Board</button>
+            <button class="restart-btn" onclick="doRestart('admin')">Restart Admin</button>
+            <button class="restart-btn danger" onclick="doRestart('all')">Restart All</button>
           </div>
-          <div class="rebuild-progress-track"><div id="rebuild-progress-bar" class="rebuild-progress-bar"></div></div>
+          <div id="restart-result" style="font-size:0.78rem; color:#9ca3af; min-height:0; margin-top:0.5rem;"></div>
         </div>
-        <div id="rebuild-sections" class="rebuild-sections"></div>
-        <pre id="rebuild-status">…</pre>
+      </div>
+    </div>
+    <div id="major-panel-mapdata" class="admin-major-panel" role="tabpanel" aria-labelledby="major-tab-mapdata">
+      <div class="card pm2-card-wrap">
+        <div class="card-title">Map data rebuild</div>
+        <div class="restart-console">
+          <div class="restart-tab-panel is-active">
+            <p class="restart-console-sub"><strong>Map data</strong> — clears <code>places</code>, refetches OSM (slow). With bind-mounted Postgres, data persists on disk until you remove it or run this rebuild. Optional airports (no images). Enrich: <code>npm run enrich:places</code>. <strong>Notes</strong> in <code>notes</code> are not deleted.</p>
+            <div id="rebuild-data-banner" class="rebuild-data-banner" style="display:none;" role="status"></div>
+            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#d1d5db; cursor:pointer; margin:0;">
+              <input type="checkbox" id="rebuild-include-airports" style="flex-shrink:0;" />
+              Airports (static)
+            </label>
+            <div class="restart-group">
+              <button type="button" class="restart-btn" id="rebuild-map-btn" onclick="doRebuildMapData()">Rebuild map data</button>
+            </div>
+            <div id="rebuild-progress-wrap" class="rebuild-progress-wrap">
+              <div class="rebuild-progress-meta">
+                <span id="rebuild-progress-pct">—</span>
+                <span id="rebuild-progress-label"></span>
+              </div>
+              <div class="rebuild-progress-track"><div id="rebuild-progress-bar" class="rebuild-progress-bar"></div></div>
+            </div>
+            <div id="rebuild-sections" class="rebuild-sections"></div>
+            <pre id="rebuild-status">…</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="major-panel-database" class="admin-major-panel" role="tabpanel" aria-labelledby="major-tab-database">
+      <div class="card pm2-card-wrap db-tab-panel">
+        <div class="card-title">Database</div>
+        <div id="db-summary-wrap" style="margin:0 0 1rem;">
+          <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.45rem;">
+            <span style="font-size:0.8rem; font-weight:600; color:#e5e7eb;">Is the database empty?</span>
+            <button type="button" class="restart-btn" onclick="refreshDatabaseSummary()" style="padding:0.35rem 0.65rem; font-size:0.75rem;">Refresh counts</button>
+          </div>
+          <div id="db-summary-banner" class="rebuild-data-banner" style="display:none;" role="status"></div>
+          <div id="db-summary-table" style="font-size:0.72rem; color:#9ca3af; margin-top:0.35rem;"></div>
+        </div>
+        <p style="font-size:0.8rem; color:#9ca3af; margin:0 0 0.75rem; line-height:1.45;">PostgreSQL. The API runs <code>pg_dump</code> / <code>psql</code> (install <code>postgresql-client</code> on the host or use the project Docker image). Backups include <code>--clean --if-exists</code> for round-trip restore.</p>
+        <div class="restart-group" style="margin-bottom:0.85rem;">
+          <button type="button" class="restart-btn" onclick="downloadDatabaseBackup()">Download backup (.sql)</button>
+        </div>
+        <hr class="restart-console-hr" />
+        <p class="restart-console-sub" style="margin-bottom:0.55rem;"><strong>Restore</strong> replaces objects in the current database from a plain-SQL backup. You will be prompted again before upload.</p>
+        <div style="display:flex; flex-wrap:wrap; gap:0.75rem; align-items:flex-end;">
+          <div>
+            <label for="restore-file" style="display:block; font-size:0.75rem; color:#9ca3af; margin-bottom:0.25rem;">Backup file</label>
+            <input type="file" id="restore-file" accept=".sql,.txt,application/sql,text/plain" style="font-size:0.78rem; max-width:18rem;" />
+          </div>
+          <div>
+            <label for="restore-confirm" style="display:block; font-size:0.75rem; color:#9ca3af; margin-bottom:0.25rem;">Type RESTORE</label>
+            <input type="text" id="restore-confirm" placeholder="RESTORE" autocomplete="off" style="padding:0.45rem 0.5rem; border-radius:0.4rem; border:1px solid #374151; background:#111827; color:#f9fafb; width:9rem;" />
+          </div>
+          <button type="button" class="restart-btn danger" onclick="submitDatabaseRestore()">Restore database</button>
+        </div>
+        <pre id="restore-result" style="margin:0.55rem 0 0; font-size:0.68rem; color:#6b7280; white-space:pre-wrap; max-height:8rem; overflow:auto; border:1px solid #1f2937; border-radius:0.35rem; padding:0.4rem 0.5rem; background:#111827;"></pre>
       </div>
     </div>
   </div>
-
-  <div class="card db-tools-card">
-    <div class="card-title">Database backup & restore</div>
-    <p style="font-size:0.8rem; color:#9ca3af; margin:0 0 0.75rem; line-height:1.45;">PostgreSQL. The API runs <code>pg_dump</code> / <code>psql</code> (install <code>postgresql-client</code> on the host or use the project Docker image). Backups include <code>--clean --if-exists</code> for round-trip restore.</p>
-    <div class="restart-group" style="margin-bottom:0.85rem;">
-      <button type="button" class="restart-btn" onclick="downloadDatabaseBackup()">Download backup (.sql)</button>
-    </div>
-    <hr class="restart-console-hr" />
-    <p class="restart-console-sub" style="margin-bottom:0.55rem;"><strong>Restore</strong> replaces objects in the current database from a plain-SQL backup. You will be prompted again before upload.</p>
-    <div style="display:flex; flex-wrap:wrap; gap:0.75rem; align-items:flex-end;">
-      <div>
-        <label for="restore-file" style="display:block; font-size:0.75rem; color:#9ca3af; margin-bottom:0.25rem;">Backup file</label>
-        <input type="file" id="restore-file" accept=".sql,.txt,application/sql,text/plain" style="font-size:0.78rem; max-width:18rem;" />
-      </div>
-      <div>
-        <label for="restore-confirm" style="display:block; font-size:0.75rem; color:#9ca3af; margin-bottom:0.25rem;">Type RESTORE</label>
-        <input type="text" id="restore-confirm" placeholder="RESTORE" autocomplete="off" style="padding:0.45rem 0.5rem; border-radius:0.4rem; border:1px solid #374151; background:#111827; color:#f9fafb; width:9rem;" />
-      </div>
-      <button type="button" class="restart-btn danger" onclick="submitDatabaseRestore()">Restore database</button>
-    </div>
-    <pre id="restore-result" style="margin:0.55rem 0 0; font-size:0.68rem; color:#6b7280; white-space:pre-wrap; max-height:8rem; overflow:auto; border:1px solid #1f2937; border-radius:0.35rem; padding:0.4rem 0.5rem; background:#111827;"></pre>
-  </div>
-
-  <details class="status-iframe-wrap">
-    <summary>Inline Status Board</summary>
-    <iframe src="http://${esc(publicHost)}:${PUBLIC_STATUS_PORT}/" loading="lazy"></iframe>
-  </details>
 
   <div id="toast" class="toast"></div>
 
   <script>
     function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    function setMajorTab(which) {
+      var tabs = [
+        { id: 'major-tab-ops', panel: 'major-panel-ops', key: 'operations' },
+        { id: 'major-tab-mapdata', panel: 'major-panel-mapdata', key: 'mapdata' },
+        { id: 'major-tab-database', panel: 'major-panel-database', key: 'database' },
+      ];
+      for (var i = 0; i < tabs.length; i++) {
+        var t = document.getElementById(tabs[i].id);
+        var p = document.getElementById(tabs[i].panel);
+        if (!t || !p) continue;
+        var sel = tabs[i].key === which;
+        t.setAttribute('aria-selected', sel);
+        t.tabIndex = sel ? 0 : -1;
+        p.classList.toggle('is-active', sel);
+      }
+      if (which === 'database') refreshDatabaseSummary();
+    }
+
+    async function refreshDatabaseSummary() {
+      var banner = document.getElementById('db-summary-banner');
+      var tableEl = document.getElementById('db-summary-table');
+      if (!banner || !tableEl) return;
+      banner.style.display = 'block';
+      banner.className = 'rebuild-data-banner';
+      banner.textContent = 'Loading row counts…';
+      tableEl.innerHTML = '';
+      try {
+        var res = await fetch('/api/database/summary');
+        var d = await res.json().catch(function() { return {}; });
+        if (!res.ok || !d.ok) {
+          banner.classList.add('err');
+          banner.textContent = d.error || ('HTTP ' + res.status);
+          return;
+        }
+        var c = d.counts || {};
+        var labelMap = {
+          parishes: 'Parishes',
+          places: 'Places (map POIs)',
+          airports: 'Airports',
+          notes: 'Notes',
+          features: 'Features',
+          flights: 'Flights',
+          cruise_ports: 'Cruise ports',
+          cruise_calls: 'Cruise calls',
+        };
+        var rows = [];
+        for (var key in labelMap) {
+          if (!Object.prototype.hasOwnProperty.call(c, key)) continue;
+          var v = c[key];
+          var cell = v == null ? '—' : Number(v).toLocaleString();
+          rows.push('<tr><td>' + esc(labelMap[key]) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums;">' + cell + '</td></tr>');
+        }
+        tableEl.innerHTML = '<table style="width:100%;max-width:22rem;"><tbody>' + rows.join('') + '</tbody></table>';
+        if (d.isNonEmpty) {
+          banner.classList.add('ok');
+          if (d.hasContentData) {
+            banner.textContent = 'Database is not empty: map POIs, airports, notes, and/or features have rows. See counts below.';
+          } else {
+            banner.textContent = 'Database is not empty (e.g. parish seed), but places, airports, notes, and features are all zero.';
+          }
+        } else {
+          banner.classList.add('warn');
+          banner.textContent = 'Tracked tables show zero rows (unusual if schema is applied), or counts could not be read.';
+        }
+      } catch (e) {
+        banner.classList.add('err');
+        banner.textContent = 'Request failed: ' + e.message;
+      }
+    }
 
     function formatUptime(ts) {
       if (!ts) return '-';
@@ -697,6 +886,7 @@ function dashboardPage(req) {
         var data = await res.json().catch(function() { return {}; });
         if (data.ok) {
           showToast('Rebuild started — watch status below and server logs', true);
+          setMajorTab('mapdata');
         } else {
           if (data.code === 'CONFIRM_WIPE_REQUIRED' && data.dataSnapshot) {
             rebuildDataSnapshot = data.dataSnapshot;
@@ -763,12 +953,18 @@ function dashboardPage(req) {
       try {
         var ctrl = new AbortController();
         var t = setTimeout(function() { ctrl.abort(); }, 30 * 60 * 1000);
-        var res = await fetch('/api/database/restore', { method: 'POST', body: fd, signal: ctrl.signal });
+        var res = await fetch('/api/database/restore', {
+          method: 'POST',
+          body: fd,
+          signal: ctrl.signal,
+          credentials: 'same-origin',
+        });
         clearTimeout(t);
         var data = await res.json().catch(function() { return {}; });
         if (pre && data.detail) pre.textContent = String(data.detail);
         if (data.ok) {
           showToast('Database restored', true);
+          refreshDatabaseSummary();
         } else {
           showToast((data.error || ('HTTP ' + res.status)), false);
         }
@@ -947,6 +1143,41 @@ app.get('/api/database/backup', authMiddleware, (req, res) => {
   proxyReq.end();
 });
 
+app.get('/api/database/summary', authMiddleware, (req, res) => {
+  const options = {
+    hostname: API_HOST,
+    port: API_PORT,
+    path: '/api/admin/database/summary',
+    method: 'GET',
+    headers: { 'X-Admin-Token': ADMIN_RESTART_TOKEN },
+    timeout: 15000,
+  };
+  const proxyReq = http.request(options, (proxyRes) => {
+    let body = '';
+    proxyRes.on('data', (chunk) => {
+      body += chunk;
+    });
+    proxyRes.on('end', () => {
+      try {
+        res.status(proxyRes.statusCode).json(JSON.parse(body));
+      } catch {
+        res.status(proxyRes.statusCode).json({ ok: false, error: body });
+      }
+    });
+  });
+  proxyReq.on('error', (e) => {
+    const msg = e && e.code ? e.code + ' (' + (e.message || '') + ')' : e && e.message ? e.message : 'proxy error';
+    if (!res.headersSent) {
+      res.status(502).json({ ok: false, error: 'Cannot reach API: ' + msg });
+    }
+  });
+  proxyReq.on('timeout', () => {
+    proxyReq.destroy();
+    if (!res.headersSent) res.status(504).json({ ok: false, error: 'Request to API timed out' });
+  });
+  proxyReq.end();
+});
+
 app.post('/api/database/restore', authMiddleware, uploadDbRestore.single('backup'), async (req, res) => {
   if (req.body && req.body.confirm !== 'RESTORE') {
     return res.status(400).json({ ok: false, error: 'confirm must be RESTORE' });
@@ -958,30 +1189,15 @@ app.post('/api/database/restore', authMiddleware, uploadDbRestore.single('backup
     return res.status(503).json({ ok: false, error: 'ADMIN_RESTART_TOKEN is not set on admin/API' });
   }
   try {
-    const fd = new FormData();
-    fd.append('backup', new Blob([req.file.buffer]), req.file.originalname || 'backup.sql');
-    fd.append('confirm', 'RESTORE');
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 30 * 60 * 1000);
-    const r = await fetch(`http://${API_HOST}:${API_PORT}/api/admin/database/restore`, {
-      method: 'POST',
-      headers: { 'X-Admin-Token': ADMIN_RESTART_TOKEN },
-      body: fd,
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    const text = await r.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { ok: false, error: text.slice(0, 500) };
-    }
-    res.status(r.status).json(data);
+    const { boundary, body } = buildDatabaseRestoreMultipart(req.file.buffer, req.file.originalname);
+    const { status, data } = await proxyRestoreToApi(body, boundary);
+    res.status(status).json(data);
   } catch (e) {
-    res.status(500).json({
+    res.status(502).json({
       ok: false,
-      error: e && e.name === 'AbortError' ? 'Restore request timed out (30 minutes)' : e.message || String(e),
+      error: e && e.message ? e.message : String(e),
+      detail:
+        'Admin could not reach the API restore endpoint. If the API runs in another Docker container, set API_HOST to that service name (not 127.0.0.1).',
     });
   }
 });

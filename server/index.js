@@ -352,9 +352,15 @@ const HOST = process.env.HOST || '0.0.0.0';
     process.exit(1);
   }
 
-  app.listen(PORT, HOST, () => {
+  const server = app.listen(PORT, HOST, () => {
     console.log(
       `Server running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (external: 0.0.0.0)`
     );
   });
+  // Admin DB restore can run psql for many minutes before any response bytes; disable tight HTTP timeouts.
+  server.requestTimeout = 0;
+  server.timeout = 0;
+  if (typeof server.headersTimeout === 'number') {
+    server.headersTimeout = Math.max(server.headersTimeout, 120000);
+  }
 })();
