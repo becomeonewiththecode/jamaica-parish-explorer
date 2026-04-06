@@ -24,9 +24,11 @@ const { applySchema, seedParishes } = require('./db/init');
 
 const {
   startRebuildInventory,
+  startSelectiveRefresh,
   getRebuildInventoryState,
   getRebuildInventoryDataSnapshot,
   rebuildWipeRequiresConfirm,
+  VALID_REFRESH_TARGETS,
 } = require('./db/rebuild-inventory');
 
 app.use(express.json());
@@ -282,8 +284,78 @@ app.post('/api/admin/rebuild-inventory', async (req, res, next) => {
     const includeAirports = Boolean(body.includeAirports);
     const clearPlaces = body.clearPlaces !== false;
     const confirmWipe = Boolean(body.confirmWipe);
+    const confirmClearNotes = Boolean(body.confirmClearNotes);
+
+    const rawTargets = body.targets;
+    let selectiveTargets = null;
+    if (Array.isArray(rawTargets) && rawTargets.length > 0) {
+      selectiveTargets = [
+        ...new Set(
+          rawTargets.filter((t) => typeof t === 'string' && VALID_REFRESH_TARGETS.has(t))
+        ),
+      ];
+      if (selectiveTargets.length === 0) {
+        return res.status(400).json({
+          ok: false,
+          error: 'targets must contain at least one valid key (see SELECTIVE_REFRESH_ORDER / admin docs).',
+        });
+      }
+    }
 
     const dataSnapshot = await getRebuildInventoryDataSnapshot();
+
+    if (selectiveTargets) {
+      if (selectiveTargets.includes('notes_clear') && !confirmClearNotes) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            'Confirmation required: clearing notes deletes all user-submitted notes. Set confirmClearNotes: true after operator review.',
+          code: 'CONFIRM_CLEAR_NOTES_REQUIRED',
+          dataSnapshot,
+        });
+      }
+      if (selectiveTargets.includes('places')) {
+        if (rebuildWipeRequiresConfirm(dataSnapshot, clearPlaces) && !confirmWipe) {
+          return res.status(400).json({
+            ok: false,
+            error:
+              'Confirmation required: refreshing places deletes existing rows (or the row count could not be read). Set confirmWipe: true after operator review.',
+            code: 'CONFIRM_WIPE_REQUIRED',
+            dataSnapshot,
+          });
+        }
+      }
+
+      const started = startSelectiveRefresh(
+        selectiveTargets,
+        { includeAirports, clearPlaces, onLog: (m) => console.log(m) },
+        (err) => {
+          if (err) console.error('[selective-refresh]', err);
+        }
+      );
+
+      if (!started) {
+        return res.status(409).json({
+          ok: false,
+          error: 'Rebuild already in progress',
+          state: getRebuildInventoryState(),
+          dataSnapshot,
+        });
+      }
+
+      const hasOsm = selectiveTargets.includes('places');
+      return res.json({
+        ok: true,
+        selective: true,
+        targets: selectiveTargets,
+        message: hasOsm
+          ? 'Selective rebuild started (includes OpenStreetMap — several minutes). Check logs and GET /api/admin/rebuild-inventory/status.'
+          : 'Selective data refresh started in the background. Check logs and GET /api/admin/rebuild-inventory/status.',
+        state: getRebuildInventoryState(),
+        dataSnapshot,
+      });
+    }
+
     if (rebuildWipeRequiresConfirm(dataSnapshot, clearPlaces) && !confirmWipe) {
       return res.status(400).json({
         ok: false,

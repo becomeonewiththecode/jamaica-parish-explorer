@@ -15,6 +15,28 @@ This document describes **what** lives in the **PostgreSQL** database for the ma
 
 See [`deployment/docker-compose/README.md`](../deployment/docker-compose/README.md) and [`BUILD-PROCESS.md`](./BUILD-PROCESS.md).
 
+### Two different folders on disk (Compose)
+
+| Path (next to the compose file) | Role |
+|---------------------------------|------|
+| **`data/postgres`** | **PostgreSQL cluster** — all relational tables (`parishes`, `features`, `places`, …). |
+| **`data/jamaica`** | **`JAMAICA_DATA_DIR`** — **only** `.flight-cache.json` and `.weather-cache.json`. |
+
+Deleting **`data/jamaica`** clears flight/weather caches; it **does not** empty Postgres. To wipe the database you must remove **`data/postgres`** (or drop the DB), then restart — see [Why parishes and features reappear](#why-parishes-and-features-reappear-after-a-wipe) below.
+
+A diagram of this split is in [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) (**Two persistence layers**).
+
+---
+
+## Why parishes and features reappear after a wipe
+
+On **every API startup**, `server/index.js` runs **`applySchema()`** then **`seedParishes()`** (see `server/db/init.js`). That step:
+
+- Ensures **14** rows in **`parishes`** (one per parish; `INSERT … ON CONFLICT DO NOTHING` for new slugs, or existing rows left as-is on first insert path).
+- Inserts **five landmark names per parish** into **`features`** when a parish has **no** feature rows yet — **14 × 5 = 70** rows total from the bundled seed.
+
+So after you delete **`data/postgres`** and start fresh, the admin **Database** tab can still show **14 parishes** and **70 features** immediately: that is **expected seeded metadata**, not leftover files from `data/jamaica`. **`places`**, **airports**, **notes**, flights, and cruise tables stay empty until you ingest or refresh them separately.
+
 ---
 
 ## Backup and restore (PostgreSQL)
@@ -36,10 +58,12 @@ Full request/response details: [`API-REFERENCE.md`](./API-REFERENCE.md). UX and 
 | Points of interest | `places` | Hotels, restaurants, beaches, attractions, etc. — loaded via `/api/places/...`. |
 | Airports | `airports` | Airport markers and detail panels (KIN, MBJ, etc.). |
 
-**Not** covered by “rebuild map data” in the admin UI (different lifecycles / sources):
+**Selective refresh** on the admin **Map data rebuild** tab can target individual areas (parishes metadata, feature lists, OSM **places**, static airports, flight provider pull, cruise ports/schedules, or clearing **`notes`**). A **full** rebuild without a `targets` array (e.g. CLI `db:rebuild`) still runs the legacy pipeline: schema, parish seed, wipe **places**, OSM ingest, optional airports.
 
-- `notes` — user content.
-- `flights`, `weather_forecasts`, `weather_events`, `cruise_ports`, `cruise_calls` — filled at runtime from external APIs and scrapers, not from the OSM rebuild pipeline.
+**Not** filled by OSM ingest alone (different lifecycles / sources):
+
+- `notes` — user content (optional **Clear all user notes** in admin).
+- `flights`, `weather_forecasts`, `weather_events`, `cruise_ports`, `cruise_calls` — runtime APIs/scrapers; admin can trigger **Flights** / **Cruise** checkboxes to refresh.
 
 ---
 
@@ -47,8 +71,8 @@ Full request/response details: [`API-REFERENCE.md`](./API-REFERENCE.md). UX and 
 
 ### 1. Parishes and features (static, in repo)
 
-- **Source:** JavaScript seed data in `server/db/init.js` (exported as `seedParishes` after schema apply).
-- **Applied by:** `npm run db:init`, and automatically as part of a **full rebuild** (admin or `db:rebuild`).
+- **Source:** JavaScript seed data in `server/db/init.js` (`seedParishes`, plus **`upsertParishesFromSeed`** / **`resyncFeaturesFromSeed`** for admin selective refresh).
+- **Applied by:** **`npm run db:init`**, **every API process start** (`applySchema` + `seedParishes` in `server/index.js`), **full** admin/OSM rebuild, and optional admin checkboxes (**Parishes** / **Features**) on the **Map data rebuild** tab.
 - **External API:** none.
 
 ### 2. Places (OpenStreetMap)
@@ -63,7 +87,7 @@ Full request/response details: [`API-REFERENCE.md`](./API-REFERENCE.md). UX and 
   - **Between categories (main pass):** default **12 seconds** (`OVERPASS_CATEGORY_DELAY_MS`). Older docs mentioned ~2s; that was too aggressive and caused **HTTP 429** (rate limit) and **504** (timeouts).
   - **Per request:** failed calls with **429**, **502**, **503**, **504**, or network errors are retried with backoff and mirror rotation, up to `OVERPASS_MAX_ATTEMPTS` (default **12**).
   - **After the main pass:** steps that failed with a **retriable** status (not **400** bad query) are queued for **delayed retry round(s)** only for those indices — default **one** round after **120s** (`OVERPASS_FAILED_ROUND_DELAY_MS`), with **35s** between retries (`OVERPASS_RETRY_CATEGORY_DELAY_MS`) and extra attempts (`OVERPASS_RETRY_ROUND_MAX_ATTEMPTS`). Set `OVERPASS_FAILED_RETRY_ROUNDS=0` to disable, or `2`–`4` for more waves (cooldown grows each wave).
-- **Schema on API boot:** `server/index.js` runs `applySchema` + `seedParishes` at startup so `places` enrichment columns and the `airports` table exist **before** any rebuild (`server/db/schema.postgresql.sql` + idempotent column checks in `init.js`).
+- **Schema on API boot:** `server/index.js` runs `applySchema` + `seedParishes` at startup so tables/columns exist and **parish + feature seed rows** are present **before** any client traffic (`server/db/schema.postgresql.sql` + idempotent column checks in `init.js`).
 
 ### 3. Airports (static metadata in repo)
 
@@ -99,7 +123,7 @@ npm run seed:airports   # optional; or use static airport seed via rebuild with 
 
 **When to use:** New server, empty Compose `data/` directories, or you need a clean resync from OSM.
 
-1. **Admin (recommended if the API is up):** open the admin dashboard → **Map data rebuild** tab (see [Admin site](./ADMIN-SITE.md)). The UI shows live **`places`** / **`airports`** / **`notes`** counts (from **`dataSnapshot`** on **`GET …/rebuild-inventory/status`**) because bind-mounted PostgreSQL keeps data on disk until you remove it or run this wipe. Confirm the count-aware dialog; the API requires **`confirmWipe: true`** when existing POI rows would be deleted. Optionally check **Airports (static)**. The job runs **in the background**; watch the status panel and API logs.
+1. **Admin (recommended if the API is up):** open the admin dashboard → **Map data rebuild** tab (see [Admin site](./ADMIN-SITE.md)). Use the **section checkboxes** to refresh only what you need (parishes metadata, feature lists, OSM **places**, static airports, flight provider pull, cruise ports / schedules, or — with a second confirm — **clear all user notes**). The banner shows live **`places`** / **`airports`** / **`notes`** counts from **`dataSnapshot`**. OSM still requires **`confirmWipe: true`** when POI rows would be deleted; **`confirmClearNotes: true`** is required to wipe **`notes`**. Optionally use **After OSM, seed airports**. The job runs **in the background**; watch the status panel and API logs.
 2. **CLI:**
 
 ```bash
@@ -174,14 +198,16 @@ flowchart TD
 
 | Piece | Path |
 |--------|------|
-| Schema | `server/db/schema.sql` |
-| Parish seed | `server/db/init.js` (`applySchema`, `seedParishes`) |
-| OSM ingest | `server/db/places-from-osm.js`, orchestration `server/db/rebuild-inventory.js` |
+| Schema (PostgreSQL) | `server/db/schema.postgresql.sql` (`applySchema` in `server/db/init.js`; legacy `schema.sql` may exist for reference) |
+| Parish + feature seed | `server/db/init.js` — `applySchema`, `seedParishes` (API boot in `server/index.js`); `upsertParishesFromSeed`, `resyncFeaturesFromSeed` (selective refresh) |
+| OSM ingest | `server/db/places-from-osm.js`, orchestration `server/db/rebuild-inventory.js` (`rebuildInventory`, `selectiveDataRefresh`) |
 | CLI full rebuild | `server/db/rebuild-inventory-cli.js` |
 | Incremental fetch CLI | `server/db/fetch-places.js` |
 | Airports | `server/db/seed-airports.js` |
+| Cruise port upsert | `server/db/cruise-schedules.js` (`seedDefaultCruisePorts`) |
 | Enrichment | `server/db/enrich-places.js` |
-| Admin trigger (map rebuild) | Proxies to `POST /api/admin/rebuild-inventory` with `confirmWipe` when existing `places` rows would be deleted (or count unreadable); `GET …/rebuild-inventory/status` adds `dataSnapshot` (`places` / `airports` / `notes` counts). See `server/index.js`, `server/admin.js`, `server/db/rebuild-inventory.js`. |
+| Admin map rebuild | `POST /api/admin/rebuild-inventory` — optional **`targets`** (selective) or legacy full rebuild; `confirmWipe` / `confirmClearNotes` as needed. `GET …/rebuild-inventory/status` includes `dataSnapshot`. See `server/index.js`, `server/admin.js`, `server/db/rebuild-inventory.js`. |
+| Admin DB row counts | `GET /api/admin/database/summary` — `server/db/database-summary.js`; admin proxy `GET /api/database/summary` |
 | Admin DB backup/restore | API: `server/routes/admin-database.js` — `GET/POST /api/admin/database/*`; admin proxy: `GET/POST /api/database/*` in `server/admin.js` |
 
 ---

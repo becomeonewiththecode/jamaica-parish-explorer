@@ -24,8 +24,8 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 
 - [`STARTUP-GUIDE.md`](./STARTUP-GUIDE.md) — how to run the app in every mode: dev (Vite HMR), PM2 production, Docker Compose, and bare `npm start`. Includes port reference and common troubleshooting.
 - [`BUILD-PROCESS.md`](./BUILD-PROCESS.md) — how the client (Vite), server (native deps), database (init scripts), and Docker image (multi-stage) are built. Covers `JAMAICA_DATA_DIR`, `pmx: 'false'`, and layer caching.
-- [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) — Mermaid diagrams: Docker multi-stage build flow, runtime port/process architecture (including admin → API **database backup/restore**), and `JAMAICA_DATA_DIR` resolution.
-- [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md) — PostgreSQL tables for map data (`parishes`, `places`, `airports`), **data sources** (OSM/Overpass, static seeds, Wikipedia/DDG enrichment), **how to repopulate**, **Overpass env vars** (pacing, mirrors, delayed retry of failed categories), **schema-on-startup**, and a **Mermaid ingest-flow diagram**.
+- [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) — Mermaid diagrams: Docker multi-stage build flow, runtime port/process architecture (including admin → API **database backup/restore**), **`JAMAICA_DATA_DIR` resolution**, and **two persistence layers** (Postgres bind mount vs JSON caches).
+- [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md) — PostgreSQL tables for map data (`parishes`, `places`, `airports`), **Compose `data/postgres` vs `data/jamaica`**, **why 14 parishes + 70 features reappear after wiping Postgres**, **data sources** (OSM/Overpass, static seeds, selective admin refresh), **how to repopulate**, **Overpass env vars**, **schema + `seedParishes` on every API start**, and ingest notes.
 - [`DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](./DATA-MIGRATION-SQLITE-TO-POSTGRES.md) — moving an old SQLite `jamaica.db` into PostgreSQL (pgloader, dump, or custom export).
 
 ### API reference
@@ -35,7 +35,7 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 ### Admin site
 
 - [`ADMIN-SITE.md`](./ADMIN-SITE.md) — authenticated admin dashboard: **Operations** (PM2 + service restarts), **Map data rebuild**, **Database**; plus Swagger/Status Board/Client/Health quick links. Runs on port 5556.
-- [`ADMIN-SITE-DIAGRAM.md`](./ADMIN-SITE-DIAGRAM.md) — Mermaid diagrams: client-app link resolution, login flow, PM2 restart proxy, **database backup/restore** (admin → API → `pg_dump` / `psql`), and **map data rebuild** (`dataSnapshot` row counts, **`confirmWipe`**, `CONFIRM_WIPE_REQUIRED`, background OSM ingest, retries; public **`mapDataRebuild`** without counts).
+- [`ADMIN-SITE-DIAGRAM.md`](./ADMIN-SITE-DIAGRAM.md) — Mermaid diagrams: client-app link resolution, login flow, PM2 restart proxy, **database backup/restore**, **Database tab row-count summary** (`GET /api/database/summary`), and **map data rebuild** (selective `targets`, `confirmClearNotes`, `dataSnapshot`, **`confirmWipe`**, background OSM; public **`mapDataRebuild`** without counts).
 
 ### Status board and monitoring
 

@@ -92,6 +92,8 @@ Paths are **relative to each compose file** (`deployment/docker-compose/`), so d
 | `./data/postgres` | `/var/lib/postgresql/data` | PostgreSQL cluster data |
 | `./data/jamaica` | `/data` | **`JAMAICA_DATA_DIR`** — **`.flight-cache.json`**, **`.weather-cache.json`** only |
 
+**Important:** removing **`data/jamaica`** does **not** reset the SQL database. Row counts for **`parishes`** / **`features`** / **`places`** etc. live under **`data/postgres`**. The API also runs **`seedParishes()`** on every start, so a fresh Postgres volume often shows **14** parishes and **70** features (seeded landmark lists) before you run OSM ingest — see [`docs/DATABASE-AND-MAP-DATA.md`](../../docs/DATABASE-AND-MAP-DATA.md).
+
 The app still connects to Postgres via **`POSTGRES_HOST=postgres`** (or **`DATABASE_URL`**); credentials match **`POSTGRES_*`** in `.env`.
 
 **Why `/data` on the app container instead of `/app/server`:** mounting over **`/app/server`** would replace the image’s **`node_modules`**.

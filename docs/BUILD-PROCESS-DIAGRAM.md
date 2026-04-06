@@ -182,3 +182,33 @@ flowchart TD
 
   Files -.->|"used by"| Callers
 ```
+
+---
+
+### Two persistence layers (PostgreSQL vs `JAMAICA_DATA_DIR`)
+
+Use this when debugging “I deleted data but the DB still has rows” or “counts came back after restart”.
+
+```mermaid
+flowchart TD
+  subgraph Sql["PostgreSQL — relational tables"]
+    P1["parishes, features, places,\nairports, notes, flights, …"]
+    P2["Docker: ./data/postgres\n→ container data dir"]
+    P3["DATABASE_URL from API"]
+    P3 --> P1
+    P1 --- P2
+  end
+
+  subgraph Json["JAMAICA_DATA_DIR — JSON files only"]
+    C1[".flight-cache.json\n.weather-cache.json"]
+    C2["Docker: ./data/jamaica → /data"]
+    C1 --- C2
+  end
+
+  Boot["API startup\napplySchema + seedParishes"] --> P1
+  Hint["After wiping postgres only:\n14 parishes + 70 features\nreappear from seed"] -.-> Boot
+
+  Routes["flights + weather routes"] --> C1
+```
+
+---

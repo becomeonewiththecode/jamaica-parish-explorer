@@ -211,11 +211,11 @@ project_jamaica/
 | GET | `/api/vessels` | Live vessel snapshot near Jamaica (AISStream.io; optional `?type=cruise`) |
 | GET | `/api/ports/:id/cruises` | Upcoming cruise calls for a port (CruiseDig/CruiseMapper, persisted in PostgreSQL and refreshed when older than ~6h) |
 
-**Admin-only (require `X-Admin-Token` = `ADMIN_RESTART_TOKEN`):** `POST /api/admin/restart`, `GET /api/admin/database/backup`, `POST /api/admin/database/restore`, rebuild-inventory routes — see [`docs/API-REFERENCE.md`](./docs/API-REFERENCE.md). The admin UI on port **5556** proxies backup/restore as `GET /api/database/backup` and `POST /api/database/restore` after login.
+**Admin-only (require `X-Admin-Token` = `ADMIN_RESTART_TOKEN`):** `POST /api/admin/restart`, database backup/restore/summary, rebuild-inventory routes — see [`docs/API-REFERENCE.md`](./docs/API-REFERENCE.md). The admin UI on port **5556** proxies backup/restore and **`GET /api/database/summary`** after login.
 
 ## Data Documentation
 
-- **Database, map POIs, Overpass, admin rebuild:** see [`docs/DATABASE-AND-MAP-DATA.md`](./docs/DATABASE-AND-MAP-DATA.md)
+- **Database, map POIs, Overpass, Docker `data/postgres` vs `data/jamaica`, startup seed (14 parishes / 70 features), admin rebuild:** see [`docs/DATABASE-AND-MAP-DATA.md`](./docs/DATABASE-AND-MAP-DATA.md)
 - **Flights:** see [`docs/FLIGHT-DATA.md`](./docs/FLIGHT-DATA.md)
 - **Weather and Waves:** see [`docs/WEATHER-AND-WAVE-DATA.md`](./docs/WEATHER-AND-WAVE-DATA.md)
 - **Vessels (AISStream):** see [`docs/VESSEL-DATA-AND-USAGE.md`](./docs/VESSEL-DATA-AND-USAGE.md)
@@ -224,7 +224,7 @@ project_jamaica/
 ## Database Schema
 
 - **parishes** — slug, name, county, population, capital, area, description, fill_color, svg_path
-- **features** — notable features per parish (e.g. "Blue Mountains", "Port Royal")
+- **features** — notable features per parish (seeded from `server/db/init.js`; **70** rows = 5 landmarks × 14 parishes, reapplied on API boot when missing)
 - **places** — POIs with name, category, lat/lon, address, phone, website, cuisine, image_url, description
 - **notes** — community notes per parish with author and timestamp
 - **cruise_ports** — logical cruise ports (e.g. Montego Bay, Ocho Rios, Falmouth) with code, name, city, lat/lon, and source URL

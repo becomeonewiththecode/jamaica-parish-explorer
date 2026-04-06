@@ -72,22 +72,28 @@ Map-data rebuild job status. Requires `X-Admin-Token`.
 | `placesCount` | Rows in `places` (null if the query failed) |
 | `placesQueryable` | Whether `places` could be counted |
 | `hasExistingPlacesData` | `true` when `placesCount > 0`; `null` if unknown |
-| `airportsCount` / `notesCount` | Optional counts (`notes` are **not** deleted by rebuild) |
+| `airportsCount` / `notesCount` | Optional counts (`notes` are **not** deleted by default rebuild; selective `notes_clear` does) |
 | `wipeWarning` | Human-readable summary for operators (bind-mounted Postgres persists until rebuild or manual removal) |
 
 ### `POST /api/admin/rebuild-inventory`
 
-Starts a full rebuild (schema, parishes, **`DELETE FROM places`**, OSM ingest, optional static airports). Requires `X-Admin-Token`.
+Requires `X-Admin-Token`.
+
+**Without `targets` (or non-array):** starts the **full** rebuild (schema, parishes, **`DELETE FROM places`**, OSM ingest, optional static airports) — same as `npm run db:rebuild` / `db:rebuild:all`.
+
+**With `targets` (non-empty array):** runs only the selected steps in order: `parishes` → `features` → `places` → `airports` → `notes_clear` → `flights` → `cruise_ports` → `cruise_calls`. The **`places`** step still runs parish seed (if needed), **`DELETE FROM places`** (when `clearPlaces` is true), and OSM ingest. **`notes_clear`** deletes **all** rows in **`notes`** (user content). **`flights`** triggers scheduled + live provider refresh. **`cruise_ports`** upserts default Jamaica ports; **`cruise_calls`** re-scrapes schedules (ignores the 6h cache). Only one job runs at a time (**`409`** if busy).
 
 | Body field | Description |
 |------------|-------------|
-| `includeAirports` | If `true`, run static airport seed after OSM (no image crawl) |
-| `clearPlaces` | Default `true` — clears `places` before ingest |
-| `confirmWipe` | Must be **`true`** when `clearPlaces` is true **and** either `places` has rows **or** the row count could not be read. Otherwise **`400`** with `code: "CONFIRM_WIPE_REQUIRED"` and `dataSnapshot`. |
+| `targets` | Optional string array of step keys (see list above). When present and non-empty, selective mode is used. |
+| `includeAirports` | With **`places`**: if `true`, run static airport seed **after** OSM. Also use **`airports`** alone to seed without OSM. |
+| `clearPlaces` | Default `true` — clears `places` before OSM when `places` is in `targets` or for full rebuild |
+| `confirmWipe` | Required **`true`** when the **`places`** step would delete rows (or count unknown), same as full rebuild — else **`400`** `CONFIRM_WIPE_REQUIRED` |
+| `confirmClearNotes` | Required **`true`** when `notes_clear` is in `targets` — else **`400`** `CONFIRM_CLEAR_NOTES_REQUIRED` |
 
 Returns **`409`** if a rebuild is already running.
 
-**Admin site:** proxies as **`GET /api/rebuild-inventory/status`** and **`POST /api/rebuild-inventory`** (the UI fetches a fresh snapshot, shows counts, sends `confirmWipe` after the operator confirms).
+**Admin site:** proxies as **`GET /api/rebuild-inventory/status`** and **`POST /api/rebuild-inventory`** (checkboxes for each section, confirmations, `confirmWipe` / `confirmClearNotes` as needed).
 
 ---
 

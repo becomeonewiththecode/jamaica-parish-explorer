@@ -199,7 +199,7 @@ This aligns with the server’s 20-minute cache refresh so the map typically sho
 | File | Purpose |
 |------|---------|
 | `server/routes/weather.js` | Weather and wave API routes; parish/coastal definitions; 20-minute refresh; fetch, cache, and disk-persistence logic |
-| `server/data-dir.js` | Resolves `JAMAICA_DATA_DIR` env var (or falls back to `server/`) for the cache file path and DB path |
+| `server/data-dir.js` | Resolves `JAMAICA_DATA_DIR` (or `server/`) for **JSON cache paths only** — not PostgreSQL (`DATABASE_URL`) |
 | `$JAMAICA_DATA_DIR/.weather-cache.json` | Auto-generated persisted cache (island weather + wave data); default location is `server/.weather-cache.json`. Restored on startup to avoid redundant API calls. Git-ignored |
 | `client/src/api/weather.js` | `fetchWeather()`, `fetchWeatherForParish()`, `fetchWeatherIsland()`, `fetchWavesIsland()` (all via fetchWithRetry) |
 | `client/src/api/fetchWithRetry.js` | Fetch wrapper: retries on failure (3 retries, exponential backoff) |

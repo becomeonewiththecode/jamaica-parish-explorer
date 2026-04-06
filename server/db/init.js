@@ -210,7 +210,64 @@ async function seedParishes() {
   });
 }
 
-module.exports = { applySchema, seedParishes, ensureSchemaMigrations };
+/** Upsert parish rows from seed (updates copy when slug already exists). */
+async function upsertParishesFromSeed() {
+  const { withTransaction, clientQuery } = require('./pg-query');
+
+  await withTransaction(async (client) => {
+    for (const parish of parishes) {
+      const { features: _f, ...parishRow } = parish;
+      await clientQuery(
+        client,
+        `INSERT INTO parishes (slug, name, county, population, capital, area, description, fill_color, svg_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (slug) DO UPDATE SET
+           name = EXCLUDED.name,
+           county = EXCLUDED.county,
+           population = EXCLUDED.population,
+           capital = EXCLUDED.capital,
+           area = EXCLUDED.area,
+           description = EXCLUDED.description,
+           fill_color = EXCLUDED.fill_color,
+           svg_path = EXCLUDED.svg_path`,
+        [
+          parishRow.slug,
+          parishRow.name,
+          parishRow.county,
+          parishRow.population,
+          parishRow.capital,
+          parishRow.area,
+          parishRow.description,
+          parishRow.fill_color,
+          parishRow.svg_path,
+        ]
+      );
+    }
+  });
+}
+
+/** Remove all feature rows and re-insert from seed (parish landmark lists). */
+async function resyncFeaturesFromSeed() {
+  const { withTransaction, clientQuery } = require('./pg-query');
+
+  await query('DELETE FROM features');
+  await withTransaction(async (client) => {
+    for (const parish of parishes) {
+      const { features } = parish;
+      const r = await clientQuery(client, 'SELECT id FROM parishes WHERE slug = $1', [parish.slug]);
+      const row = r.rows[0];
+      if (!row) continue;
+      for (const feature of features) {
+        await clientQuery(client, 'INSERT INTO features (parish_id, name) VALUES ($1, $2)', [
+          row.id,
+          feature,
+        ]);
+      }
+    }
+  });
+}
+
+module.exports = { applySchema, seedParishes, upsertParishesFromSeed, resyncFeaturesFromSeed, ensureSchemaMigrations };
 
 if (require.main === module) {
   const { closePool } = require('./pg-query');

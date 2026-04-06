@@ -142,29 +142,32 @@ function parseCruiseMapper(html) {
   return rows;
 }
 
-async function loadPortCruises(portId) {
+async function loadPortCruises(portId, opts = {}) {
+  const forceRefresh = Boolean(opts.force);
   const primaryUrl = PRIMARY_PORT_URLS[portId];
   if (!primaryUrl) return [];
 
   // 1) Prefer data already stored in the database (map reads from DB going forward)
-  try {
-    const lastUpdated = await getCruiseCallsLastUpdated(portId);
-    if (lastUpdated) {
-      const ageMs = Date.now() - Date.parse(lastUpdated);
-      if (!Number.isNaN(ageMs) && ageMs < SCHEDULE_TTL_MS) {
-        const rows = await getCruiseCallsForPort(portId);
-        if (rows && rows.length) {
-          return rows.map((r) => ({
-            shipName: r.ship_name,
-            operator: r.operator,
-            etaLocalText: r.eta_local_text,
-            source: r.source,
-          }));
+  if (!forceRefresh) {
+    try {
+      const lastUpdated = await getCruiseCallsLastUpdated(portId);
+      if (lastUpdated) {
+        const ageMs = Date.now() - Date.parse(lastUpdated);
+        if (!Number.isNaN(ageMs) && ageMs < SCHEDULE_TTL_MS) {
+          const rows = await getCruiseCallsForPort(portId);
+          if (rows && rows.length) {
+            return rows.map((r) => ({
+              shipName: r.ship_name,
+              operator: r.operator,
+              etaLocalText: r.eta_local_text,
+              source: r.source,
+            }));
+          }
         }
       }
+    } catch (e) {
+      console.warn(`[PortCruises] Failed to read cached schedules from DB for ${portId}:`, e.message);
     }
-  } catch (e) {
-    console.warn(`[PortCruises] Failed to read cached schedules from DB for ${portId}:`, e.message);
   }
 
   // 2) Fallback: scrape fresh data, preferring the primary source and optionally merging the secondary
@@ -275,6 +278,23 @@ async function loadPortCruises(portId) {
  *       404:
  *         description: Unknown port id
  */
+/** Re-scrape schedules for every configured port (admin / ops). */
+async function refreshAllCruiseSchedulesForce() {
+  const ids = Object.keys(PRIMARY_PORT_URLS);
+  const results = [];
+  for (const portId of ids) {
+    try {
+      await loadPortCruises(portId, { force: true });
+      results.push({ portId, ok: true });
+    } catch (e) {
+      results.push({ portId, ok: false, error: e && e.message ? e.message : String(e) });
+    }
+  }
+  return results;
+}
+
+router.refreshAllCruiseSchedulesForce = refreshAllCruiseSchedulesForce;
+
 router.get('/:id/cruises', async (req, res) => {
   const portId = req.params.id;
   if (!PRIMARY_PORT_URLS[portId]) {

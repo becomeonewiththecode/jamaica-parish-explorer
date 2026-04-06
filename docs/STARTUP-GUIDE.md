@@ -179,6 +179,8 @@ docker compose -f deployment/docker-compose/docker-compose-build.yml up -d --bui
 
 **PostgreSQL** data and **JSON caches** use **bind mounts** under **`deployment/docker-compose/data/`** (paths relative to the compose file): **`data/postgres`** → Postgres, **`data/jamaica`** → **`/data`** (`JAMAICA_DATA_DIR`). Application code and `node_modules` stay in the image.
 
+**Do not confuse the two:** deleting **`data/jamaica`** only clears flight/weather JSON caches. **`data/postgres`** holds all relational tables. After wiping **`data/postgres`**, the next API start still runs **`applySchema` + `seedParishes`**, so you will typically see **14** **`parishes`** rows and **70** **`features`** rows again immediately (bundled seed in `server/db/init.js`); **`places`** stays **0** until you run OSM ingest or a rebuild.
+
 **Easiest:** use the admin dashboard (**`ADMIN_PORT`**, default **5556**) → **Database** tab (downloads `.sql` or uploads a dump with a **`RESTORE`** confirmation; see [`ADMIN-SITE.md`](./ADMIN-SITE.md)).
 
 **CLI:** back up with `pg_dump` (from the host or a throwaway client container), not by copying Postgres data directories raw. Example if Postgres is reachable on the compose network:
@@ -192,15 +194,15 @@ See [`DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](./DATA-MIGRATION-SQLITE-TO-POSTGRES
 
 ### Seeding the database inside Docker
 
-The image does **not** run the seed scripts automatically. To seed after the first start:
+The **`jamaica-api`** process runs **`applySchema()`** and **`seedParishes()`** on **every startup** (`server/index.js`), so **parish** and **feature** seed rows appear without a manual `db:init`. Optional extra steps (same as bare metal):
 
 ```bash
-docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/init.js"
+docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/init.js"   # idempotent; same seed as boot
 docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/fetch-places.js"
 docker exec jamaica-parish-explorer sh -c "cd /app/server && node db/enrich-places.js"
 ```
 
-For a **full repopulation** of map POIs (clear `places` then Overpass ingest), use the admin **Rebuild map data** button (API must be running; the UI shows row counts and sends **`confirmWipe`** when data exists) or run `node db/rebuild-inventory-cli.js` inside the container from `/app/server`. See [Database and map data](./DATABASE-AND-MAP-DATA.md) for sources and tables.
+For a **full repopulation** of map POIs (clear `places` then Overpass ingest), use the admin **Map data rebuild** tab (**Run selected rebuilds** with **Places**, or omit `targets` from the API for the legacy full rebuild), or run `node db/rebuild-inventory-cli.js` inside the container from `/app/server`. See [Database and map data](./DATABASE-AND-MAP-DATA.md) for sources, bind mounts, and why row counts look the way they do after a wipe.
 
 ### Stopping and switching back to PM2
 

@@ -128,44 +128,60 @@ flowchart TD
 
 ---
 
-### Map data rebuild (background OSM ingest)
+### Database tab — row counts (`GET /api/database/summary`)
 
-Poll responses and the pre-flight **GET** include **`dataSnapshot`** (`places` / `airports` / `notes` counts, **`wipeWarning`**) so operators see persisted data under bind mounts. **POST** must send **`confirmWipe: true`** when the API would delete existing **`places`** rows (or could not count them); otherwise **`400`** with **`CONFIRM_WIPE_REQUIRED`**. **`GET /api/health`** → **`mapDataRebuild`** omits **`dataSnapshot`** (admin token only).
+Proxied from admin to **`GET /api/admin/database/summary`** with **`X-Admin-Token`**. Helps operators see whether tables are empty; **parishes** (14) and **features** (70) often appear immediately after a fresh Postgres volume because **`seedParishes()`** runs on API boot (see [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md)).
+
+```mermaid
+flowchart LR
+  U[Admin: Database tab]
+  U --> A["GET /api/database/summary\nadmin :5556"]
+  A --> P["Proxy + X-Admin-Token\n→ /api/admin/database/summary"]
+  P --> Q["API: COUNT per table"]
+  Q --> PG[(PostgreSQL)]
+  Q --> R["JSON counts +\nisNonEmpty / hasContentData"]
+  R --> U
+```
+
+---
+
+### Map data rebuild (selective targets or full OSM)
+
+Poll responses and the pre-flight **GET** include **`dataSnapshot`** (`places` / `airports` / `notes` counts, **`wipeWarning`**). The UI uses **section checkboxes**; **`POST`** sends a **`targets`** array for selective refresh, or omits it for the **legacy full** rebuild (same as CLI `db:rebuild`). **`confirmWipe`** is required when **`places`** would delete rows (or counts are unknown); **`confirmClearNotes`** when **`notes_clear`** is selected. **`GET /api/health`** → **`mapDataRebuild`** omits **`dataSnapshot`**.
 
 ```mermaid
 flowchart TD
-  POLL0["Dashboard polls GET …/rebuild-inventory/status\n~1.5s while inProgress, ~4s idle\ndataSnapshot → banner on disk + row counts"]
+  POLL0["Dashboard polls GET …/rebuild-inventory/status\n~1.5s while inProgress, ~4s idle\ndataSnapshot → banner + row counts"]
 
-  U[Admin: Rebuild map data + optional airports]
+  U[Admin: section checkboxes +\nRun selected rebuilds]
   U -.-> POLL0
 
   U --> REF[Fresh GET status before POST\nsync counts for confirm text]
-  REF --> C{Browser confirm\nbind-mounted Postgres persists\nuntil DELETE / rebuild}
+  REF --> C{Browser confirm\nlists selected steps}
   C -->|no| X[Cancel]
-  C -->|yes| BR["POST /api/rebuild-inventory\n→ admin :5556 → API :3001\nX-Admin-Token + confirmWipe when required"]
+  C -->|yes| BR["POST /api/rebuild-inventory\nbody: optional targets[],\nincludeAirports, confirmWipe,\nconfirmClearNotes → admin → API"]
 
-  BR --> GATE{API: wipe needs confirm\nand confirmWipe false?}
-  GATE -->|yes| E400["400 CONFIRM_WIPE_REQUIRED\n+ dataSnapshot in JSON"]
-  GATE -->|no| R{409 already in progress?}
+  BR --> VAL{Valid token +\nconfirm flags OK?}
+  VAL -->|no| E400["400 CONFIRM_WIPE_REQUIRED,\nCONFIRM_CLEAR_NOTES_REQUIRED,\nor invalid targets"]
+  VAL -->|yes| R{409 busy?}
 
   E400 -.-> POLL0
-
   R -->|yes| E409[Toast: busy]
-  R -->|no| OK202["200 startRebuildInventory() async"]
+  R -->|no| OK202["200 job started async"]
 
-  OK202 --> BG["rebuildInventory:\napplySchema → seed → DELETE places\ningestPlacesFromOsm (19 steps)"]
+  OK202 --> BG["Background:\nselectiveDataRefresh(targets)\nor full rebuildInventory()\n(OSM when places / full)"]
 
-  BG --> OP[(Overpass mirrors\nrotate / backoff / retries)]
+  BG --> OP[(Overpass when places\nin targets / full)]
   OP --> BG
 
   BG --> RR{Retriable failures\n429 / 504 / …?}
-  RR -->|yes| WAIT[Cooldown + slower\nfailed-only retry round]
+  RR -->|yes| WAIT[Cooldown + retries]
   WAIT --> OP
   RR -->|no| DONE[phase: done\nlastSummary]
 
-  POLL0 -.-> STATE[Shared in-memory job state:\nsections, %, phase]
+  POLL0 -.-> STATE[Shared in-memory job state:\nsections when OSM, %, phase]
   BG -.-> STATE
-  HEALTH["GET /api/health\nmapDataRebuild\nno dataSnapshot"] -.-> STATE
+  HEALTH["GET /api/health\nmapDataRebuild"] -.-> STATE
 
   classDef good fill:#064e3b,stroke:#4ade80,color:#f0fdf4;
   classDef bad fill:#7f1d1d,stroke:#f97373,color:#fef2f2;
@@ -173,5 +189,5 @@ flowchart TD
 
   class OK202,DONE good;
   class E400,E409 bad;
-  class U,REF,C,BR,GATE,R,BG,OP,RR,WAIT,STATE,HEALTH,X,POLL0 neutral;
+  class U,REF,C,BR,VAL,R,BG,OP,RR,WAIT,STATE,HEALTH,X,POLL0 neutral;
 ```

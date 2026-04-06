@@ -250,7 +250,7 @@ Parishes containing airports (Kingston, St. James, St. Mary) include an **Airpor
 | File | Purpose |
 |------|---------|
 | `server/routes/flights.js` | API routes, data fetching, polling, OAuth, DB storage, disk-persistence; contains `classifyLiveFlight()`, `getCallsignMatchKeys()`, `confirmFlightStatuses()`, `removeCompletedFlightsFromCache()` |
-| `server/data-dir.js` | Resolves `JAMAICA_DATA_DIR` env var (or falls back to `server/`) for the cache file path and DB path |
+| `server/data-dir.js` | Resolves `JAMAICA_DATA_DIR` (or `server/`) for **JSON cache paths only** — not PostgreSQL; relational data uses `DATABASE_URL` |
 | `$JAMAICA_DATA_DIR/.flight-cache.json` | Auto-generated persisted cache (scheduled flights + route lookups); default location is `server/.flight-cache.json`. Restored on startup to avoid redundant API calls. Git-ignored |
 | `server/db/schema.sql` | Database schema including `flights` table |
 | `server/.env` | API credentials (gitignored) |

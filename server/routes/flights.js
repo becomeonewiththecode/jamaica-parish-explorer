@@ -1568,4 +1568,12 @@ router.getFlightProviderHealth = function getFlightProviderHealth() {
   return flightProviderHealth;
 };
 
+/** Admin: pull scheduled + live flight data from external providers (writes to DB cache). */
+async function runManualProviderRefresh() {
+  await fetchScheduledFlights();
+  await fetchLiveRadar();
+}
+
+router.runManualProviderRefresh = runManualProviderRefresh;
+
 module.exports = router;

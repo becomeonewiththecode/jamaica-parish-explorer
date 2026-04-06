@@ -523,14 +523,25 @@ function dashboardPage(req) {
         <div class="card-title">Map data rebuild</div>
         <div class="restart-console">
           <div class="restart-tab-panel is-active">
-            <p class="restart-console-sub"><strong>Map data</strong> — clears <code>places</code>, refetches OSM (slow). With bind-mounted Postgres, data persists on disk until you remove it or run this rebuild. Optional airports (no images). Enrich: <code>npm run enrich:places</code>. <strong>Notes</strong> in <code>notes</code> are not deleted.</p>
+            <p class="restart-console-sub"><strong>Map data</strong> — choose which <strong>Database</strong> tab tables to refresh. <strong>Places</strong> clears <code>places</code> and refetches OpenStreetMap (slow). <strong>Clear all user notes</strong> is destructive. With bind-mounted Postgres, files persist on disk until you remove them. Enrich: <code>npm run enrich:places</code>.</p>
             <div id="rebuild-data-banner" class="rebuild-data-banner" style="display:none;" role="status"></div>
-            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#d1d5db; cursor:pointer; margin:0;">
+            <p style="font-size:0.72rem; color:#9ca3af; margin:0.35rem 0 0.25rem; font-weight:600;">Sections to rebuild</p>
+            <div class="rebuild-tgt-grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(15rem,1fr)); gap:0.35rem 1rem; margin:0 0 0.65rem; font-size:0.74rem; color:#d1d5db;">
+              <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; margin:0;"><input type="checkbox" id="rebuild-tgt-parishes" style="flex-shrink:0;" /> Parishes (metadata from seed)</label>
+              <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; margin:0;"><input type="checkbox" id="rebuild-tgt-features" style="flex-shrink:0;" /> Features (landmark lists)</label>
+              <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; margin:0;"><input type="checkbox" id="rebuild-tgt-places" checked style="flex-shrink:0;" /> Places — OSM map POIs (slow)</label>
+              <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; margin:0;"><input type="checkbox" id="rebuild-tgt-airports" style="flex-shrink:0;" /> Airports (static metadata)</label>
+              <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; margin:0;"><input type="checkbox" id="rebuild-tgt-flights" style="flex-shrink:0;" /> Flights (provider refresh)</label>
+              <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; margin:0;"><input type="checkbox" id="rebuild-tgt-cruise_ports" style="flex-shrink:0;" /> Cruise ports (upsert)</label>
+              <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; margin:0;"><input type="checkbox" id="rebuild-tgt-cruise_calls" style="flex-shrink:0;" /> Cruise schedules (re-scrape)</label>
+              <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; margin:0; color:#fca5a5;"><input type="checkbox" id="rebuild-tgt-notes_clear" style="flex-shrink:0;" /> Clear all user notes</label>
+            </div>
+            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#d1d5db; cursor:pointer; margin:0 0 0.65rem;">
               <input type="checkbox" id="rebuild-include-airports" style="flex-shrink:0;" />
-              Airports (static)
+              After OSM, seed airports (static)
             </label>
             <div class="restart-group">
-              <button type="button" class="restart-btn" id="rebuild-map-btn" onclick="doRebuildMapData()">Rebuild map data</button>
+              <button type="button" class="restart-btn" id="rebuild-map-btn" onclick="doRebuildMapData()">Run selected rebuilds</button>
             </div>
             <div id="rebuild-progress-wrap" class="rebuild-progress-wrap">
               <div class="rebuild-progress-meta">
@@ -762,7 +773,7 @@ function dashboardPage(req) {
         ban.className = 'rebuild-data-banner ' + (snap.placesCount > 0 ? 'warn' : 'ok');
         lines.push('<strong>places</strong>: ' + esc(String(snap.placesCount.toLocaleString())) + ' row(s)');
         if (snap.airportsCount != null) lines.push('<strong>airports</strong>: ' + esc(String(snap.airportsCount.toLocaleString())));
-        if (snap.notesCount != null) lines.push('<strong>notes</strong>: ' + esc(String(snap.notesCount.toLocaleString())) + ' (unchanged by rebuild)');
+        if (snap.notesCount != null) lines.push('<strong>notes</strong>: ' + esc(String(snap.notesCount.toLocaleString())) + ' (only cleared if you select Clear all user notes)');
         lines.push(esc(snap.wipeWarning || ''));
       } else {
         ban.className = 'rebuild-data-banner err';
@@ -846,7 +857,23 @@ function dashboardPage(req) {
       scheduleRebuildPoll();
     }
 
+    function collectRebuildTargets() {
+      var keys = ['parishes', 'features', 'places', 'airports', 'flights', 'cruise_ports', 'cruise_calls', 'notes_clear'];
+      var out = [];
+      for (var i = 0; i < keys.length; i++) {
+        var el = document.getElementById('rebuild-tgt-' + keys[i]);
+        if (el && el.checked) out.push(keys[i]);
+      }
+      return out;
+    }
+
     async function doRebuildMapData() {
+      var targets = collectRebuildTargets();
+      if (!targets.length) {
+        showToast('Select at least one section to rebuild', false);
+        return;
+      }
+
       var snap = rebuildDataSnapshot;
       try {
         var resFresh = await fetch('/api/rebuild-inventory/status');
@@ -858,30 +885,65 @@ function dashboardPage(req) {
         }
       } catch (e) { /* use cached snap */ }
 
-      var n = snap && snap.placesQueryable && typeof snap.placesCount === 'number' ? snap.placesCount : null;
-      var wipeNeedsConfirm = !snap || !snap.placesQueryable || n === null || n > 0;
-      var msg;
-      if (n != null && n > 0) {
-        msg = 'Rebuild will DELETE all ' + n.toLocaleString() + ' rows in the places table and refetch from OpenStreetMap.\\n\\nPostgreSQL files persist on disk (e.g. Docker bind mounts) until you remove them or run this rebuild.\\n\\nContinue?';
-      } else if (snap && snap.placesQueryable && n === 0) {
-        msg = 'The places table is empty. Rebuild will load POIs from OpenStreetMap (slow). Continue?';
-      } else {
-        msg = 'Could not read the places row count. The rebuild still runs DELETE FROM places, then refetches from OSM. Continue only if you intend a full map POI repopulation.';
+      var labels = {
+        parishes: 'Parishes (metadata from seed)',
+        features: 'Features (landmark lists)',
+        places: 'Places — OpenStreetMap ingest (clears places, slow)',
+        airports: 'Airports (static)',
+        flights: 'Flights (provider refresh)',
+        cruise_ports: 'Cruise ports',
+        cruise_calls: 'Cruise schedules (re-scrape)',
+        notes_clear: 'DELETE ALL user notes',
+      };
+      var lines = [];
+      for (var ti = 0; ti < targets.length; ti++) {
+        lines.push('• ' + (labels[targets[ti]] || targets[ti]));
       }
+      var airportsAfter = document.getElementById('rebuild-include-airports');
+      if (targets.indexOf('places') >= 0 && airportsAfter && airportsAfter.checked) {
+        lines.push('• After OSM: seed airports (static)');
+      }
+
+      var n = snap && snap.placesQueryable && typeof snap.placesCount === 'number' ? snap.placesCount : null;
+      var wipeNeedsConfirm = targets.indexOf('places') >= 0 && (!snap || !snap.placesQueryable || n === null || n > 0);
+      var placeMsg;
+      if (targets.indexOf('places') < 0) {
+        placeMsg = '';
+      } else if (n != null && n > 0) {
+        placeMsg = 'Places step will DELETE all ' + n.toLocaleString() + ' rows in places and refetch from OpenStreetMap.\\n\\n';
+      } else if (snap && snap.placesQueryable && n === 0) {
+        placeMsg = 'Places table is empty — OSM ingest will populate from scratch (slow).\\n\\n';
+      } else {
+        placeMsg = 'Could not read places row count; OSM step still runs DELETE FROM places then refetch.\\n\\n';
+      }
+
+      var notesWarn = targets.indexOf('notes_clear') >= 0
+        ? 'You selected CLEAR ALL USER NOTES — this cannot be undone.\\n\\n'
+        : '';
+
+      var msg = 'Run rebuild for:\\n\\n' + lines.join('\\n') + '\\n\\n' + notesWarn + placeMsg + 'Continue?';
       if (!confirm(msg)) return;
+
+      if (targets.indexOf('notes_clear') >= 0) {
+        if (!confirm('Final confirmation: permanently delete every row in the notes table?')) return;
+      }
 
       var btn = document.getElementById('rebuild-map-btn');
       var airports = document.getElementById('rebuild-include-airports');
       if (btn) btn.disabled = true;
       try {
+        var body = {
+          targets: targets,
+          includeAirports: !!(airports && airports.checked),
+          clearPlaces: true,
+          confirmWipe: wipeNeedsConfirm,
+        };
+        if (targets.indexOf('notes_clear') >= 0) body.confirmClearNotes = true;
+
         var res = await fetch('/api/rebuild-inventory', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            includeAirports: !!(airports && airports.checked),
-            clearPlaces: true,
-            confirmWipe: wipeNeedsConfirm,
-          }),
+          body: JSON.stringify(body),
         });
         var data = await res.json().catch(function() { return {}; });
         if (data.ok) {

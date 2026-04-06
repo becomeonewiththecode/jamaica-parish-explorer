@@ -173,10 +173,45 @@ async function upsertObservedCruiseCallFromAIS(portCode, { shipName, operator = 
   return ins.rows[0].id;
 }
 
+const DEFAULT_CRUISE_PORTS = [
+  {
+    code: 'montego-bay-cruise-port',
+    name: 'Montego Bay Cruise Port',
+    city: 'Montego Bay',
+    source_url: 'https://www.cruisemapper.com/ports/montego-bay-port-790',
+  },
+  {
+    code: 'ocho-rios-cruise-port',
+    name: 'Ocho Rios Cruise Port',
+    city: 'Ocho Rios',
+    source_url: 'https://www.cruisemapper.com/ports/ocho-rios-port-708',
+  },
+  {
+    code: 'falmouth-cruise-port',
+    name: 'Falmouth Cruise Port',
+    city: 'Falmouth',
+    source_url: 'https://cruisedig.com/ports/falmouth-jamaica',
+  },
+];
+
+async function seedDefaultCruisePorts() {
+  for (const p of DEFAULT_CRUISE_PORTS) {
+    await upsertCruisePort({
+      code: p.code,
+      name: p.name,
+      city: p.city,
+      lat: null,
+      lon: null,
+      source_url: p.source_url,
+    });
+  }
+}
+
 module.exports = {
   upsertCruisePort,
   getCruiseCallsForPort,
   getCruiseCallsLastUpdated,
   replaceCruiseCallsForPort,
   upsertObservedCruiseCallFromAIS,
+  seedDefaultCruisePorts,
 };

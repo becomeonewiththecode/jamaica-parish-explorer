@@ -111,7 +111,7 @@ Files written there:
 - `.flight-cache.json` — cached scheduled flight data
 - `.weather-cache.json` — cached island weather data (all 14 parishes)
 
-PostgreSQL holds all relational tables; configure **`DATABASE_URL`** in `server/.env` (see Docker Compose for a bundled `postgres` service).
+**PostgreSQL** holds all relational tables (`parishes`, `features`, `places`, …). It does **not** live under `JAMAICA_DATA_DIR`. On Docker Compose, Postgres files are under **`deployment/docker-compose/data/postgres`**, while **`data/jamaica`** is only the JSON caches above. Configure **`DATABASE_URL`** in `server/.env` (see Compose for a bundled `postgres` service). On API boot, **`seedParishes()`** repopulates **14** parish rows and **70** feature rows from `server/db/init.js` when the database is new or empty of those seeds — see [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md).
 
 ---
 
