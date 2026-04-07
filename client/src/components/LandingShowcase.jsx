@@ -28,6 +28,16 @@ const landingVariants = [
     bullets: ['Culture, food, music, and history together', 'Built around people and local perspective', 'Invites discovery with warmth and respect'],
     quote: 'Out of many, one.',
     cta: 'Enter The Island Map'
+  },
+  {
+    id: 'business',
+    label: 'Business',
+    headline: 'Jamaica for Business, Technology, and Growth',
+    subhead:
+      'A modern concept focused on investment potential, digital innovation, logistics, and strategic land opportunities across the island.',
+    bullets: ['Corporate-ready view of key regions', 'Technology and infrastructure lens', 'Land, ports, airports, and growth corridors'],
+    quote: 'Build, scale, and partner in Jamaica.',
+    cta: 'View Opportunities'
   }
 ];
 

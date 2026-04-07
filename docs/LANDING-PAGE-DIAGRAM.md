@@ -9,7 +9,7 @@ flowchart TD
   C -->|"true"| E["Explorer UI\nMapSection + InfoSection"]
 
   subgraph Landing["LandingShowcase"]
-    D1["Variant picker\n(roots / sunrise / unity)"]
+    D1["Variant picker\n(roots / sunrise / unity / business)"]
     D2["Headline, subhead, bullets, quote"]
     D3["Primary CTA\nEnter Explorer"]
     D --> D1
@@ -29,5 +29,12 @@ flowchart TD
     R2 --> R3
   end
 
+  subgraph Biz["Business variant"]
+    B1["Corporate + tech + land framing"]
+    B2["Dedicated visual theme\n(.landing-business::before)"]
+    B1 --> B2
+  end
+
   D --> Roots
+  D --> Biz
 ```

@@ -4,11 +4,12 @@ This document describes the landing experience shown before the map explorer UI.
 
 ## Overview
 
-The client now opens with a concept switcher that previews three landing directions:
+The client now opens with a concept switcher that previews four landing directions:
 
 - **Roots & Rhythm**
 - **Sunrise Escape**
 - **Out of Many**
+- **Business**
 
 Selecting **Enter** moves into the main explorer (`MapSection` + `InfoSection`) without changing backend/API behavior.
 
@@ -24,6 +25,7 @@ Selecting **Enter** moves into the main explorer (`MapSection` + `InfoSection`) 
     - `.landing-roots`
     - `.landing-sunrise`
     - `.landing-unity`
+    - `.landing-business`
 
 ## Roots & Rhythm design notes
 
@@ -47,10 +49,20 @@ Assets are served from `client/public/landing/`:
 - Image nodes are positioned with `.roots-img-*` classes in `App.css`.
 - Headline/subhead/CTA remain standard landing content flow below the collage.
 
+## Business concept notes
+
+The Business concept focuses on:
+
+- Corporate presentation tone
+- Technology and infrastructure framing
+- Land, ports, airports, and growth corridors
+
+It uses a dedicated background class: `.landing-business::before`.
+
 ## Notes for future edits
 
 - Keep image references under `/landing/...` so Vite serves them from `public/`.
-- If adding a fourth concept, update:
+- If adding another concept, update:
   - `landingVariants` array in `LandingShowcase.jsx`
   - concept picker styles in `App.css`
   - this document and `docs/LANDING-PAGE-DIAGRAM.md`

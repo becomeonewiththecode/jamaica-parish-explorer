@@ -45,6 +45,10 @@
   background-image: linear-gradient(120deg, #0a2747 0%, #4c1f65 38%, #8d2f3d 72%, #ea8b29 100%);
 }
 
+.landing-business::before {
+  background-image: linear-gradient(120deg, #0f2b3f 0%, #174d6f 35%, #1f6d67 68%, #4f7f3a 100%);
+}
+
 .landing-overlay {
   position: absolute;
   inset: 0;
@@ -262,7 +266,7 @@
 
 .landing-picker-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 

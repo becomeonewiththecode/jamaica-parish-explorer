@@ -35,7 +35,7 @@ An interactive web application for exploring Jamaica's 14 parishes. Click any pa
 - **Admin database tools** — authenticated admin dashboard (port **5556**): open the **Database** tab to download **`.sql`** backups or upload restores (proxied to the API with `pg_dump` / `psql`; requires **`ADMIN_RESTART_TOKEN`**)
 - **Safe map-data rebuild** — admin **Map data rebuild** tab shows live **`places`** counts and requires **`confirmWipe`** before wiping POIs; see [`docs/ADMIN-SITE.md`](./docs/ADMIN-SITE.md)
 - **Resilient API client** — failed fetches (parishes, places, flights, weather) are retried automatically (3 retries, exponential backoff)
-- **Landing page concept switcher** — pre-explorer landing with three concepts (**Roots & Rhythm**, **Sunrise Escape**, **Out of Many**) and one-click transition into the live map
+- **Landing page concept switcher** — pre-explorer landing with four concepts (**Roots & Rhythm**, **Sunrise Escape**, **Out of Many**, **Business**) and one-click transition into the live map
 - **Status board** — a small dashboard on port `5555` that checks API health, flights, weather, waves, vessels, and cruise schedule endpoints. Weather, wave, and flight provider health are derived from the backend's `/api/health` response instead of calling those providers directly from the board. The same **`/api/health`** payload also includes **`mapDataRebuild`** (OpenStreetMap ingest job progress) for monitoring, even though the status board UI does not render it yet.
 
 ## Tech Stack
