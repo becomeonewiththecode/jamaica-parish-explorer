@@ -3,9 +3,12 @@ import { useParish } from './hooks/useParish';
 import MapSection from './components/MapSection';
 import InfoSection from './components/InfoSection';
 import SearchBar from './components/SearchBar';
+import LandingShowcase from './components/LandingShowcase';
 import './App.css';
 
 function App() {
+  const [showExplorer, setShowExplorer] = useState(false);
+  const [landingVariant, setLandingVariant] = useState('roots');
   const adminLoginUrl = `${window.location.protocol}//${window.location.hostname}:5556/login`;
 
   const [selectedSlug, setSelectedSlug] = useState(null);
@@ -59,8 +62,21 @@ function App() {
     }
   }, []);
 
+  if (!showExplorer) {
+    return (
+      <LandingShowcase
+        selectedVariant={landingVariant}
+        onVariantChange={setLandingVariant}
+        onEnterExplorer={() => setShowExplorer(true)}
+      />
+    );
+  }
+
   return (
     <div className="app">
+      <button className="landing-back-link" onClick={() => setShowExplorer(false)}>
+        Landing Concepts
+      </button>
       <a className="admin-login-link" href={adminLoginUrl} target="_blank" rel="noreferrer">
         Login
       </a>

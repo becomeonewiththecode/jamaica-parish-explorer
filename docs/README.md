@@ -9,6 +9,8 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 - [SQLite → PostgreSQL migration](./DATA-MIGRATION-SQLITE-TO-POSTGRES.md)
 - [Build process](./BUILD-PROCESS.md)
 - [Build process diagram](./BUILD-PROCESS-DIAGRAM.md)
+- [Landing page concepts](./LANDING-PAGE.md)
+- [Landing page diagram](./LANDING-PAGE-DIAGRAM.md)
 - [API reference](./API-REFERENCE.md)
 - [Admin site](./ADMIN-SITE.md)
 - [Status board](./STATUS-BOARD.md)
@@ -25,6 +27,8 @@ This folder contains reference and architecture docs for the Jamaica Parish Expl
 - [`STARTUP-GUIDE.md`](./STARTUP-GUIDE.md) — how to run the app in every mode: dev (Vite HMR), PM2 production, Docker Compose, and bare `npm start`. Includes port reference and common troubleshooting.
 - [`BUILD-PROCESS.md`](./BUILD-PROCESS.md) — how the client (Vite), server (native deps), database (init scripts), and Docker image (multi-stage) are built. Covers `JAMAICA_DATA_DIR`, `pmx: 'false'`, and layer caching.
 - [`BUILD-PROCESS-DIAGRAM.md`](./BUILD-PROCESS-DIAGRAM.md) — Mermaid diagrams: Docker multi-stage build flow, runtime port/process architecture (including admin → API **database backup/restore**), **`JAMAICA_DATA_DIR` resolution**, and **two persistence layers** (Postgres bind mount vs JSON caches).
+- [`LANDING-PAGE.md`](./LANDING-PAGE.md) — landing experience before the map explorer: concept switcher, variant state (`showExplorer` / `landingVariant`), and Roots image-collage assets under `client/public/landing`.
+- [`LANDING-PAGE-DIAGRAM.md`](./LANDING-PAGE-DIAGRAM.md) — Mermaid view of the landing-to-explorer flow plus Roots-specific visual composition (faded flag background + circular collage).
 - [`DATABASE-AND-MAP-DATA.md`](./DATABASE-AND-MAP-DATA.md) — PostgreSQL tables for map data (`parishes`, `places`, `airports`), **Compose `data/postgres` vs `data/jamaica`**, **why 14 parishes + 70 features reappear after wiping Postgres**, **data sources** (OSM/Overpass, static seeds, selective admin refresh), **how to repopulate**, **Overpass env vars**, **schema + `seedParishes` on every API start**, and ingest notes.
 - [`DATA-MIGRATION-SQLITE-TO-POSTGRES.md`](./DATA-MIGRATION-SQLITE-TO-POSTGRES.md) — moving an old SQLite `jamaica.db` into PostgreSQL (pgloader, dump, or custom export).
 
